@@ -1,0 +1,36 @@
+# نشر تلقائي على السيرفر عبر SSH بعد دفع main.
+#
+# أضف في GitHub → Settings → Secrets and variables → Actions:
+#   DEPLOY_HOST      مثال: 192.168.1.72 أو الدومين
+#   DEPLOY_USER      اسم مستخدم SSH
+#   DEPLOY_SSH_KEY   المفتاح الخاص كامل (-----BEGIN ... PRIVATE KEY-----)
+#   DEPLOY_REPO_PATH مسار مجلد الريبو على السيرفر (حيث يوجد infra/docker-compose.yml)
+#
+# اختياري: DEPLOY_PORT (افتراضي 22)
+
+name: Deploy server
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH — سحب التعديلات وإعادة بناء الحاويات
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd "${{ secrets.DEPLOY_REPO_PATH }}"
+            git fetch origin main
+            git checkout main
+            git pull origin main
+            cd infra
+            docker compose up -d --build
