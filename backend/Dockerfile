@@ -9,7 +9,7 @@ COPY pyproject.toml /app/pyproject.toml
 
 RUN pip install --no-cache-dir -U pip && \
     pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.30" "sqlalchemy>=2.0" "psycopg[binary]>=3.2" \
-      "pydantic>=2.8" "pydantic-settings>=2.4" "email-validator>=2.1" "python-jose[cryptography]>=3.3" "passlib[bcrypt]>=1.7" "python-multipart>=0.0.9"
+      "pydantic>=2.8" "pydantic-settings>=2.4" "email-validator>=2.1" "python-jose[cryptography]>=3.3" "bcrypt>=4.0.1,<5" "python-multipart>=0.0.9"
 
 COPY app /app/app
 
