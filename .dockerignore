@@ -1,0 +1,10 @@
+.git
+**/.DS_Store
+**/.dart_tool
+**/build
+app/.flutter-plugins-dependencies
+backend/.venv
+**/__pycache__
+**/*.pyc
+.env
+.env.*

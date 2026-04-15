@@ -7,15 +7,15 @@ class Settings(BaseSettings):
     app_name: str = "lawyer-backend"
     app_base_url: str = "http://localhost:8080"
 
-    database_url: str = "postgresql+psycopg://lawyer:lawyer@db:5432/lawyer"
+    database_url: str = "postgresql+psycopg://lawyer:1642017@db:5432/lawyer"
 
-    jwt_secret: str = "dev-secret-change-me"
+    jwt_secret: str = "1642017"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 30
     refresh_token_days: int = 30
 
     super_admin_email: str = "admin@example.com"
-    super_admin_password: str = "admin12345"
+    super_admin_password: str = "1642017"
 
     trial_days_default: int = 30
 

@@ -1,10 +1,21 @@
 services:
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web/Dockerfile
+      args:
+        API_BASE_URL: /api
+    ports:
+      - "8091:80"
+    depends_on:
+      - backend
+
   db:
     image: postgres:16
     environment:
       POSTGRES_DB: lawyer
       POSTGRES_USER: lawyer
-      POSTGRES_PASSWORD: lawyer
+      POSTGRES_PASSWORD: "1642017"
     ports:
       - "5432:5432"
     volumes:
@@ -16,7 +27,7 @@ services:
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: postgresql+psycopg://lawyer:lawyer@db:5432/lawyer
+      DATABASE_URL: postgresql+psycopg://lawyer:1642017@db:5432/lawyer
     ports:
       - "8000:8000"
     depends_on:
