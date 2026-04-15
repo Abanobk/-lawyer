@@ -16,8 +16,8 @@ services:
       POSTGRES_DB: lawyer
       POSTGRES_USER: lawyer
       POSTGRES_PASSWORD: "1642017"
-    ports:
-      - "5432:5432"
+    # لا ننشر 5432 على الهوست: الـ backend يتصل بـ db داخل الشبكة فقط،
+    # ومنفذ 5432 غالبًا مستخدم على TrueNAS/Postgres آخر فيسبب تعارض Bind.
     volumes:
       - db_data:/var/lib/postgresql/data
 
