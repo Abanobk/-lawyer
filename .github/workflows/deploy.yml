@@ -12,8 +12,9 @@ name: Deploy server
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+  # فعّل السطرين التاليين بعد إضافة Secrets في GitHub:
+  # push:
+  #   branches: [main]
 
 jobs:
   deploy:
