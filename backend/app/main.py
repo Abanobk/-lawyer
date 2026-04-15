@@ -1,11 +1,13 @@
 import secrets
 import string
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from app.db import Base, engine, get_db
 from app.models import Office, OfficeStatus, Subscription, SubscriptionStatus, User, UserRole
@@ -36,8 +38,23 @@ def _gen_office_code(length: int = 10) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
+def init_db(max_wait_seconds: int = 30) -> None:
+    """
+    Ensure DB is reachable before trying to create tables.
+    On fresh starts, Postgres may not accept connections immediately.
+    """
+    deadline = time.time() + max_wait_seconds
+    last_err: Exception | None = None
+
+    while time.time() < deadline:
+        try:
+            Base.metadata.create_all(bind=engine)
+            return
+        except OperationalError as e:
+            last_err = e
+            time.sleep(1)
+
+    raise RuntimeError("DB not ready after retries") from last_err
 
 
 @app.on_event("startup")
