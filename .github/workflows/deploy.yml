@@ -1,18 +1,16 @@
-# نشر تلقائي على السيرفر عبر SSH بعد دفع main.
+# نشر على السيرفر عبر SSH (تشغيل يدوي من Actions).
 #
-# أضف في GitHub → Settings → Secrets and variables → Actions:
-#   DEPLOY_HOST      مثال: 192.168.1.72 أو الدومين
-#   DEPLOY_USER      اسم مستخدم SSH
-#   DEPLOY_SSH_KEY   المفتاح الخاص كامل (-----BEGIN ... PRIVATE KEY-----)
-#   DEPLOY_REPO_PATH مسار مجلد الريبو على السيرفر (حيث يوجد infra/docker-compose.yml)
+# Settings → Secrets and variables → Actions:
+#   DEPLOY_HOST       عنوان يصل إليه GitHub (Public IP / دومين / نفق SSH) — ليس 192.168.x.x إلا مع Runner داخلي
+#   DEPLOY_USER       مثال: root
+#   DEPLOY_SSH_KEY    المفتاح الخاص كامل
+#   DEPLOY_REPO_PATH  مسار مجلد الريبو على السيرفر (فيه infra/docker-compose.yml)
 #
-# اختياري: DEPLOY_PORT (افتراضي 22)
-
 name: Deploy server
 
 on:
   workflow_dispatch:
-  # فعّل السطرين التاليين بعد إضافة Secrets في GitHub:
+  # بعد التأكد من الأسرار والوصول للسيرفر:
   # push:
   #   branches: [main]
 
@@ -20,15 +18,35 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: التحقق من الأسرار المطلوبة
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_REPO_PATH: ${{ secrets.DEPLOY_REPO_PATH }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "${DEPLOY_HOST:-}" ]] && missing+=(DEPLOY_HOST)
+          [[ -z "${DEPLOY_USER:-}" ]] && missing+=(DEPLOY_USER)
+          [[ -z "${DEPLOY_SSH_KEY:-}" ]] && missing+=(DEPLOY_SSH_KEY)
+          [[ -z "${DEPLOY_REPO_PATH:-}" ]] && missing+=(DEPLOY_REPO_PATH)
+          if ((${#missing[@]})); then
+            echo "::error::Secrets ناقصة في الريبو: ${missing[*]}"
+            echo "افتح: Repo → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "Secrets OK (قيم غير معروضة هنا)."
+
       - name: SSH — سحب التعديلات وإعادة بناء الحاويات
         uses: appleboy/ssh-action@v1.2.1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
           script: |
-            set -e
+            set -euo pipefail
             cd "${{ secrets.DEPLOY_REPO_PATH }}"
             git fetch origin main
             git checkout main
