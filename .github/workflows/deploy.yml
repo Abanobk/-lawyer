@@ -18,6 +18,7 @@ jobs:
           cd "/mnt/marichia/files/app-data/lawyer/repo"
           git fetch origin main
           git checkout main
-          git pull origin main
+          # يطابق نسخة GitHub حتى لو في تعديلات محلية على السيرفر (مثل docker-compose)
+          git reset --hard origin/main
           cd infra
           docker compose up -d --build
