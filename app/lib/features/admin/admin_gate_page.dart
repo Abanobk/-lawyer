@@ -596,93 +596,112 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                     icon: Icons.settings_outlined,
                     label: 'إعدادات',
                   ),
-                  if (_section == _AdminSection.offices) ...[
-                    divider,
-                    Theme(
-                      data: Theme.of(context).copyWith(
-                        dividerColor: Colors.transparent,
-                        splashColor: Colors.transparent,
-                        highlightColor: Colors.transparent,
-                      ),
-                      child: ExpansionTile(
-                        initiallyExpanded: _officesMenuExpanded,
-                        onExpansionChanged: (v) => setState(() => _officesMenuExpanded = v),
-                        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                        childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
-                        collapsedIconColor: Colors.white,
-                        iconColor: Colors.white,
-                        title: const Text('المكاتب', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-                        children: [
-                          FutureBuilder<List<AdminOfficeDto>>(
-                            future: _officesFuture,
-                            builder: (context, snap) {
-                              final n = (snap.data ?? const <AdminOfficeDto>[]).length;
-                              return _navItem(
-                                selected: _officePanel == _AdminOfficePanel.offices,
-                                onTap: () => setState(() => _officePanel = _AdminOfficePanel.offices),
-                                icon: Icons.apartment_outlined,
-                                label: 'قائمة المكاتب',
-                                trailing: _badge('$n'),
-                              );
-                            },
-                          ),
-                          FutureBuilder<AdminTrialAnalyticsDto>(
-                            future: _trialAnalyticsFuture,
-                            builder: (context, snapTrial) {
-                              final n = snapTrial.data?.totalTrialOffices;
-                              return _navItem(
-                                selected: _officePanel == _AdminOfficePanel.trial,
-                                onTap: () => setState(() => _officePanel = _AdminOfficePanel.trial),
-                                icon: Icons.hourglass_bottom,
-                                label: 'التجربة',
-                                trailing: n == null ? null : _badge('$n'),
-                              );
-                            },
-                          ),
-                          FutureBuilder<AdminSubscriptionsAnalyticsDto>(
-                            future: _subsAnalyticsFuture,
-                            builder: (context, snapSubs) {
-                              final n = snapSubs.data?.totalActiveOffices;
-                              return _navItem(
-                                selected: _officePanel == _AdminOfficePanel.activeSubs,
-                                onTap: () => setState(() => _officePanel = _AdminOfficePanel.activeSubs),
-                                icon: Icons.credit_card_outlined,
-                                label: 'الاشتراكات',
-                                trailing: n == null ? null : _badge('$n'),
-                              );
-                            },
-                          ),
-                          FutureBuilder<AdminAlertsDto>(
-                            future: _alertsFuture,
-                            builder: (context, snapA) {
-                              final a = snapA.data;
-                              final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
-                              return _navItem(
-                                selected: _officePanel == _AdminOfficePanel.alerts,
-                                onTap: () => setState(() => _officePanel = _AdminOfficePanel.alerts),
-                                icon: Icons.notifications_active_outlined,
-                                label: 'تحذيرات',
-                                trailing: total == null ? null : _badge('$total'),
-                              );
-                            },
-                          ),
-                          FutureBuilder<List<AdminSuperAdminDto>>(
-                            future: _superAdminsFuture,
-                            builder: (context, snapU) {
-                              final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
-                              return _navItem(
-                                selected: _officePanel == _AdminOfficePanel.superAdmins,
-                                onTap: () => setState(() => _officePanel = _AdminOfficePanel.superAdmins),
-                                icon: Icons.manage_accounts_outlined,
-                                label: 'المستخدمين والصلاحيات',
-                                trailing: _badge('$n'),
-                              );
-                            },
-                          ),
-                        ],
+                  divider,
+                  Theme(
+                    data: Theme.of(context).copyWith(
+                      dividerColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                    ),
+                    child: AbsorbPointer(
+                      absorbing: _section != _AdminSection.offices,
+                      child: Opacity(
+                        opacity: _section == _AdminSection.offices ? 1.0 : 0.65,
+                        child: ExpansionTile(
+                          initiallyExpanded: _officesMenuExpanded,
+                          onExpansionChanged: (v) => setState(() => _officesMenuExpanded = v),
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                          childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          collapsedIconColor: Colors.white,
+                          iconColor: Colors.white,
+                          title: const Text('المكاتب', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+                          children: [
+                            FutureBuilder<List<AdminOfficeDto>>(
+                              future: _officesFuture,
+                              builder: (context, snap) {
+                                final n = (snap.data ?? const <AdminOfficeDto>[]).length;
+                                return _navItem(
+                                  selected: _section == _AdminSection.offices && _officePanel == _AdminOfficePanel.offices,
+                                  onTap: () => setState(() {
+                                    _section = _AdminSection.offices;
+                                    _officePanel = _AdminOfficePanel.offices;
+                                  }),
+                                  icon: Icons.apartment_outlined,
+                                  label: 'قائمة المكاتب',
+                                  trailing: _badge('$n'),
+                                );
+                              },
+                            ),
+                            FutureBuilder<AdminTrialAnalyticsDto>(
+                              future: _trialAnalyticsFuture,
+                              builder: (context, snapTrial) {
+                                final n = snapTrial.data?.totalTrialOffices;
+                                return _navItem(
+                                  selected: _section == _AdminSection.offices && _officePanel == _AdminOfficePanel.trial,
+                                  onTap: () => setState(() {
+                                    _section = _AdminSection.offices;
+                                    _officePanel = _AdminOfficePanel.trial;
+                                  }),
+                                  icon: Icons.hourglass_bottom,
+                                  label: 'التجربة',
+                                  trailing: n == null ? null : _badge('$n'),
+                                );
+                              },
+                            ),
+                            FutureBuilder<AdminSubscriptionsAnalyticsDto>(
+                              future: _subsAnalyticsFuture,
+                              builder: (context, snapSubs) {
+                                final n = snapSubs.data?.totalActiveOffices;
+                                return _navItem(
+                                  selected: _section == _AdminSection.offices && _officePanel == _AdminOfficePanel.activeSubs,
+                                  onTap: () => setState(() {
+                                    _section = _AdminSection.offices;
+                                    _officePanel = _AdminOfficePanel.activeSubs;
+                                  }),
+                                  icon: Icons.credit_card_outlined,
+                                  label: 'الاشتراكات',
+                                  trailing: n == null ? null : _badge('$n'),
+                                );
+                              },
+                            ),
+                            FutureBuilder<AdminAlertsDto>(
+                              future: _alertsFuture,
+                              builder: (context, snapA) {
+                                final a = snapA.data;
+                                final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
+                                return _navItem(
+                                  selected: _section == _AdminSection.offices && _officePanel == _AdminOfficePanel.alerts,
+                                  onTap: () => setState(() {
+                                    _section = _AdminSection.offices;
+                                    _officePanel = _AdminOfficePanel.alerts;
+                                  }),
+                                  icon: Icons.notifications_active_outlined,
+                                  label: 'تحذيرات',
+                                  trailing: total == null ? null : _badge('$total'),
+                                );
+                              },
+                            ),
+                            FutureBuilder<List<AdminSuperAdminDto>>(
+                              future: _superAdminsFuture,
+                              builder: (context, snapU) {
+                                final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
+                                return _navItem(
+                                  selected: _section == _AdminSection.offices && _officePanel == _AdminOfficePanel.superAdmins,
+                                  onTap: () => setState(() {
+                                    _section = _AdminSection.offices;
+                                    _officePanel = _AdminOfficePanel.superAdmins;
+                                  }),
+                                  icon: Icons.manage_accounts_outlined,
+                                  label: 'المستخدمين والصلاحيات',
+                                  trailing: _badge('$n'),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'اضغط عنصر لعرض التفاصيل',
@@ -765,20 +784,25 @@ class _PlansTabState extends State<_PlansTab> {
   }
 
   Future<void> _pickPackagePromo() async {
-    final res = await FilePicker.pickFiles(
-      withData: true,
-      allowMultiple: false,
-      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
-      type: FileType.image,
-    );
-    final file = (res?.files.isNotEmpty ?? false) ? res!.files.first : null;
-    if (file == null) return;
-    if (file.bytes == null || file.bytes!.isEmpty) {
+    try {
+      final res = await FilePicker.pickFiles(
+        withData: true,
+        allowMultiple: false,
+        type: FileType.custom,
+        allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
+      );
+      final file = (res?.files.isNotEmpty ?? false) ? res!.files.first : null;
+      if (file == null) return;
+      if (file.bytes == null || file.bytes!.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الملف غير متاح للرفع')));
+        return;
+      }
+      setState(() => _packagePromoFile = file);
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الملف غير متاح للرفع')));
-      return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر فتح اختيار الملفات: $e')));
     }
-    setState(() => _packagePromoFile = file);
   }
 
   Future<void> _createPackageWithOptions() async {
