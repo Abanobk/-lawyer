@@ -942,6 +942,15 @@ class _OfficesTab extends StatefulWidget {
   State<_OfficesTab> createState() => _OfficesTabState();
 }
 
+enum _AdminOfficePanel {
+  dashboard,
+  offices,
+  trial,
+  activeSubs,
+  alerts,
+  superAdmins,
+}
+
 class _OfficesTabState extends State<_OfficesTab> {
   int? _selectedOfficeId;
   AdminSubscriptionDto? _sub;
@@ -951,6 +960,7 @@ class _OfficesTabState extends State<_OfficesTab> {
   late Future<AdminSubscriptionsAnalyticsDto> _subsAnalyticsFuture;
   late Future<AdminAlertsDto> _alertsFuture;
   late Future<List<AdminSuperAdminDto>> _superAdminsFuture;
+  _AdminOfficePanel _panel = _AdminOfficePanel.dashboard;
 
   @override
   void initState() {
@@ -976,6 +986,204 @@ class _OfficesTabState extends State<_OfficesTab> {
     }
   }
 
+  void _refreshAll() {
+    setState(() {
+      _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30);
+      _subsAnalyticsFuture = widget.adminApi.subscriptionsAnalytics(days: 30);
+      _alertsFuture = widget.adminApi.alerts();
+      _superAdminsFuture = widget.adminApi.listSuperAdmins();
+    });
+  }
+
+  Widget _sidebarItem({
+    required _AdminOfficePanel value,
+    required IconData icon,
+    required String label,
+    Widget? trailing,
+  }) {
+    final selected = _panel == value;
+    return InkWell(
+      onTap: () => setState(() => _panel = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white.withValues(alpha: 0.16) : Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: selected ? 0.22 : 0.12)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ...? (trailing == null ? null : [trailing]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _badge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+    );
+  }
+
+  Widget _buildDashboardContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          _TrialCard(future: _trialAnalyticsFuture),
+          const SizedBox(height: 12),
+          _ActiveSubsCard(future: _subsAnalyticsFuture),
+          const SizedBox(height: 12),
+          _AlertsCard(future: _alertsFuture),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOfficesContent(List<AdminOfficeDto> offices) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('المكاتب', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+              const Spacer(),
+              DropdownButton<bool>(
+                value: _showAllOffices,
+                items: const [
+                  DropdownMenuItem(value: false, child: Text('اختيار مكتب واحد')),
+                  DropdownMenuItem(value: true, child: Text('جميع المستاجرين')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() {
+                    _showAllOffices = v;
+                    _selectedOfficeId = null;
+                    _sub = null;
+                    _loading = false;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _showAllOffices
+                ? FutureBuilder<List<AdminSubscriptionDto?>>(
+                    future: Future.wait(
+                      offices.map((o) async {
+                        try {
+                          return await widget.adminApi.getSubscription(o.id);
+                        } catch (_) {
+                          return null;
+                        }
+                      }),
+                    ),
+                    builder: (context, snapSubs) {
+                      if (snapSubs.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapSubs.hasError) return Center(child: Text('تعذر تحميل الاشتراكات: ${snapSubs.error}'));
+                      final subs = (snapSubs.data ?? const <AdminSubscriptionDto?>[]).whereType<AdminSubscriptionDto>().toList();
+                      if (subs.isEmpty) return const Center(child: Text('لا توجد اشتراكات'));
+                      return ListView.separated(
+                        itemCount: subs.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1),
+                        itemBuilder: (context, i) {
+                          final s = subs[i];
+                          AdminOfficeDto? office;
+                          for (final o in offices) {
+                            if (o.id == s.officeId) {
+                              office = o;
+                              break;
+                            }
+                          }
+                          return ListTile(
+                            title: Text(office?.name ?? 'مكتب #${s.officeId}'),
+                            subtitle: Text('الحالة: ${s.status} — ${s.endAt.toLocal()}'),
+                          );
+                        },
+                      );
+                    },
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Card(
+                          child: ListView(
+                            children: offices
+                                .map(
+                                  (o) => ListTile(
+                                    title: Text(o.name),
+                                    subtitle: Text('كود: ${o.code} — ${o.status}'),
+                                    selected: _selectedOfficeId == o.id,
+                                    onTap: () => _loadSub(o.id),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 4,
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: _selectedOfficeId == null
+                                ? const Center(child: Text('اختر مكتب لعرض التفاصيل'))
+                                : (_loading
+                                    ? const Center(child: CircularProgressIndicator())
+                                    : (_sub == null
+                                        ? const Center(child: Text('لا توجد بيانات اشتراك'))
+                                        : Column(
+                                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                                            children: [
+                                              Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
+                                              const SizedBox(height: 8),
+                                              Text('بداية: ${_sub!.startAt.toLocal()}'),
+                                              Text('نهاية: ${_sub!.endAt.toLocal()}'),
+                                              if ((_sub!.notes ?? '').isNotEmpty) ...[
+                                                const SizedBox(height: 8),
+                                                Text('ملاحظات: ${_sub!.notes}'),
+                                              ],
+                                            ],
+                                          ))),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -992,156 +1200,165 @@ class _OfficesTabState extends State<_OfficesTab> {
             }
             final offices = snap.data ?? const <AdminOfficeDto>[];
             if (offices.isEmpty) return const Center(child: Text('لا يوجد مكاتب بعد'));
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            // Layout: left content + right colored sidebar
+            return Row(
               children: [
-                Row(
-                  children: [
-                    Text('عرض الاشتراكات:', style: Theme.of(context).textTheme.titleMedium),
-                    const Spacer(),
-                    DropdownButton<bool>(
-                      value: _showAllOffices,
-                      items: const [
-                        DropdownMenuItem(value: false, child: Text('اختيار مكتب واحد')),
-                        DropdownMenuItem(value: true, child: Text('جميع المستاجرين')),
-                      ],
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setState(() {
-                          _showAllOffices = v;
-                          _selectedOfficeId = null;
-                          _sub = null;
-                          _loading = false;
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'تحديث',
-                      onPressed: () {
-                        setState(() {
-                          _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30);
-                          _subsAnalyticsFuture = widget.adminApi.subscriptionsAnalytics(days: 30);
-                          _alertsFuture = widget.adminApi.alerts();
-                          _superAdminsFuture = widget.adminApi.listSuperAdmins();
-                        });
-                      },
-                      icon: const Icon(Icons.refresh),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
                 Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 7,
-                        child: _showAllOffices
-                            ? FutureBuilder<List<AdminSubscriptionDto?>>(
-                                future: Future.wait(
-                                  offices.map((o) async {
-                                    try {
-                                      return await widget.adminApi.getSubscription(o.id);
-                                    } catch (_) {
-                                      return null;
-                                    }
-                                  }),
-                                ),
-                                builder: (context, snapSubs) {
-                                  if (snapSubs.connectionState == ConnectionState.waiting) {
-                                    return const Center(child: CircularProgressIndicator());
-                                  }
-                                  if (snapSubs.hasError) return Center(child: Text('تعذر تحميل الاشتراكات: ${snapSubs.error}'));
-                                  final subs = (snapSubs.data ?? const <AdminSubscriptionDto?>[]).whereType<AdminSubscriptionDto>().toList();
-                                  if (subs.isEmpty) return const Center(child: Text('لا توجد اشتراكات'));
-                                  return ListView.separated(
-                                    itemCount: subs.length,
-                                    separatorBuilder: (context, index) => const Divider(height: 1),
-                                    itemBuilder: (context, i) {
-                                      final s = subs[i];
-                                      AdminOfficeDto? office;
-                                      for (final o in offices) {
-                                        if (o.id == s.officeId) {
-                                          office = o;
-                                          break;
-                                        }
-                                      }
-                                      return ListTile(
-                                        title: Text(office?.name ?? 'مكتب #${s.officeId}'),
-                                        subtitle: Text('الحالة: ${s.status} — ${s.endAt.toLocal()}'),
-                                        trailing: const Icon(Icons.chevron_right),
-                                      );
-                                    },
-                                  );
-                                },
-                              )
-                            : Row(
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Builder(
+                      builder: (context) {
+                        switch (_panel) {
+                          case _AdminOfficePanel.dashboard:
+                            return _buildDashboardContent();
+                          case _AdminOfficePanel.offices:
+                            return _buildOfficesContent(offices);
+                          case _AdminOfficePanel.trial:
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Expanded(
-                                    flex: 3,
-                                    child: ListView(
-                                      children: offices
-                                          .map(
-                                            (o) => ListTile(
-                                              title: Text(o.name),
-                                              subtitle: Text('كود: ${o.code} — ${o.status}'),
-                                              selected: _selectedOfficeId == o.id,
-                                              onTap: () => _loadSub(o.id),
-                                            ),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 4,
-                                    child: Card(
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(16),
-                                        child: _selectedOfficeId == null
-                                            ? const Center(child: Text('اختر مكتب لعرض التفاصيل'))
-                                            : (_loading
-                                                ? const Center(child: CircularProgressIndicator())
-                                                : (_sub == null
-                                                    ? const Center(child: Text('لا توجد بيانات اشتراك'))
-                                                    : Column(
-                                                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                                                        children: [
-                                                          Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
-                                                          const SizedBox(height: 8),
-                                                          Text('بداية: ${_sub!.startAt.toLocal()}'),
-                                                          Text('نهاية: ${_sub!.endAt.toLocal()}'),
-                                                          if ((_sub!.notes ?? '').isNotEmpty) ...[
-                                                            const SizedBox(height: 8),
-                                                            Text('ملاحظات: ${_sub!.notes}'),
-                                                          ],
-                                                        ],
-                                                      ))),
-                                      ),
-                                    ),
+                                  Text('التجربة', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 12),
+                                  _TrialCard(future: _trialAnalyticsFuture),
+                                ],
+                              ),
+                            );
+                          case _AdminOfficePanel.activeSubs:
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text('الاشتراكات الفعلية', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 12),
+                                  _ActiveSubsCard(future: _subsAnalyticsFuture),
+                                ],
+                              ),
+                            );
+                          case _AdminOfficePanel.alerts:
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text('التحذيرات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 12),
+                                  _AlertsCard(future: _alertsFuture),
+                                ],
+                              ),
+                            );
+                          case _AdminOfficePanel.superAdmins:
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text('المستخدمين والصلاحيات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                                  const SizedBox(height: 12),
+                                  _SuperAdminsCard(
+                                    future: _superAdminsFuture,
+                                    adminApi: widget.adminApi,
+                                    onRefresh: () => setState(() => _superAdminsFuture = widget.adminApi.listSuperAdmins()),
                                   ),
                                 ],
                               ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 340,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _TrialCard(future: _trialAnalyticsFuture),
-                              const SizedBox(height: 12),
-                              _ActiveSubsCard(future: _subsAnalyticsFuture),
-                              const SizedBox(height: 12),
-                              _AlertsCard(future: _alertsFuture),
-                              const SizedBox(height: 12),
-                              _SuperAdminsCard(future: _superAdminsFuture, adminApi: widget.adminApi, onRefresh: () => setState(() => _superAdminsFuture = widget.adminApi.listSuperAdmins())),
-                            ],
-                          ),
+                            );
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: 300,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F2A5F),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.admin_panel_settings, color: Colors.white),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'لوحة السوبر أدمن',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'تحديث',
+                              onPressed: _refreshAll,
+                              icon: const Icon(Icons.refresh, color: Colors.white),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+                        _sidebarItem(value: _AdminOfficePanel.dashboard, icon: Icons.dashboard_outlined, label: 'لوحة التحكم'),
+                        _sidebarItem(value: _AdminOfficePanel.offices, icon: Icons.apartment_outlined, label: 'المكاتب', trailing: _badge('${offices.length}')),
+                        FutureBuilder<AdminTrialAnalyticsDto>(
+                          future: _trialAnalyticsFuture,
+                          builder: (context, snapTrial) {
+                            final n = snapTrial.data?.totalTrialOffices;
+                            return _sidebarItem(
+                              value: _AdminOfficePanel.trial,
+                              icon: Icons.hourglass_bottom,
+                              label: 'التجربة',
+                              trailing: n == null ? null : _badge('$n'),
+                            );
+                          },
+                        ),
+                        FutureBuilder<AdminSubscriptionsAnalyticsDto>(
+                          future: _subsAnalyticsFuture,
+                          builder: (context, snapSubs) {
+                            final n = snapSubs.data?.totalActiveOffices;
+                            return _sidebarItem(
+                              value: _AdminOfficePanel.activeSubs,
+                              icon: Icons.credit_card_outlined,
+                              label: 'الاشتراكات',
+                              trailing: n == null ? null : _badge('$n'),
+                            );
+                          },
+                        ),
+                        FutureBuilder<AdminAlertsDto>(
+                          future: _alertsFuture,
+                          builder: (context, snapA) {
+                            final a = snapA.data;
+                            final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
+                            return _sidebarItem(
+                              value: _AdminOfficePanel.alerts,
+                              icon: Icons.notifications_active_outlined,
+                              label: 'تحذيرات',
+                              trailing: total == null ? null : _badge('$total'),
+                            );
+                          },
+                        ),
+                        FutureBuilder<List<AdminSuperAdminDto>>(
+                          future: _superAdminsFuture,
+                          builder: (context, snapU) {
+                            final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
+                            return _sidebarItem(
+                              value: _AdminOfficePanel.superAdmins,
+                              icon: Icons.manage_accounts_outlined,
+                              label: 'المستخدمين',
+                              trailing: _badge('$n'),
+                            );
+                          },
+                        ),
+                        const Spacer(),
+                        Text(
+                          'اضغط عنصر لعرض التفاصيل',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
