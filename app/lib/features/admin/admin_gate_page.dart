@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
 import 'package:lawyer_app/data/api/admin_api.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
@@ -1066,10 +1069,53 @@ class _PlansTabState extends State<_PlansTab> {
   }
 }
 
-class _PackagesTab extends StatelessWidget {
+class _PackagesTab extends StatefulWidget {
   const _PackagesTab({required this.future, required this.onRefresh});
   final Future<List<AdminPlanDto>> future;
   final VoidCallback onRefresh;
+
+  @override
+  State<_PackagesTab> createState() => _PackagesTabState();
+}
+
+class _PackagesTabState extends State<_PackagesTab> {
+  final _promoApi = AdminPlanPromoFilesApi();
+  final Map<int, Future<Uint8List?>> _promoBytes = {};
+
+  Widget _promoImage(AdminPlanDto p) {
+    if (p.promoImagePath == null || p.promoImagePath!.trim().isEmpty) {
+      return Container(
+        color: Colors.grey.withValues(alpha: 0.12),
+        child: const Center(child: Icon(Icons.image_outlined, size: 48)),
+      );
+    }
+    final fut = _promoBytes.putIfAbsent(
+      p.id,
+      () async {
+        try {
+          final (bytes, _) = await _promoApi.downloadPromo(p.id);
+          return bytes;
+        } catch (_) {
+          return null;
+        }
+      },
+    );
+    return FutureBuilder<Uint8List?>(
+      future: fut,
+      builder: (context, s) {
+        if (s.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+        }
+        if (!s.hasData || s.data == null) {
+          return Container(
+            color: Colors.grey.withValues(alpha: 0.12),
+            child: const Center(child: Icon(Icons.broken_image_outlined, size: 48)),
+          );
+        }
+        return Image.memory(s.data!, fit: BoxFit.cover, width: double.infinity);
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1081,36 +1127,56 @@ class _PackagesTab extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text('الباقات', style: Theme.of(context).textTheme.titleLarge),
+                Text('معاينة الباقات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
                 const Spacer(),
-                IconButton(onPressed: onRefresh, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
+                IconButton(onPressed: widget.onRefresh, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
               ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'عرض الباقات المفعّلة كما يظهر للمستأجر (حد أقصى 6).',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
             Expanded(
               child: FutureBuilder<List<AdminPlanDto>>(
-                future: future,
+                future: widget.future,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                   if (snap.hasError) return Center(child: Text('تعذر تحميل الباقات: ${snap.error}'));
                   final all = snap.data ?? const <AdminPlanDto>[];
-                  final active = all.where((p) => p.isActive).toList();
+                  final active = all.where((p) => p.isActive).take(6).toList();
                   if (active.isEmpty) return const Center(child: Text('لا توجد باقات مفعّلة'));
 
-                  return ListView.separated(
-                    itemCount: active.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final p = active[i];
-                      final displayName = (p.packageName ?? '').trim().isNotEmpty ? p.packageName! : p.name;
-                      final price = (p.priceCents / 100).toStringAsFixed(2);
-                      return ListTile(
-                        title: Text(displayName),
-                        subtitle: Text(
-                          'الخيار: ${p.name} — السعر: $price — المدة: ${p.durationDays} يوم'
-                          ' — حتى: ${p.maxUsers ?? "—"} مستخدم'
-                          ' — صلاحيات: ${p.allowedPermKeys?.length ?? "—"}',
+                  return LayoutBuilder(
+                    builder: (context, c) {
+                      final w = c.maxWidth;
+                      final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
+                      return GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: cross,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                          childAspectRatio: cross == 3 ? 0.58 : (cross == 2 ? 0.62 : 0.58),
                         ),
+                        itemCount: active.length,
+                        itemBuilder: (context, i) {
+                          final p = active[i];
+                          final title = (p.packageName ?? '').trim().isNotEmpty ? p.packageName!.trim() : p.name;
+                          return PlanOfferCard(
+                            title: title,
+                            optionName: p.name,
+                            priceText: 'السعر: ${(p.priceCents / 100).toStringAsFixed(2)}',
+                            durationText: 'المدة: ${p.durationDays} يوم',
+                            maxUsersText: p.maxUsers != null ? 'حتى: ${p.maxUsers} مستخدم' : null,
+                            permCountText: p.allowedPermKeys != null ? 'عدد الصلاحيات: ${p.allowedPermKeys!.length}' : null,
+                            packageKeyText: p.packageKey,
+                            footerHint: p.instapayLink != null && p.instapayLink!.trim().isNotEmpty
+                                ? 'رابط إنستاباي مضبوط لهذه الباقة.'
+                                : 'لا يوجد رابط إنستاباي لهذه الباقة.',
+                            image: _promoImage(p),
+                          );
+                        },
                       );
                     },
                   );

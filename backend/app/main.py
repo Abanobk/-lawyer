@@ -2069,6 +2069,24 @@ def admin_upload_plan_promo_image(
     return {"ok": True, "id": plan_id}
 
 
+@app.get("/admin/plans/{plan_id}/promo-image")
+def admin_download_plan_promo_image(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    promo_path = getattr(plan, "promo_image_path", None)
+    if not promo_path:
+        raise HTTPException(status_code=404, detail="Promo image not found")
+    path = Path(promo_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Promo image missing")
+    return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+
+
 @app.get("/admin/payment-proofs", response_model=list[PaymentProofOut])
 def admin_list_payment_proofs(
     status: ProofStatus | None = Query(default=None),

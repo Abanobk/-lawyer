@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
+import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
 import 'package:lawyer_app/data/api/plans_api.dart';
 import 'package:lawyer_app/data/api/subscription_api.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,12 +17,10 @@ class SubscriptionPage extends StatefulWidget {
 
 class _SubscriptionPageState extends State<SubscriptionPage> {
   final _plansApi = PlansApi();
-  final _subApi = SubscriptionApi();
   final _filesApi = SubscriptionFilesApi();
   final _promoFilesApi = PlanPromoFilesApi();
 
   late final Future<List<PlanDto>> _plansFuture = _plansApi.list();
-  late Future<List<PaymentProofDto>> _proofsFuture = _subApi.listPaymentProofs();
 
   int? _selectedPlanId;
   PlatformFile? _pickedFile;
@@ -85,10 +84,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       if (!mounted) return;
       _reference.clear();
       _notes.clear();
-      setState(() {
-        _pickedFile = null;
-        _proofsFuture = _subApi.listPaymentProofs();
-      });
+      setState(() => _pickedFile = null);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم رفع إثبات التحويل وسيتم مراجعته')));
     } catch (e) {
       if (!mounted) return;
@@ -98,175 +94,123 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     }
   }
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'approved':
-        return Colors.green;
-      case 'rejected':
-        return Colors.red;
-      default:
-        return Colors.orange;
-    }
-  }
-
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'approved':
-        return 'تمت الموافقة';
-      case 'rejected':
-        return 'مرفوض';
-      default:
-        return 'قيد المراجعة';
-    }
-  }
-
-  Future<void> _viewProof(PaymentProofDto p) async {
-    try {
-      final (bytes, contentType) = await _filesApi.downloadPaymentProof(p.id);
-      if (!mounted) return;
-      await showDialog(
-        context: context,
-        builder: (context) {
-          final isPdf = (contentType ?? '').contains('pdf');
-          return AlertDialog(
-            title: Text('إثبات التحويل #${p.id}'),
-            content: SizedBox(
-              width: AppLayout.isWebDesktop(context) ? 900 : 360,
-              child: isPdf
-                  ? const Text('تم تنزيل ملف PDF. فتحه مباشرة غير مدعوم هنا.')
-                  : Image.memory(bytes, fit: BoxFit.contain),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق')),
-            ],
+  Widget _promoArea(PlanDto p) {
+    final promoFuture = p.promoImagePath == null
+        ? null
+        : _promoBytesFutures.putIfAbsent(
+            p.id,
+            () async {
+              try {
+                final (bytes, _) = await _promoFilesApi.downloadPromo(p.id);
+                return bytes;
+              } catch (_) {
+                return null;
+              }
+            },
           );
-        },
+    if (promoFuture == null) {
+      return Container(
+        color: Colors.grey.withValues(alpha: 0.12),
+        child: const Center(child: Icon(Icons.image_outlined, size: 48)),
       );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر عرض الإثبات: $e')));
     }
+    return FutureBuilder<Uint8List?>(
+      future: promoFuture,
+      builder: (context, fs) {
+        if (fs.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+        }
+        if (!fs.hasData || fs.data == null) {
+          return Container(
+            color: Colors.grey.withValues(alpha: 0.12),
+            child: const Center(child: Icon(Icons.broken_image_outlined, size: 48)),
+          );
+        }
+        return Image.memory(fs.data!, fit: BoxFit.cover, width: double.infinity);
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          flex: AppLayout.isWebDesktop(context) ? 2 : 1,
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: FutureBuilder<List<PlanDto>>(
-                future: _plansFuture,
-                builder: (context, snap) {
-                  final plans = snap.data ?? const <PlanDto>[];
-                  if (snap.connectionState == ConnectionState.done && _selectedPlanId == null && plans.isNotEmpty) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted) return;
-                      setState(() => _selectedPlanId = plans.first.id);
-                    });
-                  }
-                  return Column(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: FutureBuilder<List<PlanDto>>(
+        future: _plansFuture,
+        builder: (context, snap) {
+          final plans = snap.data ?? const <PlanDto>[];
+          if (snap.connectionState == ConnectionState.done && _selectedPlanId == null && plans.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() => _selectedPlanId = plans.first.id);
+            });
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              const Text('اختر الباقة، ثم افتح إنستاباي من الزر. بعد الدفع ارفع صورة التحويل في الأسفل للمراجعة.'),
+              const SizedBox(height: 16),
+              if (snap.connectionState == ConnectionState.waiting)
+                const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
+              else if (snap.hasError)
+                Text('تعذر تحميل الباقات: ${snap.error}')
+              else if (plans.isEmpty)
+                const Text('لا توجد باقات متاحة حالياً')
+              else
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final w = c.maxWidth;
+                    final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
+                    final shown = plans.take(6).toList();
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: cross,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        childAspectRatio: cross == 3 ? 0.58 : (cross == 2 ? 0.62 : 0.58),
+                      ),
+                      itemCount: shown.length,
+                      itemBuilder: (context, i) {
+                        final p = shown[i];
+                        final isSelected = p.id == _selectedPlanId;
+                        final title = (p.packageName ?? '').trim().isNotEmpty ? p.packageName!.trim() : p.name;
+                        return PlanOfferCard(
+                          title: title,
+                          optionName: p.name,
+                          priceText: 'السعر: ${(p.priceCents / 100).toStringAsFixed(2)}',
+                          durationText: 'المدة: ${p.durationDays} يوم',
+                          maxUsersText: p.maxUsers != null ? 'حتى: ${p.maxUsers} مستخدم' : null,
+                          permCountText: p.allowedPermKeys != null ? 'عدد الصلاحيات: ${p.allowedPermKeys!.length}' : null,
+                          packageKeyText: p.packageKey,
+                          footerHint: 'بعد الدفع استخدم زر «اشترِ الآن» لفتح إنستاباي، ثم ارفع الإثبات أسفل الصفحة.',
+                          image: _promoArea(p),
+                          selected: isSelected,
+                          footer: FilledButton(
+                            onPressed: _uploading || p.instapayLink == null
+                                ? null
+                                : () {
+                                    setState(() => _selectedPlanId = p.id);
+                                    _openLink(p.instapayLink);
+                                  },
+                            child: const Text('اشترِ الآن'),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              const SizedBox(height: 24),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall),
-                      const SizedBox(height: 8),
-                      const Text('اختر الباقة المناسبة، ثم افتح إنستاباي وارفع صورة التحويل للمراجعة.'),
-                      const SizedBox(height: 12),
-                      if (snap.connectionState == ConnectionState.waiting)
-                        const Center(child: CircularProgressIndicator())
-                      else if (snap.hasError)
-                        Text('تعذر تحميل الباقات: ${snap.error}')
-                      else if (plans.isEmpty)
-                        const Text('لا توجد باقات متاحة حالياً')
-                      else
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: plans.map((p) {
-                            final promoFuture = p.promoImagePath == null
-                                ? null
-                                : _promoBytesFutures.putIfAbsent(
-                                    p.id,
-                                    () async {
-                                      try {
-                                        final (bytes, _) = await _promoFilesApi.downloadPromo(p.id);
-                                        return bytes;
-                                      } catch (_) {
-                                        return null;
-                                      }
-                                    },
-                                  );
-                            final isSelected = p.id == _selectedPlanId;
-                            return SizedBox(
-                              width: AppLayout.isWebDesktop(context) ? 270 : 240,
-                              child: Card(
-                                elevation: isSelected ? 6 : 0,
-                                color: isSelected ? Colors.blue.withValues(alpha: 0.10) : null,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                                    children: [
-                                      SizedBox(
-                                        height: 110,
-                                        child: promoFuture == null
-                                            ? Container(
-                                                decoration: BoxDecoration(
-                                                  borderRadius: BorderRadius.circular(10),
-                                                  color: Colors.grey.withValues(alpha: 0.10),
-                                                ),
-                                                child: const Center(child: Icon(Icons.image_outlined)),
-                                              )
-                                            : ClipRRect(
-                                                borderRadius: BorderRadius.circular(10),
-                                                child: FutureBuilder<Uint8List?>(
-                                                  future: promoFuture,
-                                                  builder: (context, fs) {
-                                                    if (fs.connectionState == ConnectionState.waiting) {
-                                                      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                                                    }
-                                                    if (!fs.hasData || fs.data == null) {
-                                                      return Container(
-                                                        color: Colors.grey.withValues(alpha: 0.10),
-                                                        child: const Center(child: Icon(Icons.broken_image_outlined)),
-                                                      );
-                                                    }
-                                                    return Image.memory(fs.data!, fit: BoxFit.cover);
-                                                  },
-                                                ),
-                                              ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        p.name,
-                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text('السعر: ${(p.priceCents / 100).toStringAsFixed(2)}'),
-                                      Text('المدة: ${p.durationDays} يوم'),
-                                      if (p.maxUsers != null) Text('حتى: ${p.maxUsers} مستخدم'),
-                                      if (p.allowedPermKeys != null) Text('صلاحيات: ${p.allowedPermKeys!.length}'),
-                                      const SizedBox(height: 10),
-                                      FilledButton(
-                                        onPressed: _uploading || p.instapayLink == null
-                                            ? null
-                                            : () {
-                                                setState(() => _selectedPlanId = p.id);
-                                                _openLink(p.instapayLink);
-                                              },
-                                        child: const Text('اشترِ الآن'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
+                      Text('رفع إثبات التحويل', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
                         onPressed: _uploading ? null : _pickFile,
@@ -295,73 +239,14 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                             : const Text('رفع الإثبات'),
                       ),
                     ],
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
-        if (AppLayout.isWebDesktop(context)) const SizedBox(width: 12),
-        Expanded(
-          flex: 3,
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: FutureBuilder<List<PaymentProofDto>>(
-                future: _proofsFuture,
-                builder: (context, snap) {
-                  final proofs = snap.data ?? const <PaymentProofDto>[];
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('إثباتات التحويل', style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 8),
-                      if (snap.connectionState == ConnectionState.waiting)
-                        const Center(child: CircularProgressIndicator())
-                      else if (snap.hasError)
-                        Text('تعذر تحميل الإثباتات: ${snap.error}')
-                      else if (proofs.isEmpty)
-                        const Text('لم يتم رفع أي إثباتات بعد')
-                      else
-                        Expanded(
-                          child: ListView.separated(
-                            itemCount: proofs.length,
-                            separatorBuilder: (context, index) => const Divider(height: 1),
-                            itemBuilder: (context, i) {
-                              final p = proofs[i];
-                              final color = _statusColor(p.status);
-                              return ListTile(
-                                title: Text('إثبات #${p.id}'),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('الحالة: ${_statusLabel(p.status)}'),
-                                    if ((p.decisionNotes ?? '').isNotEmpty) Text('ملاحظة الإدارة: ${p.decisionNotes}'),
-                                  ],
-                                ),
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(color: color.withValues(alpha: 0.35)),
-                                  ),
-                                  child: Text(_statusLabel(p.status), style: TextStyle(color: color)),
-                                ),
-                                onTap: () => _viewProof(p),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
+              if (AppLayout.isWebDesktop(context)) const SizedBox(height: 32),
+            ],
+          );
+        },
+      ),
     );
   }
 }
-

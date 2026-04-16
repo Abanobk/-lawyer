@@ -631,5 +631,18 @@ class AdminPlanPromoFilesApi {
       throw AdminPlanPromoFilesApiException(body.isEmpty ? 'فشل رفع الصورة' : body, statusCode: streamed.statusCode);
     }
   }
+
+  Future<(Uint8List bytes, String? contentType)> downloadPromo(int planId) async {
+    final token = await _tokens.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw AdminPlanPromoFilesApiException('سجّل الدخول أولاً');
+    }
+    final uri = ApiConfig.uri('admin/plans/$planId/promo-image');
+    final res = await _client.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw AdminPlanPromoFilesApiException('فشل تنزيل صورة الباقة', statusCode: res.statusCode);
+    }
+    return (res.bodyBytes, res.headers['content-type']);
+  }
 }
 
