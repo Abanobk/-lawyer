@@ -98,13 +98,13 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
   void _reload() => setState(() => _future = _load());
 
   Future<void> _createAccount(_AdminData data) async {
-    final userId = await showDialog<int>(
+    final res = await showDialog<_CreateAccountResult>(
       context: context,
-      builder: (context) => _PickUserDialog(users: data.users, title: 'اختيار موظف لإنشاء عهدة'),
+      builder: (context) => _CreateAccountDialog(users: data.users, title: 'تحديد العهدة لموظف'),
     );
-    if (userId == null) return;
+    if (res == null) return;
     try {
-      await _custodyApi.createAccount(userId);
+      await _custodyApi.createAccount(userId: res.userId, initialAmount: res.initialAmount);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إنشاء عهدة للموظف')));
       _reload();
@@ -355,13 +355,6 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
     );
     if (res == null) return;
     try {
-      final spend = await _custodyApi.createSpend(
-        amount: res.amount,
-        occurredAt: res.occurredAt,
-        description: res.description,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل المصروف (معلق للمراجعة)')));
       final upload = await FilePicker.pickFiles(
         withData: true,
         allowMultiple: false,
@@ -369,11 +362,22 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
         allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
       );
       final file = (upload?.files == null || upload!.files.isEmpty) ? null : upload.files.first;
-      if (file != null) {
-        await _filesApi.uploadReceipt(spendId: spend.id, file: file);
+      if (file == null || file.bytes == null || file.bytes!.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم رفع الإيصال')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اختر إيصال/مستند للصرف')));
+        return;
       }
+      final spend = await _custodyApi.createSpend(
+        amount: res.amount,
+        occurredAt: res.occurredAt,
+        description: res.description,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل المصروف (معلق للمراجعة)')));
+
+      await _filesApi.uploadReceipt(spendId: spend.id, file: file);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم رفع الإيصال')));
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -427,23 +431,72 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
   }
 }
 
-class _PickUserDialog extends StatelessWidget {
-  const _PickUserDialog({required this.users, required this.title});
+class _CreateAccountResult {
+  const _CreateAccountResult({required this.userId, required this.initialAmount});
+  final int userId;
+  final double initialAmount;
+}
+
+class _CreateAccountDialog extends StatefulWidget {
+  const _CreateAccountDialog({required this.users, required this.title});
   final List<OfficeUserDto> users;
   final String title;
 
   @override
+  State<_CreateAccountDialog> createState() => _CreateAccountDialogState();
+}
+
+class _CreateAccountDialogState extends State<_CreateAccountDialog> {
+  int? _userId;
+  final _amount = TextEditingController();
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: Text(title),
-      children: users
-          .map(
-            (u) => SimpleDialogOption(
-              onPressed: () => Navigator.of(context).pop(u.id),
-              child: Text(u.email),
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 640,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownMenu<int>(
+              initialSelection: _userId,
+              label: const Text('الموظف'),
+              expandedInsets: EdgeInsets.zero,
+              dropdownMenuEntries:
+                  widget.users.map((u) => DropdownMenuEntry(value: u.id, label: u.email)).toList(),
+              onSelected: (v) => setState(() => _userId = v),
             ),
-          )
-          .toList(),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _amount,
+              decoration: const InputDecoration(labelText: 'العهدة كام؟'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
+        FilledButton(
+          onPressed: () {
+            final uid = _userId;
+            final amt = double.tryParse(_amount.text.trim());
+            if (uid == null || amt == null || amt <= 0) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أكمل البيانات')));
+              return;
+            }
+            Navigator.of(context).pop(_CreateAccountResult(userId: uid, initialAmount: amt));
+          },
+          child: const Text('حفظ'),
+        ),
+      ],
     );
   }
 }

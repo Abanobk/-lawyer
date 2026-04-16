@@ -214,6 +214,9 @@ class CustodyAccountOut(BaseModel):
 
 class CustodyAccountCreate(BaseModel):
     user_id: int
+    # Initial amount that the office sets as the required custody for this employee.
+    # If provided, backend will create an advance and increase current_balance.
+    initial_amount: float | None = Field(default=None, gt=0)
 
 
 class CustodyAdvanceCreate(BaseModel):

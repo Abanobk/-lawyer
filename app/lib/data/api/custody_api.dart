@@ -121,10 +121,16 @@ class CustodyApi {
     );
   }
 
-  Future<CustodyAccountDto> createAccount(int userId) async {
+  Future<CustodyAccountDto> createAccount({
+    required int userId,
+    double? initialAmount,
+  }) async {
     return _client.postJson<CustodyAccountDto>(
       'custody/accounts',
-      {'user_id': userId},
+      {
+        'user_id': userId,
+        'initial_amount': initialAmount,
+      },
       decode: (json) => CustodyAccountDto.fromJson(json as Map<String, dynamic>),
     );
   }

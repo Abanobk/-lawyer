@@ -781,6 +781,21 @@ def custody_create_account(payload: CustodyAccountCreate, db: Session = Depends(
     db.add(acc)
     db.commit()
     db.refresh(acc)
+
+    # If office sets initial custody amount, record it as an advance and update balance.
+    if payload.initial_amount is not None:
+        adv = CustodyAdvance(
+            office_id=user.office_id,
+            account_id=acc.id,
+            amount=payload.initial_amount,
+            occurred_at=_now(),
+            notes="initial custody",
+            created_by_user_id=user.id,
+        )
+        db.add(adv)
+        acc.current_balance = float(acc.current_balance) + float(payload.initial_amount)
+        db.commit()
+        db.refresh(acc)
     return CustodyAccountOut(id=acc.id, user_id=acc.user_id, user_email=target.email, current_balance=float(acc.current_balance), created_at=acc.created_at)
 
 
@@ -895,6 +910,14 @@ def custody_approve_spend(spend_id: int, db: Session = Depends(get_db), user: Us
         raise HTTPException(status_code=404, detail="Spend not found")
     if spend.status != CustodySpendStatus.pending:
         raise HTTPException(status_code=400, detail="Spend already reviewed")
+    # Require at least one uploaded receipt before approving.
+    has_receipt = db.scalar(
+        select(CustodyReceiptFile.id)
+        .where(CustodyReceiptFile.office_id == user.office_id, CustodyReceiptFile.spend_id == spend_id)
+        .limit(1)
+    )
+    if not has_receipt:
+        raise HTTPException(status_code=400, detail="Receipt required before approval")
     acc = db.get(CustodyAccount, spend.account_id)
     if not acc or acc.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Account not found")
