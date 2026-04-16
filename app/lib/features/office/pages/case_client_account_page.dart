@@ -362,7 +362,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                   ];
                   Widget rowPair(int a, int b) {
                     return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(child: cards[a]),
                         const SizedBox(width: 10),
@@ -373,7 +373,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
 
                   if (w >= 1000) {
                     return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         for (var i = 0; i < 4; i++) ...[
                           if (i > 0) const SizedBox(width: 10),
@@ -437,105 +437,15 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                           child: Center(child: Text('لا توجد عمليات')),
                         )
                       else
-                        LayoutBuilder(
-                          builder: (context, tableConstraints) {
-                            return Table(
-                              columnWidths: {
-                                0: const FixedColumnWidth(108),
-                                1: FlexColumnWidth(tableConstraints.maxWidth >= 700 ? 2.4 : 2),
-                                2: FlexColumnWidth(tableConstraints.maxWidth >= 700 ? 2 : 1.6),
-                                3: const FixedColumnWidth(96),
-                                4: const FixedColumnWidth(104),
-                                5: const FixedColumnWidth(118),
-                              },
-                              border: TableBorder(
-                                horizontalInside: BorderSide(color: Colors.grey.shade200),
-                              ),
-                              children: [
-                                TableRow(
-                                  decoration: BoxDecoration(color: Colors.grey.shade50),
-                                  children: _tableCellsHeader(const [
-                                    'التاريخ',
-                                    'البيان',
-                                    'القضية / الموكل',
-                                    'المبلغ',
-                                    'النوع',
-                                    'الأوامر',
-                                  ]),
-                                ),
-                                ...rows.map((t) {
-                                  final isInc = t.direction == 'income';
-                                  return TableRow(
-                                    children: [
-                                      _cellPadding(Text(df.format(t.occurredAt.toLocal()))),
-                                      _cellPadding(
-                                        Text(
-                                          t.description ?? '—',
-                                          softWrap: true,
-                                          maxLines: 4,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      _cellPadding(
-                                        Wrap(
-                                          crossAxisAlignment: WrapCrossAlignment.center,
-                                          spacing: 6,
-                                          children: [
-                                            InkWell(
-                                              onTap: () => context.go('/o/$officeCode/cases/${c.id}'),
-                                              child: Text(
-                                                _caseRef(c),
-                                                style: TextStyle(
-                                                  color: AppColors.primaryBlue,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                            Text(c.clientName, style: TextStyle(color: Colors.grey.shade800)),
-                                          ],
-                                        ),
-                                      ),
-                                      _cellPadding(
-                                        Text(
-                                          money.format(t.amount),
-                                          style: TextStyle(
-                                            color: isInc ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      _cellPadding(
-                                        Align(
-                                          alignment: AlignmentDirectional.centerStart,
-                                          child: _TypeChip(income: isInc),
-                                        ),
-                                      ),
-                                      _cellPadding(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            _SquareIconButton(
-                                              color: Colors.cyan.shade100,
-                                              iconColor: Colors.cyan.shade800,
-                                              icon: Icons.edit_outlined,
-                                              onPressed: () => _editTransaction(t),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            _SquareIconButton(
-                                              color: Colors.red.shade100,
-                                              iconColor: Colors.red.shade800,
-                                              icon: Icons.delete_outline,
-                                              onPressed: () => _deleteTransaction(t),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }),
-                              ],
-                            );
-                          },
+                        _TransactionsList(
+                          rows: rows,
+                          caseDto: c,
+                          money: money,
+                          df: df,
+                          onEdit: _editTransaction,
+                          onDelete: _deleteTransaction,
+                          caseRef: _caseRef(c),
+                          goToCase: () => context.go('/o/$officeCode/cases/${c.id}'),
                         ),
                     ],
                   ),
@@ -548,21 +458,139 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
     );
   }
 
-  List<Widget> _tableCellsHeader(List<String> labels) {
-    return labels
-        .map(
-          (s) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-            child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-          ),
-        )
-        .toList();
-  }
+}
 
-  Widget _cellPadding(Widget child) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-      child: child,
+class _TransactionsList extends StatelessWidget {
+  const _TransactionsList({
+    required this.rows,
+    required this.caseDto,
+    required this.money,
+    required this.df,
+    required this.onEdit,
+    required this.onDelete,
+    required this.caseRef,
+    required this.goToCase,
+  });
+
+  final List<CaseTransactionDto> rows;
+  final CaseDto caseDto;
+  final NumberFormat money;
+  final DateFormat df;
+  final void Function(CaseTransactionDto) onEdit;
+  final void Function(CaseTransactionDto) onDelete;
+  final String caseRef;
+  final VoidCallback goToCase;
+
+  static const _hStyle = TextStyle(fontWeight: FontWeight.w600, fontSize: 13);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 102, child: Text('التاريخ', style: _hStyle)),
+              Expanded(flex: 26, child: Text('البيان', style: _hStyle)),
+              Expanded(flex: 24, child: Text('القضية / الموكل', style: _hStyle)),
+              SizedBox(width: 92, child: Text('المبلغ', style: _hStyle)),
+              SizedBox(width: 104, child: Text('النوع', style: _hStyle)),
+              SizedBox(width: 118, child: Text('الأوامر', style: _hStyle)),
+            ],
+          ),
+        ),
+        for (final t in rows) ...[
+          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 102, child: Text(df.format(t.occurredAt.toLocal()), style: const TextStyle(fontSize: 13))),
+                Expanded(
+                  flex: 26,
+                  child: Text(
+                    t.description ?? '—',
+                    softWrap: true,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                Expanded(
+                  flex: 24,
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      InkWell(
+                        onTap: goToCase,
+                        child: Text(
+                          caseRef,
+                          style: const TextStyle(
+                            color: AppColors.primaryBlue,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Text(caseDto.clientName, style: TextStyle(color: Colors.grey.shade800, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 92,
+                  child: Text(
+                    money.format(t.amount),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: t.direction == 'income' ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 104,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _TypeChip(income: t.direction == 'income'),
+                  ),
+                ),
+                SizedBox(
+                  width: 118,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _SquareIconButton(
+                        color: Colors.cyan.shade100,
+                        iconColor: Colors.cyan.shade800,
+                        icon: Icons.edit_outlined,
+                        onPressed: () => onEdit(t),
+                      ),
+                      const SizedBox(width: 8),
+                      _SquareIconButton(
+                        color: Colors.red.shade100,
+                        iconColor: Colors.red.shade800,
+                        icon: Icons.delete_outline,
+                        onPressed: () => onDelete(t),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -105,7 +105,7 @@ class OfficeShell extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 banner,
-                child,
+                Expanded(child: child),
               ],
             ),
           ),
