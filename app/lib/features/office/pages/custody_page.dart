@@ -244,7 +244,7 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
                               .map(
                                 (a) => DataRow(
                                   cells: [
-                                    DataCell(Text(a.userEmail)),
+                                    DataCell(Text(_nameForUserEmail(data, a.userEmail))),
                                     DataCell(Text(a.currentBalance.toStringAsFixed(2))),
                                   ],
                                 ),
@@ -272,7 +272,7 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
                           rows: data.spends.map((s) {
                             return DataRow(
                               cells: [
-                                DataCell(Text(_emailForUserId(data, s.userId))),
+                                DataCell(Text(_nameForUserId(data, s.userId))),
                                 DataCell(Text(s.amount.toStringAsFixed(2))),
                                 DataCell(Text(df.format(s.occurredAt.toLocal()))),
                                 DataCell(Text(_statusLabel(s.status))),
@@ -308,10 +308,16 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
     );
   }
 
-  String _emailForUserId(_AdminData data, int userId) {
+  String _nameForUserId(_AdminData data, int userId) {
     final u = data.users.where((x) => x.id == userId).toList();
     if (u.isEmpty) return '#$userId';
-    return u.first.email;
+    return u.first.fullName ?? u.first.email;
+  }
+
+  String _nameForUserEmail(_AdminData data, String email) {
+    final u = data.users.where((x) => x.email == email).toList();
+    if (u.isEmpty) return email;
+    return u.first.fullName ?? u.first.email;
   }
 
   String _statusLabel(String s) {
@@ -344,9 +350,17 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
   final _custodyApi = CustodyApi();
   final _filesApi = CustodyFilesApi();
 
-  late Future<CustodyAccountDto> _future = _custodyApi.myAccount();
+  late Future<({CustodyAccountDto account, List<CustodyLedgerEntryDto> ledger})> _future = _load();
 
-  void _reload() => setState(() => _future = _custodyApi.myAccount());
+  Future<({CustodyAccountDto account, List<CustodyLedgerEntryDto> ledger})> _load() async {
+    final results = await Future.wait([
+      _custodyApi.myAccount(),
+      _custodyApi.myLedger(),
+    ]);
+    return (account: results[0] as CustodyAccountDto, ledger: results[1] as List<CustodyLedgerEntryDto>);
+  }
+
+  void _reload() => setState(() => _future = _load());
 
   Future<void> _createSpend() async {
     final res = await showDialog<_SpendResult>(
@@ -390,6 +404,7 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
 
   @override
   Widget build(BuildContext context) {
+    final df = DateFormat('yyyy-MM-dd');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -410,17 +425,57 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
         const SizedBox(height: 12),
         Expanded(
           child: Card(
-            child: FutureBuilder<CustodyAccountDto>(
+            child: FutureBuilder<({CustodyAccountDto account, List<CustodyLedgerEntryDto> ledger})>(
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snap.hasError) return Center(child: Text('تعذر تحميل العهدة: ${snap.error}'));
-                final acc = snap.data!;
-                return ListTile(
-                  title: const Text('الرصيد الحالي'),
-                  subtitle: Text(acc.currentBalance.toStringAsFixed(2)),
+                final data = snap.data!;
+                final acc = data.account;
+                final ledger = data.ledger;
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Card(
+                        child: ListTile(
+                          title: const Text('إجمالي العهدة (الرصيد الحالي)'),
+                          subtitle: Text(acc.currentBalance.toStringAsFixed(2)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text('حركة العهدة', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      if (ledger.isEmpty)
+                        const Text('لا توجد حركة بعد')
+                      else
+                        DataTable(
+                          columns: const [
+                            DataColumn(label: Text('التاريخ')),
+                            DataColumn(label: Text('النوع')),
+                            DataColumn(label: Text('المبلغ')),
+                            DataColumn(label: Text('وصف')),
+                            DataColumn(label: Text('الحالة')),
+                          ],
+                          rows: ledger.map((e) {
+                            final kindLabel = e.kind == 'advance' ? 'سلفة/إضافة' : 'مصروف';
+                            final statusLabel = e.kind == 'spend' ? _spendStatusLabel(e.status) : '—';
+                            return DataRow(
+                              cells: [
+                                DataCell(Text(df.format(e.occurredAt.toLocal()))),
+                                DataCell(Text(kindLabel)),
+                                DataCell(Text(e.amount.toStringAsFixed(2))),
+                                DataCell(Text(e.description ?? '—')),
+                                DataCell(Text(statusLabel)),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
                 );
               },
             ),
@@ -428,6 +483,19 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
         ),
       ],
     );
+  }
+}
+
+String _spendStatusLabel(String? s) {
+  switch (s) {
+    case 'approved':
+      return 'معتمد';
+    case 'rejected':
+      return 'مرفوض';
+    case 'pending':
+      return 'معلق';
+    default:
+      return '—';
   }
 }
 
@@ -470,7 +538,7 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
               label: const Text('الموظف'),
               expandedInsets: EdgeInsets.zero,
               dropdownMenuEntries:
-                  widget.users.map((u) => DropdownMenuEntry(value: u.id, label: u.email)).toList(),
+                  widget.users.map((u) => DropdownMenuEntry(value: u.id, label: u.fullName ?? u.email)).toList(),
               onSelected: (v) => setState(() => _userId = v),
             ),
             const SizedBox(height: 12),

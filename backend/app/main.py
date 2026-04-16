@@ -50,6 +50,7 @@ from app.schemas import (
     CustodyAccountOut,
     CustodyAdvanceCreate,
     CustodyReceiptOut,
+    CustodyLedgerEntryOut,
     CustodyReviewRequest,
     CustodySpendCreate,
     CustodySpendOut,
@@ -776,7 +777,28 @@ def custody_create_account(payload: CustodyAccountCreate, db: Session = Depends(
         raise HTTPException(status_code=404, detail="User not found")
     existing = db.scalar(select(CustodyAccount).where(CustodyAccount.office_id == user.office_id, CustodyAccount.user_id == payload.user_id))
     if existing:
-        raise HTTPException(status_code=400, detail="Account already exists")
+        # If the account exists, allow setting/adding custody amount in one step.
+        if payload.initial_amount is None:
+            raise HTTPException(status_code=400, detail="Account already exists")
+        adv = CustodyAdvance(
+            office_id=user.office_id,
+            account_id=existing.id,
+            amount=payload.initial_amount,
+            occurred_at=_now(),
+            notes="custody top-up",
+            created_by_user_id=user.id,
+        )
+        db.add(adv)
+        existing.current_balance = float(existing.current_balance) + float(payload.initial_amount)
+        db.commit()
+        db.refresh(existing)
+        return CustodyAccountOut(
+            id=existing.id,
+            user_id=existing.user_id,
+            user_email=target.email,
+            current_balance=float(existing.current_balance),
+            created_at=existing.created_at,
+        )
     acc = CustodyAccount(office_id=user.office_id, user_id=payload.user_id, current_balance=0)
     db.add(acc)
     db.commit()
@@ -822,6 +844,44 @@ def custody_me(db: Session = Depends(get_db), user: User = Depends(require_perm(
     if not acc:
         raise HTTPException(status_code=404, detail="No custody account")
     return CustodyAccountOut(id=acc.id, user_id=user.id, user_email=user.email, current_balance=float(acc.current_balance), created_at=acc.created_at)
+
+
+@app.get("/custody/me/ledger", response_model=list[CustodyLedgerEntryOut])
+def custody_my_ledger(db: Session = Depends(get_db), user: User = Depends(require_perm("custody.me"))):
+    acc = db.scalar(select(CustodyAccount).where(CustodyAccount.office_id == user.office_id, CustodyAccount.user_id == user.id))
+    if not acc:
+        raise HTTPException(status_code=404, detail="No custody account")
+    advances = db.scalars(
+        select(CustodyAdvance).where(CustodyAdvance.office_id == user.office_id, CustodyAdvance.account_id == acc.id).order_by(CustodyAdvance.occurred_at.desc(), CustodyAdvance.id.desc())
+    ).all()
+    spends = db.scalars(
+        select(CustodySpend).where(CustodySpend.office_id == user.office_id, CustodySpend.account_id == acc.id).order_by(CustodySpend.occurred_at.desc(), CustodySpend.id.desc())
+    ).all()
+    items: list[CustodyLedgerEntryOut] = []
+    for a in advances:
+        items.append(
+            CustodyLedgerEntryOut(
+                kind="advance",
+                amount=float(a.amount),
+                occurred_at=a.occurred_at,
+                description=a.notes,
+                status=None,
+                spend_id=None,
+            )
+        )
+    for s in spends:
+        items.append(
+            CustodyLedgerEntryOut(
+                kind="spend",
+                amount=float(s.amount),
+                occurred_at=s.occurred_at,
+                description=s.description,
+                status=s.status,
+                spend_id=s.id,
+            )
+        )
+    items.sort(key=lambda x: (x.occurred_at, 0 if x.kind == "advance" else 1), reverse=True)
+    return items
 
 
 @app.post("/custody/advances", response_model=CustodyAccountOut)

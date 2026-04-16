@@ -71,6 +71,35 @@ class CustodySpendDto {
   }
 }
 
+class CustodyLedgerEntryDto {
+  CustodyLedgerEntryDto({
+    required this.kind,
+    required this.amount,
+    required this.occurredAt,
+    this.description,
+    this.status,
+    this.spendId,
+  });
+
+  final String kind; // advance | spend
+  final double amount;
+  final DateTime occurredAt;
+  final String? description;
+  final String? status;
+  final int? spendId;
+
+  factory CustodyLedgerEntryDto.fromJson(Map<String, dynamic> json) {
+    return CustodyLedgerEntryDto(
+      kind: json['kind'] as String,
+      amount: (json['amount'] as num).toDouble(),
+      occurredAt: DateTime.parse(json['occurred_at'] as String),
+      description: json['description'] as String?,
+      status: json['status'] as String?,
+      spendId: json['spend_id'] as int?,
+    );
+  }
+}
+
 class CustodyReceiptDto {
   CustodyReceiptDto({
     required this.id,
@@ -108,6 +137,16 @@ class CustodyApi {
     return _client.getJson<CustodyAccountDto>(
       'custody/me',
       decode: (json) => CustodyAccountDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<List<CustodyLedgerEntryDto>> myLedger() async {
+    return _client.getJson<List<CustodyLedgerEntryDto>>(
+      'custody/me/ledger',
+      decode: (json) {
+        final list = (json as List).cast<Map<String, dynamic>>();
+        return list.map(CustodyLedgerEntryDto.fromJson).toList();
+      },
     );
   }
 

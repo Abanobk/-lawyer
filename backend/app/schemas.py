@@ -257,3 +257,12 @@ class CustodyReceiptOut(BaseModel):
     size_bytes: int
     uploaded_at: datetime
 
+
+class CustodyLedgerEntryOut(BaseModel):
+    kind: str  # "advance" | "spend"
+    amount: float
+    occurred_at: datetime
+    description: str | None = None
+    status: CustodySpendStatus | None = None
+    spend_id: int | None = None
+
