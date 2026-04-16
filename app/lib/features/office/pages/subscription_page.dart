@@ -140,7 +140,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      // الهوامش الأفقية/العلوية من [ContentCanvas]؛ نقلل التكرار فوق العنوان.
+      padding: const EdgeInsets.only(bottom: 8),
       child: FutureBuilder<List<PlanDto>>(
         future: _plansFuture,
         builder: (context, snap) {
@@ -157,9 +158,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               const Text('اختر مدة الاشتراك من الأزرار، ثم افتح إنستاباي. بعد التحويل ارفع الإثبات في الأسفل للمراجعة.'),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               if (snap.connectionState == ConnectionState.waiting)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
               else if (snap.hasError)
@@ -177,48 +178,46 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                       builder: (context, c) {
                         final w = c.maxWidth;
                         final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
-                        return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: cross,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                            childAspectRatio: cross == 3 ? 0.48 : (cross == 2 ? 0.52 : 0.55),
-                          ),
-                          itemCount: groups.length,
-                          itemBuilder: (context, i) {
-                            final group = groups[i];
-                            final promoPlan = planForPromoImage(group);
-                            final first = group.first;
-                            final title = (first.packageName ?? '').trim().isNotEmpty ? first.packageName!.trim() : first.name;
-                            final isSelected = group.any((p) => p.id == _selectedPlanId);
-                            final details = <String>[
-                              if (first.maxUsers != null) 'حتى: ${first.maxUsers} مستخدم',
-                              if (first.allowedPermKeys != null) 'عدد الصلاحيات: ${first.allowedPermKeys!.length}',
-                            ];
-                            return PlanOfferCard(
-                              title: title,
-                              sharedDetailLines: details,
-                              footerHint: 'بعد اختيار الاشتراك وإتمام التحويل، ارفع الإثبات أسفل الصفحة.',
-                              image: _promoArea(promoPlan),
-                              selected: isSelected,
-                              actions: [
-                                for (final p in group)
-                                  FilledButton(
-                                    onPressed: _uploading || p.instapayLink == null
-                                        ? null
-                                        : () {
-                                            setState(() => _selectedPlanId = p.id);
-                                            _openLink(p.instapayLink);
-                                          },
-                                    child: Text(
-                                      'اشتراك — ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم',
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
+                        const gap = 16.0;
+                        final itemW = (w - gap * (cross - 1)) / cross;
+                        // صورة أوضح: ارتفاع يتبع عرض البطاقة (دعاية أعرض = مساحة أطول).
+                        final imageH = (itemW * 0.78).clamp(340.0, 540.0);
+                        return Wrap(
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            for (final group in groups)
+                              SizedBox(
+                                width: itemW,
+                                child: PlanOfferCard(
+                                  title: (group.first.packageName ?? '').trim().isNotEmpty
+                                      ? group.first.packageName!.trim()
+                                      : group.first.name,
+                                  sharedDetailLines: [
+                                    if (group.first.maxUsers != null) 'حتى: ${group.first.maxUsers} مستخدم',
+                                    if (group.first.allowedPermKeys != null) 'عدد الصلاحيات: ${group.first.allowedPermKeys!.length}',
+                                  ],
+                                  footerHint: 'بعد اختيار الاشتراك وإتمام التحويل، ارفع الإثبات أسفل الصفحة.',
+                                  image: _promoArea(planForPromoImage(group)),
+                                  imageMaxHeight: imageH,
+                                  selected: group.any((p) => p.id == _selectedPlanId),
+                                  actions: [
+                                    for (final p in group)
+                                      FilledButton(
+                                        onPressed: _uploading || p.instapayLink == null
+                                            ? null
+                                            : () {
+                                                setState(() => _selectedPlanId = p.id);
+                                                _openLink(p.instapayLink);
+                                              },
+                                        child: Text(
+                                          'اشتراك — ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم',
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         );
                       },
                     );

@@ -25,7 +25,7 @@ class AppLayout {
 
   static EdgeInsets pagePadding(BuildContext context) {
     if (isWebDesktop(context)) {
-      return const EdgeInsets.symmetric(horizontal: 32, vertical: 28);
+      return const EdgeInsets.fromLTRB(32, 18, 32, 24);
     }
     return const EdgeInsets.symmetric(horizontal: 16, vertical: 20);
   }

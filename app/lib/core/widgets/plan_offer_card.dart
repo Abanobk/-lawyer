@@ -11,7 +11,7 @@ class PlanOfferCard extends StatelessWidget {
     this.footerHint,
     this.actions = const [],
     this.selected = false,
-    this.imageMaxHeight = 320,
+    this.imageMaxHeight = 400,
   });
 
   final String title;
@@ -41,14 +41,15 @@ class PlanOfferCard extends StatelessWidget {
             height: imageMaxHeight,
             width: double.infinity,
             child: ColoredBox(
-              color: const Color(0xFFF3F5F9),
+              color: const Color(0xFFEEF2F7),
               child: image,
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   title,
@@ -57,25 +58,26 @@ class PlanOfferCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (sharedDetailLines.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  for (final line in sharedDetailLines) Text(line),
+                  const SizedBox(height: 6),
+                  for (final line in sharedDetailLines) Text(line, style: Theme.of(context).textTheme.bodyMedium),
                 ],
                 if (packageKeyText != null && packageKeyText!.trim().isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       'مفتاح التجميع: $packageKeyText',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                   ),
                 if (footerHint != null && footerHint!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   Text(footerHint!, style: Theme.of(context).textTheme.bodySmall),
                 ],
                 if (actions.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       for (var i = 0; i < actions.length; i++) ...[
                         if (i > 0) const SizedBox(height: 8),

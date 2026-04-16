@@ -1191,38 +1191,40 @@ class _PackagesTabState extends State<_PackagesTab> {
                     builder: (context, c) {
                       final w = c.maxWidth;
                       final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
-                      return GridView.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cross,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: cross == 3 ? 0.48 : (cross == 2 ? 0.52 : 0.55),
-                        ),
-                        itemCount: groups.length,
-                        itemBuilder: (context, i) {
-                          final group = groups[i];
-                          final promoPlan = _adminPlanForPromoImage(group);
-                          final first = group.first;
-                          final title = (first.packageName ?? '').trim().isNotEmpty ? first.packageName!.trim() : first.name;
-                          final details = <String>[
-                            if (first.maxUsers != null) 'حتى: ${first.maxUsers} مستخدم',
-                            if (first.allowedPermKeys != null) 'عدد الصلاحيات: ${first.allowedPermKeys!.length}',
-                          ];
-                          final optionsLines = group
-                              .map(
-                                (p) =>
-                                    '• ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم — ${p.name}${p.instapayLink != null && p.instapayLink!.trim().isNotEmpty ? '' : ' (بدون رابط إنستاباي)'}',
-                              )
-                              .join('\n');
-                          final linksOk = group.every((p) => p.instapayLink != null && p.instapayLink!.trim().isNotEmpty);
-                          return PlanOfferCard(
-                            title: title,
-                            sharedDetailLines: details,
-                            packageKeyText: first.packageKey,
-                            footerHint: 'معاينة كما يظهر للمستأجر (خيارات الاشتراك):\n$optionsLines${linksOk ? '' : '\nتنبيه: راجع روابط إنستاباي لكل خيار.'}',
-                            image: _promoImage(promoPlan),
-                          );
-                        },
+                      const gap = 16.0;
+                      final itemW = (w - gap * (cross - 1)) / cross;
+                      final imageH = (itemW * 0.78).clamp(340.0, 540.0);
+                      return Wrap(
+                        spacing: gap,
+                        runSpacing: gap,
+                        children: [
+                          for (final group in groups)
+                            SizedBox(
+                              width: itemW,
+                              child: PlanOfferCard(
+                                title: (group.first.packageName ?? '').trim().isNotEmpty
+                                    ? group.first.packageName!.trim()
+                                    : group.first.name,
+                                sharedDetailLines: [
+                                  if (group.first.maxUsers != null) 'حتى: ${group.first.maxUsers} مستخدم',
+                                  if (group.first.allowedPermKeys != null) 'عدد الصلاحيات: ${group.first.allowedPermKeys!.length}',
+                                ],
+                                packageKeyText: group.first.packageKey,
+                                imageMaxHeight: imageH,
+                                footerHint: () {
+                                  final optionsLines = group
+                                      .map(
+                                        (p) =>
+                                            '• ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم — ${p.name}${p.instapayLink != null && p.instapayLink!.trim().isNotEmpty ? '' : ' (بدون رابط إنستاباي)'}',
+                                      )
+                                      .join('\n');
+                                  final linksOk = group.every((p) => p.instapayLink != null && p.instapayLink!.trim().isNotEmpty);
+                                  return 'معاينة كما يظهر للمستأجر (خيارات الاشتراك):\n$optionsLines${linksOk ? '' : '\nتنبيه: راجع روابط إنستاباي لكل خيار.'}';
+                                }(),
+                                image: _promoImage(_adminPlanForPromoImage(group)),
+                              ),
+                            ),
+                        ],
                       );
                     },
                   );

@@ -37,7 +37,7 @@ class SubscriptionTrialBanner extends StatelessWidget {
     final titleStyle = Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700);
 
     return Card(
-      margin: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+      margin: const EdgeInsets.fromLTRB(0, 0, 0, 8),
       color: isStopped
           ? Colors.red.withValues(alpha: 0.08)
           : isBlocked
