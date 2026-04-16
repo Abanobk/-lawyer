@@ -166,17 +166,30 @@ def _startup():
     # Ensure super admin exists
     with Session(engine) as db:
         existing = db.scalar(select(User).where(User.email == settings.super_admin_email))
-        if existing:
+        if existing and existing.role != UserRole.super_admin:
+            # Email is already taken by a non-super-admin user.
+            # Keep current behavior: do not override silently.
             return
-        db.add(
-            User(
+
+        if not existing:
+            existing = User(
                 email=settings.super_admin_email,
                 password_hash=hash_password(settings.super_admin_password),
                 role=UserRole.super_admin,
                 office_id=None,
+                is_active=True,
             )
-        )
-        db.commit()
+            db.add(existing)
+            db.commit()
+            return
+
+        # If requested, force-reset credentials (first-time access helper).
+        if settings.super_admin_force_reset:
+            existing.password_hash = hash_password(settings.super_admin_password)
+            existing.is_active = True
+            if settings.super_admin_disable_others_on_reset:
+                db.query(User).where(User.role == UserRole.super_admin, User.id != existing.id).update({"is_active": False})
+            db.commit()
 
 
 def _token_to_user(db: Session, token: str) -> User:
