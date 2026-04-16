@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query, st
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import inspect, select, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
@@ -59,6 +59,9 @@ from app.schemas import (
     OfficeExpenseCreate,
     OfficeExpenseOut,
     OfficeExpenseReceiptOut,
+    ClientAccountReportOut,
+    ClientCaseAccountReportItem,
+    CustodyReportItem,
     OfficeUserCreate,
     OfficeUserCreateOut,
     PermissionCatalogItem,
@@ -1229,6 +1232,95 @@ def download_office_expense_receipt(file_id: int, db: Session = Depends(get_db),
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing")
     return FileResponse(path, media_type=f.content_type or "application/octet-stream", filename=f.original_name)
+
+
+@app.get("/reports/client/{client_id}", response_model=ClientAccountReportOut)
+def report_client_account(client_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    client = db.get(Client, client_id)
+    if not client or client.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Client not found")
+    cases = db.scalars(select(Case).where(Case.office_id == user.office_id, Case.client_id == client_id).order_by(Case.id.desc())).all()
+    case_ids = [c.id for c in cases]
+    income_by_case: dict[int, float] = {}
+    if case_ids:
+        rows = db.execute(
+            select(CaseTransaction.case_id, func.coalesce(func.sum(CaseTransaction.amount), 0))
+            .where(
+                CaseTransaction.office_id == user.office_id,
+                CaseTransaction.case_id.in_(case_ids),
+                CaseTransaction.direction == MoneyDirection.income,
+            )
+            .group_by(CaseTransaction.case_id)
+        ).all()
+        income_by_case = {int(cid): float(total) for cid, total in rows}
+
+    items: list[ClientCaseAccountReportItem] = []
+    for c in cases:
+        inc = income_by_case.get(c.id, 0.0)
+        fee = float(c.fee_total) if c.fee_total is not None else None
+        remaining = None if fee is None else float(fee - inc)
+        items.append(
+            ClientCaseAccountReportItem(
+                case_id=c.id,
+                case_title=c.title,
+                fee_total=fee,
+                income_sum=float(inc),
+                remaining=remaining,
+            )
+        )
+    return ClientAccountReportOut(client_id=client.id, client_name=client.full_name, cases=items)
+
+
+@app.get("/reports/custody", response_model=list[CustodyReportItem])
+def report_custody(user_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_perm("custody.admin.view"))):
+    stmt = select(CustodyAccount, User).join(User, User.id == CustodyAccount.user_id).where(CustodyAccount.office_id == user.office_id)
+    if user_id is not None:
+        stmt = stmt.where(CustodyAccount.user_id == user_id)
+    rows = db.execute(stmt.order_by(CustodyAccount.id.desc())).all()
+    if not rows:
+        return []
+    acc_ids = [acc.id for acc, _ in rows]
+
+    adv_rows = db.execute(
+        select(CustodyAdvance.account_id, func.coalesce(func.sum(CustodyAdvance.amount), 0))
+        .where(CustodyAdvance.office_id == user.office_id, CustodyAdvance.account_id.in_(acc_ids))
+        .group_by(CustodyAdvance.account_id)
+    ).all()
+    advances_sum = {int(aid): float(total) for aid, total in adv_rows}
+
+    approved_rows = db.execute(
+        select(CustodySpend.account_id, func.coalesce(func.sum(CustodySpend.amount), 0))
+        .where(
+            CustodySpend.office_id == user.office_id,
+            CustodySpend.account_id.in_(acc_ids),
+            CustodySpend.status == CustodySpendStatus.approved,
+        )
+        .group_by(CustodySpend.account_id)
+    ).all()
+    approved_sum = {int(aid): float(total) for aid, total in approved_rows}
+
+    pending_rows = db.execute(
+        select(CustodySpend.account_id, func.coalesce(func.sum(CustodySpend.amount), 0))
+        .where(
+            CustodySpend.office_id == user.office_id,
+            CustodySpend.account_id.in_(acc_ids),
+            CustodySpend.status == CustodySpendStatus.pending,
+        )
+        .group_by(CustodySpend.account_id)
+    ).all()
+    pending_sum = {int(aid): float(total) for aid, total in pending_rows}
+
+    return [
+        CustodyReportItem(
+            user_id=u.id,
+            user_email=u.email,
+            current_balance=float(acc.current_balance),
+            advances_sum=float(advances_sum.get(acc.id, 0.0)),
+            approved_spends_sum=float(approved_sum.get(acc.id, 0.0)),
+            pending_spends_sum=float(pending_sum.get(acc.id, 0.0)),
+        )
+        for acc, u in rows
+    ]
 
 
 @app.get("/billing/status", response_model=SubscriptionOut)

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/office_expenses_api.dart';
+import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/data/api/transactions_api.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 
@@ -561,11 +562,192 @@ class _ReportsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Text('قريبًا: تقارير العملاء وتقارير العهد.'),
-      ),
+    return const _ReportsView();
+  }
+}
+
+class _ReportsView extends StatefulWidget {
+  const _ReportsView();
+
+  @override
+  State<_ReportsView> createState() => _ReportsViewState();
+}
+
+class _ReportsViewState extends State<_ReportsView> {
+  final _clientsApi = ClientsApi();
+  final _reportsApi = ReportsApi();
+
+  late final Future<List<ClientDto>> _clientsFuture = _clientsApi.list();
+  int? _clientId;
+  ClientAccountReportDto? _clientReport;
+  bool _loadingClient = false;
+
+  int? _custodyUserId;
+  List<CustodyReportItemDto> _custodyReportAll = const [];
+  bool _loadingCustody = false;
+
+  Future<void> _loadClientReport() async {
+    final cid = _clientId;
+    if (cid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اختر موكل أولاً')));
+      return;
+    }
+    setState(() => _loadingClient = true);
+    try {
+      final r = await _reportsApi.clientAccount(cid);
+      if (!mounted) return;
+      setState(() => _clientReport = r);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تحميل التقرير: $e')));
+    } finally {
+      if (mounted) setState(() => _loadingClient = false);
+    }
+  }
+
+  Future<void> _loadCustodyReport() async {
+    setState(() => _loadingCustody = true);
+    try {
+      final r = await _reportsApi.custody();
+      if (!mounted) return;
+      setState(() => _custodyReportAll = r);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تحميل تقرير العهد: $e')));
+    } finally {
+      if (mounted) setState(() => _loadingCustody = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final custodyFiltered = _custodyUserId == null
+        ? _custodyReportAll
+        : _custodyReportAll.where((x) => x.userId == _custodyUserId).toList();
+    return FutureBuilder<List<ClientDto>>(
+      future: _clientsFuture,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return Center(child: Text('تعذر تحميل الموكلين: ${snap.error}'));
+        }
+        final clients = snap.data ?? const <ClientDto>[];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('تقارير العملاء', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    DropdownMenu<int>(
+                      width: 420,
+                      label: const Text('الموكل'),
+                      initialSelection: _clientId,
+                      dropdownMenuEntries: clients.map((c) => DropdownMenuEntry(value: c.id, label: c.fullName)).toList(),
+                      onSelected: (v) => setState(() => _clientId = v),
+                    ),
+                    FilledButton(
+                      onPressed: _loadingClient ? null : _loadClientReport,
+                      child: _loadingClient ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('عرض تقرير الموكل'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: _clientReport == null
+                      ? const Center(child: Text('اختر موكل لعرض التقرير'))
+                      : SingleChildScrollView(
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('القضية')),
+                              DataColumn(label: Text('الأتعاب')),
+                              DataColumn(label: Text('المحصّل')),
+                              DataColumn(label: Text('المتبقي')),
+                            ],
+                            rows: _clientReport!.cases
+                                .map(
+                                  (c) => DataRow(
+                                    cells: [
+                                      DataCell(Text(c.caseTitle)),
+                                      DataCell(Text(c.feeTotal?.toStringAsFixed(2) ?? '—')),
+                                      DataCell(Text(c.incomeSum.toStringAsFixed(2))),
+                                      DataCell(Text(c.remaining?.toStringAsFixed(2) ?? '—')),
+                                    ],
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 16),
+                Divider(color: Theme.of(context).colorScheme.outlineVariant),
+                const SizedBox(height: 16),
+                Text('تقارير العهد', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    DropdownMenu<int>(
+                      width: 420,
+                      label: const Text('الموظف (اختياري)'),
+                      initialSelection: _custodyUserId,
+                      dropdownMenuEntries: [
+                        const DropdownMenuEntry<int>(value: 0, label: 'الكل'),
+                        ..._custodyReportAll.map((r) => DropdownMenuEntry<int>(value: r.userId, label: r.userEmail)),
+                      ],
+                      onSelected: (v) => setState(() => _custodyUserId = (v == null || v == 0) ? null : v),
+                    ),
+                    FilledButton(
+                      onPressed: _loadingCustody ? null : _loadCustodyReport,
+                      child: _loadingCustody ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('عرض تقرير العهد'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 220,
+                  child: custodyFiltered.isEmpty
+                      ? const Center(child: Text('لا يوجد بيانات'))
+                      : SingleChildScrollView(
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('المستخدم')),
+                              DataColumn(label: Text('الرصيد')),
+                              DataColumn(label: Text('إجمالي السلف')),
+                              DataColumn(label: Text('مصروفات معتمدة')),
+                              DataColumn(label: Text('مصروفات معلقة')),
+                            ],
+                            rows: custodyFiltered
+                                .map(
+                                  (r) => DataRow(
+                                    cells: [
+                                      DataCell(Text(r.userEmail)),
+                                      DataCell(Text(r.currentBalance.toStringAsFixed(2))),
+                                      DataCell(Text(r.advancesSum.toStringAsFixed(2))),
+                                      DataCell(Text(r.approvedSpendsSum.toStringAsFixed(2))),
+                                      DataCell(Text(r.pendingSpendsSum.toStringAsFixed(2))),
+                                    ],
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

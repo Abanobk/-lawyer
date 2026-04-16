@@ -290,3 +290,26 @@ class OfficeExpenseReceiptOut(BaseModel):
     size_bytes: int
     uploaded_at: datetime
 
+
+class ClientCaseAccountReportItem(BaseModel):
+    case_id: int
+    case_title: str
+    fee_total: float | None
+    income_sum: float
+    remaining: float | None
+
+
+class ClientAccountReportOut(BaseModel):
+    client_id: int
+    client_name: str
+    cases: list[ClientCaseAccountReportItem]
+
+
+class CustodyReportItem(BaseModel):
+    user_id: int
+    user_email: EmailStr
+    current_balance: float
+    advances_sum: float
+    approved_spends_sum: float
+    pending_spends_sum: float
+
