@@ -1010,15 +1010,6 @@ class _OfficesTab extends StatefulWidget {
   State<_OfficesTab> createState() => _OfficesTabState();
 }
 
-enum _AdminOfficePanel {
-  dashboard,
-  offices,
-  trial,
-  activeSubs,
-  alerts,
-  superAdmins,
-}
-
 class _OfficesTabState extends State<_OfficesTab> {
   int? _selectedOfficeId;
   AdminSubscriptionDto? _sub;
@@ -1028,7 +1019,6 @@ class _OfficesTabState extends State<_OfficesTab> {
   late Future<AdminSubscriptionsAnalyticsDto> _subsAnalyticsFuture;
   late Future<AdminAlertsDto> _alertsFuture;
   late Future<List<AdminSuperAdminDto>> _superAdminsFuture;
-  _AdminOfficePanel _panel = _AdminOfficePanel.dashboard;
 
   @override
   void initState() {
@@ -1063,54 +1053,6 @@ class _OfficesTabState extends State<_OfficesTab> {
     });
   }
 
-  Widget _sidebarItem({
-    required _AdminOfficePanel value,
-    required IconData icon,
-    required String label,
-    Widget? trailing,
-  }) {
-    final selected = _panel == value;
-    return InkWell(
-      onTap: () => setState(() => _panel = value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white.withValues(alpha: 0.16) : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: selected ? 0.22 : 0.12)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            ...? (trailing == null ? null : [trailing]),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _badge(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-    );
-  }
-
   Widget _buildDashboardContent() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
@@ -1124,6 +1066,12 @@ class _OfficesTabState extends State<_OfficesTab> {
           _ActiveSubsCard(future: _subsAnalyticsFuture),
           const SizedBox(height: 12),
           _AlertsCard(future: _alertsFuture),
+          const SizedBox(height: 12),
+          _SuperAdminsCard(
+            future: _superAdminsFuture,
+            adminApi: widget.adminApi,
+            onRefresh: () => setState(() => _superAdminsFuture = widget.adminApi.listSuperAdmins()),
+          ),
         ],
       ),
     );
@@ -1223,7 +1171,7 @@ class _OfficesTabState extends State<_OfficesTab> {
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: _selectedOfficeId == null
-                                ? const Center(child: Text('اختر مكتب لعرض التفاصيل'))
+                                ? _buildDashboardContent()
                                 : (_loading
                                     ? const Center(child: CircularProgressIndicator())
                                     : (_sub == null
@@ -1268,167 +1216,18 @@ class _OfficesTabState extends State<_OfficesTab> {
             }
             final offices = snap.data ?? const <AdminOfficeDto>[];
             if (offices.isEmpty) return const Center(child: Text('لا يوجد مكاتب بعد'));
-            // Layout: left content + right colored sidebar
-            return Row(
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Card(
-                    clipBehavior: Clip.antiAlias,
-                    child: Builder(
-                      builder: (context) {
-                        switch (_panel) {
-                          case _AdminOfficePanel.dashboard:
-                            return _buildDashboardContent();
-                          case _AdminOfficePanel.offices:
-                            return _buildOfficesContent(offices);
-                          case _AdminOfficePanel.trial:
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text('التجربة', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                                  const SizedBox(height: 12),
-                                  _TrialCard(future: _trialAnalyticsFuture),
-                                ],
-                              ),
-                            );
-                          case _AdminOfficePanel.activeSubs:
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text('الاشتراكات الفعلية', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                                  const SizedBox(height: 12),
-                                  _ActiveSubsCard(future: _subsAnalyticsFuture),
-                                ],
-                              ),
-                            );
-                          case _AdminOfficePanel.alerts:
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text('التحذيرات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                                  const SizedBox(height: 12),
-                                  _AlertsCard(future: _alertsFuture),
-                                ],
-                              ),
-                            );
-                          case _AdminOfficePanel.superAdmins:
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Text('المستخدمين والصلاحيات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                                  const SizedBox(height: 12),
-                                  _SuperAdminsCard(
-                                    future: _superAdminsFuture,
-                                    adminApi: widget.adminApi,
-                                    onRefresh: () => setState(() => _superAdminsFuture = widget.adminApi.listSuperAdmins()),
-                                  ),
-                                ],
-                              ),
-                            );
-                        }
-                      },
-                    ),
-                  ),
+                Row(
+                  children: [
+                    Text('المكاتب', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                    const Spacer(),
+                    IconButton(onPressed: _refreshAll, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 300,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F2A5F),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.admin_panel_settings, color: Colors.white),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                'لوحة السوبر أدمن',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'تحديث',
-                              onPressed: _refreshAll,
-                              icon: const Icon(Icons.refresh, color: Colors.white),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _sidebarItem(value: _AdminOfficePanel.dashboard, icon: Icons.dashboard_outlined, label: 'لوحة التحكم'),
-                        _sidebarItem(value: _AdminOfficePanel.offices, icon: Icons.apartment_outlined, label: 'المكاتب', trailing: _badge('${offices.length}')),
-                        FutureBuilder<AdminTrialAnalyticsDto>(
-                          future: _trialAnalyticsFuture,
-                          builder: (context, snapTrial) {
-                            final n = snapTrial.data?.totalTrialOffices;
-                            return _sidebarItem(
-                              value: _AdminOfficePanel.trial,
-                              icon: Icons.hourglass_bottom,
-                              label: 'التجربة',
-                              trailing: n == null ? null : _badge('$n'),
-                            );
-                          },
-                        ),
-                        FutureBuilder<AdminSubscriptionsAnalyticsDto>(
-                          future: _subsAnalyticsFuture,
-                          builder: (context, snapSubs) {
-                            final n = snapSubs.data?.totalActiveOffices;
-                            return _sidebarItem(
-                              value: _AdminOfficePanel.activeSubs,
-                              icon: Icons.credit_card_outlined,
-                              label: 'الاشتراكات',
-                              trailing: n == null ? null : _badge('$n'),
-                            );
-                          },
-                        ),
-                        FutureBuilder<AdminAlertsDto>(
-                          future: _alertsFuture,
-                          builder: (context, snapA) {
-                            final a = snapA.data;
-                            final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
-                            return _sidebarItem(
-                              value: _AdminOfficePanel.alerts,
-                              icon: Icons.notifications_active_outlined,
-                              label: 'تحذيرات',
-                              trailing: total == null ? null : _badge('$total'),
-                            );
-                          },
-                        ),
-                        FutureBuilder<List<AdminSuperAdminDto>>(
-                          future: _superAdminsFuture,
-                          builder: (context, snapU) {
-                            final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
-                            return _sidebarItem(
-                              value: _AdminOfficePanel.superAdmins,
-                              icon: Icons.manage_accounts_outlined,
-                              label: 'المستخدمين',
-                              trailing: _badge('$n'),
-                            );
-                          },
-                        ),
-                        const Spacer(),
-                        Text(
-                          'اضغط عنصر لعرض التفاصيل',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 12),
+                Expanded(child: _buildOfficesContent(offices)),
               ],
             );
           },
