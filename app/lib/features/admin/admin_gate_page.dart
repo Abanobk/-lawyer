@@ -214,6 +214,8 @@ class _SuperAdminDashboard extends StatefulWidget {
   State<_SuperAdminDashboard> createState() => _SuperAdminDashboardState();
 }
 
+enum _AdminSection { offices, plans, proofs, settings }
+
 class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   final _meApi = MeApi();
   final _adminApi = AdminApi();
@@ -228,6 +230,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   final _newEmail = TextEditingController();
   final _newPass = TextEditingController();
   bool _saving = false;
+  _AdminSection _section = _AdminSection.offices;
 
   @override
   void dispose() {
@@ -270,57 +273,122 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
     }
   }
 
+  Widget _navItem({
+    required _AdminSection value,
+    required IconData icon,
+    required String label,
+  }) {
+    final selected = _section == value;
+    return InkWell(
+      onTap: () => setState(() => _section = value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white.withValues(alpha: 0.16) : Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: selected ? 0.22 : 0.12)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (selected) const Icon(Icons.chevron_left, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 4,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxH = constraints.maxHeight.isFinite ? constraints.maxHeight : 650.0;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const TabBar(
-                isScrollable: true,
-                tabs: [
-                  Tab(text: 'المكاتب'),
-                  Tab(text: 'الباقات'),
-                  Tab(text: 'التحويلات'),
-                  Tab(text: 'إعدادات'),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: (maxH - 60).clamp(420.0, 900.0),
-                child: TabBarView(
+    final content = switch (_section) {
+      _AdminSection.offices => _OfficesTab(future: _officesFuture, adminApi: _adminApi),
+      _AdminSection.plans => _PlansTab(
+          future: _plansFuture,
+          adminApi: _adminApi,
+          onRefresh: () => setState(() => _plansFuture = _adminApi.listPlans()),
+        ),
+      _AdminSection.proofs => _ProofsTab(
+          future: _proofsFuture,
+          adminApi: _adminApi,
+          filesApi: _proofFilesApi,
+          onRefresh: (status) => setState(() => _proofsFuture = _adminApi.listPaymentProofs(status: status)),
+        ),
+      _AdminSection.settings => _SettingsTab(
+          meFuture: _meFuture,
+          currentPass: _currentPass,
+          newEmail: _newEmail,
+          newPass: _newPass,
+          saving: _saving,
+          onSave: _save,
+        ),
+    };
+
+    return Row(
+      children: [
+        Expanded(child: content),
+        const SizedBox(width: 12),
+        // Right sidebar (like tenant dashboard).
+        Container(
+          width: 290,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F2A5F),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
                   children: [
-                    _OfficesTab(future: _officesFuture, adminApi: _adminApi),
-                    _PlansTab(
-                      future: _plansFuture,
-                      adminApi: _adminApi,
-                      onRefresh: () => setState(() => _plansFuture = _adminApi.listPlans()),
+                    const Icon(Icons.admin_panel_settings, color: Colors.white),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'لوحة السوبر أدمن',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                      ),
                     ),
-                    _ProofsTab(
-                      future: _proofsFuture,
-                      adminApi: _adminApi,
-                      filesApi: _proofFilesApi,
-                      onRefresh: (status) => setState(() => _proofsFuture = _adminApi.listPaymentProofs(status: status)),
-                    ),
-                    _SettingsTab(
-                      meFuture: _meFuture,
-                      currentPass: _currentPass,
-                      newEmail: _newEmail,
-                      newPass: _newPass,
-                      saving: _saving,
-                      onSave: _save,
+                    IconButton(
+                      tooltip: 'تحديث',
+                      onPressed: () {
+                        setState(() {
+                          _plansFuture = _adminApi.listPlans();
+                          _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
+                          _meFuture = _meApi.me();
+                        });
+                      },
+                      icon: const Icon(Icons.refresh, color: Colors.white),
                     ),
                   ],
                 ),
-              ),
-            ],
-          );
-        },
-      ),
+                const SizedBox(height: 10),
+                _navItem(value: _AdminSection.offices, icon: Icons.apartment_outlined, label: 'المكاتب'),
+                _navItem(value: _AdminSection.plans, icon: Icons.view_module_outlined, label: 'الباقات'),
+                _navItem(value: _AdminSection.proofs, icon: Icons.payments_outlined, label: 'التحويلات'),
+                _navItem(value: _AdminSection.settings, icon: Icons.settings_outlined, label: 'إعدادات'),
+                const Spacer(),
+                Text(
+                  'اضغط عنصر لعرض التفاصيل',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
