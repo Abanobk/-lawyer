@@ -68,6 +68,31 @@ class AuthApi {
     throw AuthApiException(_parseErrorDetail(res.body), statusCode: res.statusCode);
   }
 
+  Future<({String accessToken, String refreshToken})> login({
+    required String email,
+    required String password,
+  }) async {
+    final uri = ApiConfig.uri('auth/login');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      body: jsonEncode({
+        'email': email.trim(),
+        'password': password,
+      }),
+    );
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      return (
+        accessToken: map['access_token'] as String,
+        refreshToken: map['refresh_token'] as String,
+      );
+    }
+
+    throw AuthApiException(_parseErrorDetail(res.body), statusCode: res.statusCode);
+  }
+
   String _parseErrorDetail(String body) {
     try {
       final map = jsonDecode(body);
@@ -88,6 +113,8 @@ class AuthApi {
     switch (detail) {
       case 'Email already registered':
         return 'هذا البريد مسجّل مسبقًا';
+      case 'Invalid credentials':
+        return 'بيانات الدخول غير صحيحة';
       default:
         return detail;
     }

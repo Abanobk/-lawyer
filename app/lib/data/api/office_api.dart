@@ -50,6 +50,20 @@ class OfficeApi {
   OfficeApi({ApiClient? client}) : _client = client ?? ApiClient();
   final ApiClient _client;
 
+  Future<({int id, String code, String name})> myOffice() async {
+    return _client.getJson<({int id, String code, String name})>(
+      'office',
+      decode: (json) {
+        final m = json as Map<String, dynamic>;
+        return (
+          id: m['id'] as int,
+          code: m['code'] as String,
+          name: m['name'] as String,
+        );
+      },
+    );
+  }
+
   Future<List<OfficeUserDto>> users() async {
     return _client.getJson<List<OfficeUserDto>>(
       'office/users',
