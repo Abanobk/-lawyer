@@ -356,25 +356,60 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   Widget _buildOfficeContent() {
     switch (_officePanel) {
       case _AdminOfficePanel.dashboard:
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
-              const SizedBox(height: 12),
-              _TrialCard(future: _trialAnalyticsFuture),
-              const SizedBox(height: 12),
-              _ActiveSubsCard(future: _subsAnalyticsFuture),
-              const SizedBox(height: 12),
-              _AlertsCard(future: _alertsFuture),
-              const SizedBox(height: 12),
-              _SuperAdminsCard(
-                future: _superAdminsFuture,
-                adminApi: _adminApi,
-                onRefresh: () => setState(() => _superAdminsFuture = _adminApi.listSuperAdmins()),
-              ),
-            ],
+        return Container(
+          color: const Color(0xFFF3F5F9),
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final isWide = c.maxWidth >= 950;
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 14),
+                    if (isWide)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(width: 360, child: _TrialSummaryCard(future: _trialAnalyticsFuture)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _DashboardChartCard(future: _trialAnalyticsFuture)),
+                        ],
+                      )
+                    else ...[
+                      _TrialSummaryCard(future: _trialAnalyticsFuture),
+                      const SizedBox(height: 12),
+                      _DashboardChartCard(future: _trialAnalyticsFuture),
+                    ],
+                    const SizedBox(height: 12),
+                    if (isWide)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _ActiveSubsCard(future: _subsAnalyticsFuture)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _AlertsCard(future: _alertsFuture)),
+                        ],
+                      )
+                    else ...[
+                      _ActiveSubsCard(future: _subsAnalyticsFuture),
+                      const SizedBox(height: 12),
+                      _AlertsCard(future: _alertsFuture),
+                    ],
+                    const SizedBox(height: 12),
+                    _SuperAdminsCard(
+                      future: _superAdminsFuture,
+                      adminApi: _adminApi,
+                      onRefresh: () => setState(() => _superAdminsFuture = _adminApi.listSuperAdmins()),
+                    ),
+                    const SizedBox(height: 12),
+                    // Full details card (kept for deep inspection)
+                    _TrialCard(future: _trialAnalyticsFuture),
+                  ],
+                ),
+              );
+            },
           ),
         );
       case _AdminOfficePanel.offices:
@@ -1456,6 +1491,213 @@ class _TrialCard extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+class _TrialSummaryCard extends StatelessWidget {
+  const _TrialSummaryCard({required this.future});
+  final Future<AdminTrialAnalyticsDto> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SoftCard(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: FutureBuilder<AdminTrialAnalyticsDto>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 150, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (snap.hasError) return Text('تعذر تحميل: ${snap.error}');
+            final data = snap.data;
+            if (data == null) return const Text('لا توجد بيانات');
+
+            final offices = data.offices;
+            final maxUsers = offices.isEmpty ? 1 : offices.map((o) => o.activeUsersCount).fold<int>(1, (a, b) => a > b ? a : b);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.apartment_outlined),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'عدد المكاتب',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text('عدد المكاتب: ${data.totalTrialOffices}', style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(height: 8),
+                Text('المتوسط', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 6),
+                ...offices.take(3).map((o) {
+                  final pct = (o.activeUsersCount / maxUsers).clamp(0.0, 1.0);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(o.officeName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: pct,
+                            minHeight: 10,
+                            backgroundColor: const Color(0xFFE8ECF5),
+                            valueColor: const AlwaysStoppedAnimation(Color(0xFF1E4DB7)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardChartCard extends StatelessWidget {
+  const _DashboardChartCard({required this.future});
+  final Future<AdminTrialAnalyticsDto> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SoftCard(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: FutureBuilder<AdminTrialAnalyticsDto>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 190, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (snap.hasError) return Text('تعذر تحميل الرسم: ${snap.error}');
+            final data = snap.data;
+            if (data == null || data.offices.isEmpty) {
+              return const SizedBox(height: 190, child: Center(child: Text('لا توجد بيانات للرسم')));
+            }
+
+            // Use activeDaysCount as a simple series (visual-only).
+            final values = data.offices.take(12).map((o) => o.activeDaysCount.toDouble()).toList();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.show_chart),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'النشاط (تمثيل مبسط)',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    Text('آخر ${data.days} يوم', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 170,
+                  child: CustomPaint(
+                    painter: _MiniLineChartPainter(values: values),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniLineChartPainter extends CustomPainter {
+  _MiniLineChartPainter({required this.values});
+  final List<double> values;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFFF7F9FF);
+    final grid = Paint()
+      ..color = const Color(0xFFE6EBF7)
+      ..strokeWidth = 1;
+    final line = Paint()
+      ..color = const Color(0xFF1E4DB7)
+      ..strokeWidth = 2.2
+      ..style = PaintingStyle.stroke;
+    final fill = Paint()
+      ..color = const Color(0xFF1E4DB7).withValues(alpha: 0.10)
+      ..style = PaintingStyle.fill;
+
+    final r = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(14));
+    canvas.drawRRect(r, bg);
+
+    // grid lines
+    for (var i = 1; i <= 3; i++) {
+      final y = size.height * (i / 4);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
+    if (values.isEmpty) return;
+    final maxV = values.fold<double>(1, (a, b) => a > b ? a : b).clamp(1, double.infinity);
+    final minV = values.fold<double>(values.first, (a, b) => a < b ? a : b);
+    final span = (maxV - minV).abs() < 0.0001 ? 1.0 : (maxV - minV);
+
+    final n = values.length;
+    final dx = n <= 1 ? 0.0 : size.width / (n - 1);
+    final pts = <Offset>[];
+    for (var i = 0; i < n; i++) {
+      final norm = (values[i] - minV) / span;
+      final x = dx * i;
+      final y = size.height - (norm * (size.height - 12)) - 6;
+      pts.add(Offset(x, y));
+    }
+
+    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+    for (var i = 1; i < pts.length; i++) {
+      path.lineTo(pts[i].dx, pts[i].dy);
+    }
+
+    final fillPath = Path.from(path)
+      ..lineTo(pts.last.dx, size.height)
+      ..lineTo(pts.first.dx, size.height)
+      ..close();
+    canvas.drawPath(fillPath, fill);
+    canvas.drawPath(path, line);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniLineChartPainter oldDelegate) => oldDelegate.values != values;
+}
+
+class _SoftCard extends StatelessWidget {
+  const _SoftCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Color(0x14000000), blurRadius: 18, offset: Offset(0, 8)),
+        ],
+      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(18), child: child),
     );
   }
 }
