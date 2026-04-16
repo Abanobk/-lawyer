@@ -177,7 +177,7 @@ class CustodyApi {
   Future<CustodyAccountDto> addAdvance({
     required int userId,
     required double amount,
-    required DateTime occurredAt,
+    DateTime? occurredAt,
     String? notes,
   }) async {
     return _client.postJson<CustodyAccountDto>(
@@ -185,7 +185,7 @@ class CustodyApi {
       {
         'user_id': userId,
         'amount': amount,
-        'occurred_at': occurredAt.toUtc().toIso8601String(),
+        'occurred_at': occurredAt?.toUtc().toIso8601String(),
         'notes': notes,
       },
       decode: (json) => CustodyAccountDto.fromJson(json as Map<String, dynamic>),
@@ -194,7 +194,7 @@ class CustodyApi {
 
   Future<CustodySpendDto> createSpend({
     required double amount,
-    required DateTime occurredAt,
+    DateTime? occurredAt,
     String? description,
     int? caseId,
   }) async {
@@ -202,7 +202,7 @@ class CustodyApi {
       'custody/spends',
       {
         'amount': amount,
-        'occurred_at': occurredAt.toUtc().toIso8601String(),
+        'occurred_at': occurredAt?.toUtc().toIso8601String(),
         'description': description,
         'case_id': caseId,
       },

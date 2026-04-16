@@ -222,13 +222,13 @@ class CustodyAccountCreate(BaseModel):
 class CustodyAdvanceCreate(BaseModel):
     user_id: int
     amount: float = Field(gt=0)
-    occurred_at: datetime
+    occurred_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=500)
 
 
 class CustodySpendCreate(BaseModel):
     amount: float = Field(gt=0)
-    occurred_at: datetime
+    occurred_at: datetime | None = None
     description: str | None = Field(default=None, max_length=500)
     case_id: int | None = None
 

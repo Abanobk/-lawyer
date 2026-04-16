@@ -896,7 +896,7 @@ def custody_add_advance(payload: CustodyAdvanceCreate, db: Session = Depends(get
         office_id=user.office_id,
         account_id=acc.id,
         amount=payload.amount,
-        occurred_at=payload.occurred_at,
+        occurred_at=payload.occurred_at or _now(),
         notes=payload.notes,
         created_by_user_id=user.id,
     )
@@ -920,7 +920,7 @@ def custody_create_spend(payload: CustodySpendCreate, db: Session = Depends(get_
         office_id=user.office_id,
         account_id=acc.id,
         amount=payload.amount,
-        occurred_at=payload.occurred_at,
+        occurred_at=payload.occurred_at or _now(),
         description=payload.description,
         status=CustodySpendStatus.pending,
         case_id=payload.case_id,

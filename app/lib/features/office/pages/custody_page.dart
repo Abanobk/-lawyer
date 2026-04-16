@@ -124,7 +124,6 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
       await _custodyApi.addAdvance(
         userId: res.userId,
         amount: res.amount,
-        occurredAt: res.occurredAt,
         notes: res.notes,
       );
       if (!mounted) return;
@@ -383,7 +382,6 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
       }
       final spend = await _custodyApi.createSpend(
         amount: res.amount,
-        occurredAt: res.occurredAt,
         description: res.description,
       );
       if (!mounted) return;
@@ -570,10 +568,9 @@ class _CreateAccountDialogState extends State<_CreateAccountDialog> {
 }
 
 class _AdvanceResult {
-  const _AdvanceResult({required this.userId, required this.amount, required this.occurredAt, this.notes});
+  const _AdvanceResult({required this.userId, required this.amount, this.notes});
   final int userId;
   final double amount;
-  final DateTime occurredAt;
   final String? notes;
 }
 
@@ -589,7 +586,6 @@ class _AddAdvanceDialogState extends State<_AddAdvanceDialog> {
   int? _userId;
   final _amount = TextEditingController();
   final _notes = TextEditingController();
-  final DateTime _date = DateTime.now();
 
   @override
   void dispose() {
@@ -638,7 +634,7 @@ class _AddAdvanceDialogState extends State<_AddAdvanceDialog> {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أكمل البيانات')));
               return;
             }
-            Navigator.of(context).pop(_AdvanceResult(userId: uid, amount: amt, occurredAt: _date, notes: _notes.text.trim().isEmpty ? null : _notes.text.trim()));
+            Navigator.of(context).pop(_AdvanceResult(userId: uid, amount: amt, notes: _notes.text.trim().isEmpty ? null : _notes.text.trim()));
           },
           child: const Text('حفظ'),
         ),
@@ -648,9 +644,8 @@ class _AddAdvanceDialogState extends State<_AddAdvanceDialog> {
 }
 
 class _SpendResult {
-  const _SpendResult({required this.amount, required this.occurredAt, this.description});
+  const _SpendResult({required this.amount, this.description});
   final double amount;
-  final DateTime occurredAt;
   final String? description;
 }
 
@@ -664,7 +659,6 @@ class _CreateSpendDialog extends StatefulWidget {
 class _CreateSpendDialogState extends State<_CreateSpendDialog> {
   final _amount = TextEditingController();
   final _desc = TextEditingController();
-  final DateTime _date = DateTime.now();
 
   @override
   void dispose() {
@@ -704,7 +698,7 @@ class _CreateSpendDialogState extends State<_CreateSpendDialog> {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اكتب مبلغ صحيح')));
               return;
             }
-            Navigator.of(context).pop(_SpendResult(amount: amt, occurredAt: _date, description: _desc.text.trim().isEmpty ? null : _desc.text.trim()));
+            Navigator.of(context).pop(_SpendResult(amount: amt, description: _desc.text.trim().isEmpty ? null : _desc.text.trim()));
           },
           child: const Text('تسجيل'),
         ),
