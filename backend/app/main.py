@@ -129,6 +129,39 @@ PERMISSIONS: dict[str, str] = {
     "settings.view": "عرض الإعدادات",
 }
 
+# وحدات القائمة الجانبية للمستأجر (٧ عناصر): لوحة، موكلين، قضايا، جلسات، حسابات، موظفين، إعدادات.
+# «الاشتراك» يظهر لمالك المكتب فقط ولا يُحسب ضمن حد الصلاحيات في الباقة.
+PLAN_SIDEBAR_MODULE_PERM_KEYS: tuple[str, ...] = (
+    "dashboard.view",
+    "clients.read",
+    "cases.read",
+    "sessions.update",
+    "accounts.read",
+    "employees.read",
+    "settings.view",
+)
+
+
+def _tighten_plan_permissions_to_sidebar_modules() -> None:
+    """إن كانت الباقة تتضمن كل صلاحيات الكتالوج صراحةً، اضبطها على ال٧ وحدات القائمة."""
+    full = frozenset(PERMISSIONS.keys())
+    target_csv = ",".join(sorted(PLAN_SIDEBAR_MODULE_PERM_KEYS))
+    try:
+        with Session(engine) as db:
+            changed = False
+            for p in db.scalars(select(Plan)).all():
+                raw = getattr(p, "allowed_perm_keys_csv", None)
+                if not raw:
+                    continue
+                keys = frozenset(k.strip() for k in raw.split(",") if k.strip() and k.strip() in PERMISSIONS)
+                if keys == full:
+                    p.allowed_perm_keys_csv = target_csv
+                    changed = True
+            if changed:
+                db.commit()
+    except Exception:
+        pass
+
 
 # Track office activity (used by super admin analytics).
 TRACKED_ACTIVITY_PREFIXES: tuple[str, ...] = (
@@ -331,6 +364,7 @@ def _ensure_upload_dir() -> None:
 @app.on_event("startup")
 def _startup():
     init_db()
+    _tighten_plan_permissions_to_sidebar_modules()
     _ensure_upload_dir()
     # Ensure super admin exists
     with Session(engine) as db:
@@ -481,6 +515,10 @@ def require_perm(perm_key: str):
         if latest and latest.status == SubscriptionStatus.trial:
             return user
 
+        # مالك المكتب غير مقيّد بحد وحدات الباقة على الـ API؛ حد الباقة يطبق على الموظفين عبر صلاحياتهم.
+        if user.role == UserRole.office_owner:
+            return user
+
         plan: Plan | None = None
         if latest:
             if getattr(latest, "plan_id", None):
@@ -496,9 +534,6 @@ def require_perm(perm_key: str):
 
         if perm_key not in allowed_perm_keys:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden by plan")
-
-        if user.role == UserRole.office_owner:
-            return user
 
         keys = _user_perm_keys(db, user)
         if perm_key not in keys:
@@ -589,20 +624,8 @@ def me(user: User = Depends(current_user)):
 @app.get("/me/permissions", response_model=UserPermissionsOut)
 def me_permissions(db: Session = Depends(get_db), user: User = Depends(require_office_user)):
     if user.role == UserRole.office_owner:
-        sub = db.scalar(select(Subscription).where(Subscription.office_id == user.office_id).order_by(Subscription.id.desc()))
-        if not sub or sub.status == SubscriptionStatus.trial:
-            allowed = sorted(PERMISSIONS.keys())
-        else:
-            plan: Plan | None = None
-            if getattr(sub, "plan_id", None):
-                plan = db.get(Plan, int(sub.plan_id))
-            if not plan and sub.plan_name_snapshot:
-                plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
-            if not plan or not getattr(plan, "allowed_perm_keys_csv", None):
-                allowed = sorted(PERMISSIONS.keys())
-            else:
-                allowed = sorted({k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS})
-        return UserPermissionsOut(user_id=user.id, permissions=allowed)
+        # المالك يرى كل مفاتيح الكتالوج في الواجهة؛ حدود الباقة تظهر للموظفين وتُفرض عند منح الصلاحيات.
+        return UserPermissionsOut(user_id=user.id, permissions=sorted(PERMISSIONS.keys()))
     keys = db.scalars(
         select(UserPermission.perm_key).where(UserPermission.office_id == user.office_id, UserPermission.user_id == user.id).order_by(UserPermission.perm_key.asc())
     ).all()

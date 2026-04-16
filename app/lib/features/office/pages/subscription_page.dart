@@ -129,9 +129,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         }
         return Image.memory(
           fs.data!,
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           width: double.infinity,
           height: double.infinity,
+          alignment: Alignment.center,
         );
       },
     );
@@ -195,7 +196,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                       : group.first.name,
                                   sharedDetailLines: [
                                     if (group.first.maxUsers != null) 'حتى: ${group.first.maxUsers} مستخدم',
-                                    if (group.first.allowedPermKeys != null) 'عدد الصلاحيات: ${group.first.allowedPermKeys!.length}',
+                                    if (group.first.allowedPermKeys != null)
+                                      'عدد وحدات القائمة: ${group.first.allowedPermKeys!.length} (بدون إدارة الاشتراك)'
+                                    else
+                                      'وحدات القائمة: غير محددة في الباقة — راجع الأدمن',
                                   ],
                                   footerHint: 'بعد اختيار الاشتراك وإتمام التحويل، ارفع الإثبات أسفل الصفحة.',
                                   image: _promoArea(planForPromoImage(group)),

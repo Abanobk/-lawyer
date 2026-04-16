@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/constants/plan_sidebar_perm_keys.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
 import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
@@ -770,6 +771,7 @@ class _PlansTabState extends State<_PlansTab> {
     _days6.text = '180';
     _packageKey.text = '';
     _permsFuture = widget.adminApi.permissionsCatalog();
+    _selectedPermKeys.addAll(kDefaultPlanSidebarPermKeys);
   }
 
   @override
@@ -834,7 +836,9 @@ class _PlansTabState extends State<_PlansTab> {
       return;
     }
 
-    final allowedPermKeys = _selectedPermKeys.isEmpty ? null : List<String>.from(_selectedPermKeys);
+    final allowedPermKeys = List<String>.from(
+      _selectedPermKeys.isEmpty ? kDefaultPlanSidebarPermKeys : _selectedPermKeys,
+    );
 
     setState(() => _saving = true);
     try {
@@ -882,7 +886,9 @@ class _PlansTabState extends State<_PlansTab> {
       _price6.clear();
       _days6.text = '180';
       _link6.clear();
-      _selectedPermKeys.clear();
+      _selectedPermKeys
+        ..clear()
+        ..addAll(kDefaultPlanSidebarPermKeys);
       _packagePromoFile = null;
       widget.onRefresh();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إنشاء الباقة + خيارات الدفع')));
@@ -941,6 +947,11 @@ class _PlansTabState extends State<_PlansTab> {
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
+                    Text(
+                      'صلاحيات الوحدات (افتراضي: ${kDefaultPlanSidebarPermKeys.length} = عناصر القائمة بدون «الاشتراك»). يمكنك تعديل الاختيار.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
                     FutureBuilder<List<PermissionCatalogItemDto>>(
                       future: _permsFuture,
                       builder: (context, snap) {
@@ -1148,9 +1159,10 @@ class _PackagesTabState extends State<_PackagesTab> {
         }
         return Image.memory(
           s.data!,
-          fit: BoxFit.contain,
+          fit: BoxFit.cover,
           width: double.infinity,
           height: double.infinity,
+          alignment: Alignment.center,
         );
       },
     );
@@ -1207,7 +1219,10 @@ class _PackagesTabState extends State<_PackagesTab> {
                                     : group.first.name,
                                 sharedDetailLines: [
                                   if (group.first.maxUsers != null) 'حتى: ${group.first.maxUsers} مستخدم',
-                                  if (group.first.allowedPermKeys != null) 'عدد الصلاحيات: ${group.first.allowedPermKeys!.length}',
+                                  if (group.first.allowedPermKeys != null)
+                                    'عدد وحدات القائمة: ${group.first.allowedPermKeys!.length} (بدون إدارة الاشتراك)'
+                                  else
+                                    'وحدات القائمة: غير محددة في الباقة',
                                 ],
                                 packageKeyText: group.first.packageKey,
                                 imageMaxHeight: imageH,
