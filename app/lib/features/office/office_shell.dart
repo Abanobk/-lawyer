@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
@@ -15,6 +16,11 @@ class OfficeShell extends StatelessWidget {
 
   final String officeCode;
   final Widget child;
+
+  String officeLinkForCurrentHost() {
+    final origin = Uri.base.origin;
+    return '$origin/o/$officeCode';
+  }
 
   static const _items = <_OfficeNavItem>[
     _OfficeNavItem('dashboard', 'لوحة التحكم', Icons.dashboard_outlined),
@@ -54,7 +60,7 @@ class OfficeShell extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _DesktopOfficeHeader(),
+                    _DesktopOfficeHeader(officeLink: officeLinkForCurrentHost()),
                     Expanded(
                       child: ContentCanvas(child: child),
                     ),
@@ -108,6 +114,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = AuthTokenStorage();
     final permsApi = PermissionsApi();
+    final officeLink = '${Uri.base.origin}/o/$officeCode';
     final nav = Material(
       color: AppColors.sidebar,
       child: SafeArea(
@@ -141,6 +148,30 @@ class _Sidebar extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Colors.white54,
                       ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        officeLink,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+                        maxLines: 1,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'نسخ رابط المكتب',
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: officeLink));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط المكتب')));
+                        }
+                      },
+                      icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 8),
@@ -266,7 +297,9 @@ class _NavList extends StatelessWidget {
 }
 
 class _DesktopOfficeHeader extends StatelessWidget {
-  const _DesktopOfficeHeader();
+  const _DesktopOfficeHeader({required this.officeLink});
+
+  final String officeLink;
 
   @override
   Widget build(BuildContext context) {
@@ -281,6 +314,16 @@ class _DesktopOfficeHeader extends StatelessWidget {
             padding: const EdgeInsetsDirectional.only(start: 8, end: 20),
             child: Row(
               children: [
+                TextButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: officeLink));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط المكتب')));
+                    }
+                  },
+                  icon: const Icon(Icons.link, size: 18),
+                  label: const Text('نسخ رابط المكتب'),
+                ),
                 const Spacer(),
                 Text(
                   'مرحبًا، المدير العام',
