@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -128,6 +128,19 @@ class PaymentProof(Base):
 
 Index("idx_payment_proofs_office_status", PaymentProof.office_id, PaymentProof.status)
 Index("idx_payment_proofs_status_uploaded", PaymentProof.status, PaymentProof.uploaded_at)
+
+
+class OfficeActivityDaily(Base):
+    __tablename__ = "office_activity_daily"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    activity_date: Mapped[date] = mapped_column(Date, index=True)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("uq_office_activity_daily_office_date", OfficeActivityDaily.office_id, OfficeActivityDaily.activity_date, unique=True)
 
 
 class CaseKind(str, enum.Enum):

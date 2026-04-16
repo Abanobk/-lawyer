@@ -75,6 +75,7 @@ class AdminTrialOfficeUsersDto {
     required this.trialStartAt,
     required this.trialEndAt,
     required this.activeUsersCount,
+    required this.activeDaysCount,
   });
 
   final int officeId;
@@ -82,6 +83,7 @@ class AdminTrialOfficeUsersDto {
   final DateTime trialStartAt;
   final DateTime trialEndAt;
   final int activeUsersCount;
+  final int activeDaysCount;
 
   factory AdminTrialOfficeUsersDto.fromJson(Map<String, dynamic> json) {
     return AdminTrialOfficeUsersDto(
@@ -90,6 +92,7 @@ class AdminTrialOfficeUsersDto {
       trialStartAt: DateTime.parse(json['trial_start_at'] as String),
       trialEndAt: DateTime.parse(json['trial_end_at'] as String),
       activeUsersCount: json['active_users_count'] as int,
+      activeDaysCount: (json['active_days_count'] as int?) ?? 0,
     );
   }
 }
@@ -110,6 +113,72 @@ class AdminTrialAnalyticsDto {
       days: json['days'] as int,
       totalTrialOffices: json['total_trial_offices'] as int,
       offices: (json['offices'] as List).cast<Map<String, dynamic>>().map(AdminTrialOfficeUsersDto.fromJson).toList(),
+    );
+  }
+}
+
+class AdminActivePlanSummaryDto {
+  AdminActivePlanSummaryDto({
+    required this.planName,
+    required this.officeCount,
+    required this.avgRemainingDays,
+    this.planId,
+    this.planPackageKey,
+  });
+
+  final int? planId;
+  final String planName;
+  final String? planPackageKey;
+  final int officeCount;
+  final int avgRemainingDays;
+
+  factory AdminActivePlanSummaryDto.fromJson(Map<String, dynamic> json) {
+    return AdminActivePlanSummaryDto(
+      planId: json['plan_id'] as int?,
+      planName: json['plan_name'] as String,
+      planPackageKey: json['plan_package_key'] as String?,
+      officeCount: json['office_count'] as int,
+      avgRemainingDays: json['avg_remaining_days'] as int,
+    );
+  }
+}
+
+class AdminSubscriptionsAnalyticsDto {
+  AdminSubscriptionsAnalyticsDto({
+    required this.days,
+    required this.totalActiveOffices,
+    required this.byPlan,
+  });
+
+  final int days;
+  final int totalActiveOffices;
+  final List<AdminActivePlanSummaryDto> byPlan;
+
+  factory AdminSubscriptionsAnalyticsDto.fromJson(Map<String, dynamic> json) {
+    return AdminSubscriptionsAnalyticsDto(
+      days: json['days'] as int,
+      totalActiveOffices: json['total_active_offices'] as int,
+      byPlan: (json['by_plan'] as List).cast<Map<String, dynamic>>().map(AdminActivePlanSummaryDto.fromJson).toList(),
+    );
+  }
+}
+
+class AdminAlertsDto {
+  AdminAlertsDto({
+    required this.trialExpiring3d,
+    required this.activeExpiring7d,
+    required this.expiredOrInactive,
+  });
+
+  final int trialExpiring3d;
+  final int activeExpiring7d;
+  final int expiredOrInactive;
+
+  factory AdminAlertsDto.fromJson(Map<String, dynamic> json) {
+    return AdminAlertsDto(
+      trialExpiring3d: json['trial_expiring_3d'] as int,
+      activeExpiring7d: json['active_expiring_7d'] as int,
+      expiredOrInactive: json['expired_or_inactive'] as int,
     );
   }
 }
@@ -274,6 +343,39 @@ class AdminApi {
     );
   }
 
+  Future<List<AdminSuperAdminDto>> listSuperAdmins() async {
+    return _client.getJson<List<AdminSuperAdminDto>>(
+      'admin/super-admins',
+      decode: (json) {
+        final list = (json as List).cast<Map<String, dynamic>>();
+        return list.map(AdminSuperAdminDto.fromJson).toList();
+      },
+    );
+  }
+
+  Future<AdminSuperAdminDto> createSuperAdmin({
+    required String fullName,
+    required String email,
+    required String password,
+  }) async {
+    return _client.postJson<AdminSuperAdminDto>(
+      'admin/super-admins',
+      {
+        'full_name': fullName,
+        'email': email,
+        'password': password,
+      },
+      decode: (json) => AdminSuperAdminDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<void> disableSuperAdmin(int userId) async {
+    await _client.deleteJson<Map<String, dynamic>>(
+      'admin/super-admins/$userId',
+      decode: (json) => json as Map<String, dynamic>,
+    );
+  }
+
   Future<List<AdminPlanDto>> listPlans() async {
     return _client.getJson<List<AdminPlanDto>>(
       'admin/plans',
@@ -377,6 +479,21 @@ class AdminApi {
       'admin/analytics/trials',
       query: {'days': '$days'},
       decode: (json) => AdminTrialAnalyticsDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<AdminSubscriptionsAnalyticsDto> subscriptionsAnalytics({int days = 30}) async {
+    return _client.getJson<AdminSubscriptionsAnalyticsDto>(
+      'admin/analytics/subscriptions',
+      query: {'days': '$days'},
+      decode: (json) => AdminSubscriptionsAnalyticsDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<AdminAlertsDto> alerts() async {
+    return _client.getJson<AdminAlertsDto>(
+      'admin/alerts',
+      decode: (json) => AdminAlertsDto.fromJson(json as Map<String, dynamic>),
     );
   }
 

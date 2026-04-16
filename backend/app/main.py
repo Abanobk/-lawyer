@@ -2,7 +2,7 @@ import os
 import secrets
 import string
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -31,6 +31,7 @@ from app.models import (
     OfficeExpense,
     OfficeExpenseReceiptFile,
     Office,
+    OfficeActivityDaily,
     OfficeStatus,
     Plan,
     PaymentProof,
@@ -49,6 +50,9 @@ from app.schemas import (
     AdminReviewPaymentProofRequest,
     AdminTrialAnalyticsOut,
     AdminTrialOfficeUsersOut,
+    AdminSubscriptionsAnalyticsOut,
+    AdminActivePlanSummaryOut,
+    AdminAlertsOut,
     PlanCreate,
     PlanOut,
     PlanUpdate,
@@ -122,6 +126,66 @@ PERMISSIONS: dict[str, str] = {
     "custody.admin.approve": "مراجعة/اعتماد المصروفات (أدمن)",
     "settings.view": "عرض الإعدادات",
 }
+
+
+# Track office activity (used by super admin analytics).
+TRACKED_ACTIVITY_PREFIXES: tuple[str, ...] = (
+    "/me",
+    "/office",
+    "/clients",
+    "/cases",
+    "/sessions",
+    "/transactions",
+    "/custody",
+    "/office-expenses",
+    "/reports",
+)
+
+
+@app.middleware("http")
+async def _track_office_activity(request, call_next):  # type: ignore[no-untyped-def]
+    # Only track tenant (office) traffic, not admin endpoints or file downloads.
+    path = request.url.path or ""
+    if path.startswith("/admin") or path.startswith("/health") or path.startswith("/auth"):
+        return await call_next(request)
+    if not path.startswith(TRACKED_ACTIVITY_PREFIXES):
+        return await call_next(request)
+
+    auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+    token = ""
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+
+    office_id: int | None = None
+    role: str | None = None
+    if token:
+        try:
+            payload = decode_token(token)
+            if payload.get("type") == "access":
+                office_id = int(payload.get("office_id")) if payload.get("office_id") else None
+                role = payload.get("role")
+        except Exception:
+            office_id = None
+
+    if office_id and role in (UserRole.office_owner, UserRole.staff):
+        today = _now().date()
+        try:
+            with Session(engine) as db:
+                rec = db.scalar(
+                    select(OfficeActivityDaily).where(
+                        OfficeActivityDaily.office_id == office_id, OfficeActivityDaily.activity_date == today
+                    )
+                )
+                if rec:
+                    rec.hits = int(getattr(rec, "hits", 0) or 0) + 1
+                else:
+                    db.add(OfficeActivityDaily(office_id=office_id, activity_date=today, hits=1))
+                db.commit()
+        except Exception:
+            # Analytics tracking must never break the request.
+            pass
+
+    return await call_next(request)
 
 
 def _now() -> datetime:
@@ -238,6 +302,18 @@ def init_db(max_wait_seconds: int = 30) -> None:
                         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_proofs_status_uploaded ON payment_proofs (status, uploaded_at)"))
                     except Exception:
                         pass
+
+                # Office activity daily (analytics)
+                if "office_activity_daily" in table_names:
+                    act_cols = {c["name"] for c in insp.get_columns("office_activity_daily")}
+                    if "hits" not in act_cols:
+                        try:
+                            conn.execute(text("ALTER TABLE office_activity_daily ADD COLUMN hits INTEGER NOT NULL DEFAULT 0"))
+                        except Exception:
+                            pass
+                else:
+                    # create_all should create it, but keep best-effort for older DBs
+                    pass
             return
         except OperationalError as e:
             last_err = e
@@ -1755,9 +1831,11 @@ def admin_trial_analytics(
     _: User = Depends(require_super_admin),
 ):
     # Offices that had `trial` overlapping the last `days` window,
-    # with the current active user count per office.
+    # with the current active user count per office + active days from tracked UI usage.
     now = _now()
     cutoff = now - timedelta(days=int(days))
+    cutoff_date: date = cutoff.date()
+    today_date: date = now.date()
 
     trial_subs = db.scalars(
         select(Subscription)
@@ -1787,6 +1865,16 @@ def admin_trial_analytics(
             continue
         active_users = db.scalar(select(func.count(User.id)).where(User.office_id == oid, User.is_active == True))
         active_users_count = int(active_users or 0)
+
+        active_days = db.scalar(
+            select(func.count(OfficeActivityDaily.id)).where(
+                OfficeActivityDaily.office_id == oid,
+                OfficeActivityDaily.activity_date >= cutoff_date,
+                OfficeActivityDaily.activity_date <= today_date,
+                OfficeActivityDaily.hits > 0,
+            )
+        )
+        active_days_count = int(active_days or 0)
         rows.append(
             AdminTrialOfficeUsersOut(
                 office_id=oid,
@@ -1794,11 +1882,101 @@ def admin_trial_analytics(
                 trial_start_at=sub.start_at,
                 trial_end_at=sub.end_at,
                 active_users_count=active_users_count,
+                active_days_count=active_days_count,
             )
         )
 
     rows.sort(key=lambda r: r.active_users_count, reverse=True)
     return AdminTrialAnalyticsOut(days=int(days), total_trial_offices=len(rows), offices=rows)
+
+
+@app.get("/admin/analytics/subscriptions", response_model=AdminSubscriptionsAnalyticsOut)
+def admin_subscriptions_analytics(
+    days: int = Query(default=30),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    # Active subscriptions overview (latest subscription per office).
+    now = _now()
+    cutoff = now - timedelta(days=int(days))
+
+    # Get latest subscription row per office by id (best-effort).
+    subs = db.scalars(select(Subscription).order_by(Subscription.office_id.asc(), Subscription.id.desc())).all()
+    latest_by_office: dict[int, Subscription] = {}
+    for s in subs:
+        if s.office_id not in latest_by_office:
+            latest_by_office[s.office_id] = s
+
+    active = [s for s in latest_by_office.values() if s.status == SubscriptionStatus.active and s.end_at > now]
+    total_active = len(active)
+
+    # Group by plan (prefer plan_id, fallback to name snapshot).
+    plan_map: dict[str, dict] = {}
+    for s in active:
+        remaining = max(int((s.end_at - now).days), 0)
+        plan_id = getattr(s, "plan_id", None)
+        plan_name = s.plan_name_snapshot or "—"
+        package_key = None
+        if plan_id:
+            p = db.get(Plan, int(plan_id))
+            if p:
+                plan_name = p.package_name or p.name
+                package_key = getattr(p, "package_key", None)
+
+        key = f"{plan_id or ''}:{package_key or ''}:{plan_name}"
+        if key not in plan_map:
+            plan_map[key] = {"plan_id": plan_id, "plan_name": plan_name, "package_key": package_key, "count": 0, "sum_remaining": 0}
+        plan_map[key]["count"] += 1
+        plan_map[key]["sum_remaining"] += remaining
+
+    by_plan = []
+    for v in plan_map.values():
+        avg_remaining = int(round(v["sum_remaining"] / max(v["count"], 1)))
+        by_plan.append(
+            AdminActivePlanSummaryOut(
+                plan_id=int(v["plan_id"]) if v["plan_id"] else None,
+                plan_name=str(v["plan_name"]),
+                plan_package_key=v["package_key"],
+                office_count=int(v["count"]),
+                avg_remaining_days=avg_remaining,
+            )
+        )
+    by_plan.sort(key=lambda x: x.office_count, reverse=True)
+
+    return AdminSubscriptionsAnalyticsOut(days=int(days), total_active_offices=total_active, by_plan=by_plan)
+
+
+@app.get("/admin/alerts", response_model=AdminAlertsOut)
+def admin_alerts(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    now = _now()
+    # trial ending within 3 days (still valid)
+    trial_expiring = db.scalar(
+        select(func.count(Subscription.id)).where(
+            Subscription.status == SubscriptionStatus.trial,
+            Subscription.end_at > now,
+            Subscription.end_at <= (now + timedelta(days=3)),
+        )
+    )
+    active_expiring = db.scalar(
+        select(func.count(Subscription.id)).where(
+            Subscription.status == SubscriptionStatus.active,
+            Subscription.end_at > now,
+            Subscription.end_at <= (now + timedelta(days=7)),
+        )
+    )
+    expired_or_inactive = db.scalar(
+        select(func.count(Subscription.id)).where(
+            (Subscription.end_at <= now) | (Subscription.status.in_([SubscriptionStatus.expired, SubscriptionStatus.cancelled]))
+        )
+    )
+    return AdminAlertsOut(
+        trial_expiring_3d=int(trial_expiring or 0),
+        active_expiring_7d=int(active_expiring or 0),
+        expired_or_inactive=int(expired_or_inactive or 0),
+    )
 
 
 @app.get("/admin/plans", response_model=list[PlanOut])

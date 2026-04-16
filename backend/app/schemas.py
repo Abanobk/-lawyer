@@ -133,12 +133,33 @@ class AdminTrialOfficeUsersOut(BaseModel):
     trial_start_at: datetime
     trial_end_at: datetime
     active_users_count: int
+    active_days_count: int = 0
 
 
 class AdminTrialAnalyticsOut(BaseModel):
     days: int
     total_trial_offices: int
     offices: list[AdminTrialOfficeUsersOut]
+
+
+class AdminActivePlanSummaryOut(BaseModel):
+    plan_id: int | None = None
+    plan_name: str
+    plan_package_key: str | None = None
+    office_count: int
+    avg_remaining_days: int
+
+
+class AdminSubscriptionsAnalyticsOut(BaseModel):
+    days: int
+    total_active_offices: int
+    by_plan: list[AdminActivePlanSummaryOut]
+
+
+class AdminAlertsOut(BaseModel):
+    trial_expiring_3d: int
+    active_expiring_7d: int
+    expired_or_inactive: int
 
 
 class PaymentProofOut(BaseModel):

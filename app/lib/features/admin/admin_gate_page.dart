@@ -948,11 +948,17 @@ class _OfficesTabState extends State<_OfficesTab> {
   bool _loading = false;
   bool _showAllOffices = false;
   late Future<AdminTrialAnalyticsDto> _trialAnalyticsFuture;
+  late Future<AdminSubscriptionsAnalyticsDto> _subsAnalyticsFuture;
+  late Future<AdminAlertsDto> _alertsFuture;
+  late Future<List<AdminSuperAdminDto>> _superAdminsFuture;
 
   @override
   void initState() {
     super.initState();
     _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30);
+    _subsAnalyticsFuture = widget.adminApi.subscriptionsAnalytics(days: 30);
+    _alertsFuture = widget.adminApi.alerts();
+    _superAdminsFuture = widget.adminApi.listSuperAdmins();
   }
 
   Future<void> _loadSub(int officeId) async {
@@ -1009,137 +1015,387 @@ class _OfficesTabState extends State<_OfficesTab> {
                         });
                       },
                     ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'تحديث',
+                      onPressed: () {
+                        setState(() {
+                          _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30);
+                          _subsAnalyticsFuture = widget.adminApi.subscriptionsAnalytics(days: 30);
+                          _alertsFuture = widget.adminApi.alerts();
+                          _superAdminsFuture = widget.adminApi.listSuperAdmins();
+                        });
+                      },
+                      icon: const Icon(Icons.refresh),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: _showAllOffices
-                      ? FutureBuilder<List<AdminSubscriptionDto?>>(
-                          future: Future.wait(
-                            offices.map((o) async {
-                              try {
-                                return await widget.adminApi.getSubscription(o.id);
-                              } catch (_) {
-                                return null;
-                              }
-                            }),
-                          ),
-                          builder: (context, snapSubs) {
-                            if (snapSubs.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                            if (snapSubs.hasError) return Center(child: Text('تعذر تحميل الاشتراكات: ${snapSubs.error}'));
-                            final subs = (snapSubs.data ?? const <AdminSubscriptionDto?>[]).whereType<AdminSubscriptionDto>().toList();
-                            if (subs.isEmpty) return const Center(child: Text('لا توجد اشتراكات'));
-                            return ListView.separated(
-                              itemCount: subs.length,
-                              separatorBuilder: (context, index) => const Divider(height: 1),
-                              itemBuilder: (context, i) {
-                                final s = subs[i];
-                                final office = (() {
-                                  for (final o in offices) {
-                                    if (o.id == s.officeId) return o;
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 7,
+                        child: _showAllOffices
+                            ? FutureBuilder<List<AdminSubscriptionDto?>>(
+                                future: Future.wait(
+                                  offices.map((o) async {
+                                    try {
+                                      return await widget.adminApi.getSubscription(o.id);
+                                    } catch (_) {
+                                      return null;
+                                    }
+                                  }),
+                                ),
+                                builder: (context, snapSubs) {
+                                  if (snapSubs.connectionState == ConnectionState.waiting) {
+                                    return const Center(child: CircularProgressIndicator());
                                   }
-                                  return null;
-                                })();
-                                return ListTile(
-                                  title: Text(office?.name ?? 'مكتب #${s.officeId}'),
-                                  subtitle: Text(
-                                    'الحالة: ${s.status} — ${s.endAt.toLocal()}',
+                                  if (snapSubs.hasError) return Center(child: Text('تعذر تحميل الاشتراكات: ${snapSubs.error}'));
+                                  final subs = (snapSubs.data ?? const <AdminSubscriptionDto?>[]).whereType<AdminSubscriptionDto>().toList();
+                                  if (subs.isEmpty) return const Center(child: Text('لا توجد اشتراكات'));
+                                  return ListView.separated(
+                                    itemCount: subs.length,
+                                    separatorBuilder: (context, index) => const Divider(height: 1),
+                                    itemBuilder: (context, i) {
+                                      final s = subs[i];
+                                      AdminOfficeDto? office;
+                                      for (final o in offices) {
+                                        if (o.id == s.officeId) {
+                                          office = o;
+                                          break;
+                                        }
+                                      }
+                                      return ListTile(
+                                        title: Text(office?.name ?? 'مكتب #${s.officeId}'),
+                                        subtitle: Text('الحالة: ${s.status} — ${s.endAt.toLocal()}'),
+                                        trailing: const Icon(Icons.chevron_right),
+                                      );
+                                    },
+                                  );
+                                },
+                              )
+                            : Row(
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: ListView(
+                                      children: offices
+                                          .map(
+                                            (o) => ListTile(
+                                              title: Text(o.name),
+                                              subtitle: Text('كود: ${o.code} — ${o.status}'),
+                                              selected: _selectedOfficeId == o.id,
+                                              onTap: () => _loadSub(o.id),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
                                   ),
-                                  trailing: const Icon(Icons.chevron_right),
-                                );
-                              },
-                            );
-                          },
-                        )
-                      : Row(
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 4,
+                                    child: Card(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: _selectedOfficeId == null
+                                            ? const Center(child: Text('اختر مكتب لعرض التفاصيل'))
+                                            : (_loading
+                                                ? const Center(child: CircularProgressIndicator())
+                                                : (_sub == null
+                                                    ? const Center(child: Text('لا توجد بيانات اشتراك'))
+                                                    : Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                        children: [
+                                                          Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
+                                                          const SizedBox(height: 8),
+                                                          Text('بداية: ${_sub!.startAt.toLocal()}'),
+                                                          Text('نهاية: ${_sub!.endAt.toLocal()}'),
+                                                          if ((_sub!.notes ?? '').isNotEmpty) ...[
+                                                            const SizedBox(height: 8),
+                                                            Text('ملاحظات: ${_sub!.notes}'),
+                                                          ],
+                                                        ],
+                                                      ))),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 340,
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _TrialCard(future: _trialAnalyticsFuture),
+                              const SizedBox(height: 12),
+                              _ActiveSubsCard(future: _subsAnalyticsFuture),
+                              const SizedBox(height: 12),
+                              _AlertsCard(future: _alertsFuture),
+                              const SizedBox(height: 12),
+                              _SuperAdminsCard(future: _superAdminsFuture, adminApi: widget.adminApi, onRefresh: () => setState(() => _superAdminsFuture = widget.adminApi.listSuperAdmins())),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _TrialCard extends StatelessWidget {
+  const _TrialCard({required this.future});
+  final Future<AdminTrialAnalyticsDto> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: FutureBuilder<AdminTrialAnalyticsDto>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (snap.hasError) return Text('تعذر تحميل التجربة: ${snap.error}');
+            final data = snap.data;
+            if (data == null || data.offices.isEmpty) return const Text('لا توجد مكاتب تجريبية خلال آخر 30 يوم');
+
+            final maxUsers = data.offices.map((o) => o.activeUsersCount).fold<int>(1, (a, b) => a > b ? a : b);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('التجربة (آخر ${data.days} يوم)', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text('عدد المكاتب: ${data.totalTrialOffices}'),
+                const SizedBox(height: 10),
+                ...data.offices.take(6).map((o) {
+                  final pct = (o.activeUsersCount / maxUsers).clamp(0.0, 1.0);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(o.officeName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 4),
+                        Row(
                           children: [
                             Expanded(
-                              flex: 2,
-                              child: ListView(
-                                children: offices
-                                    .map(
-                                      (o) => ListTile(
-                                        title: Text(o.name),
-                                        subtitle: Text('كود: ${o.code} — ${o.status}'),
-                                        selected: _selectedOfficeId == o.id,
-                                        onTap: () => _loadSub(o.id),
-                                      ),
-                                    )
-                                    .toList(),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: LinearProgressIndicator(value: pct, minHeight: 10),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 3,
-                              child: Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: _selectedOfficeId == null
-                          ? FutureBuilder<AdminTrialAnalyticsDto>(
-                              future: _trialAnalyticsFuture,
-                              builder: (context, snap) {
-                                if (snap.connectionState == ConnectionState.waiting) {
-                                  return const Center(child: CircularProgressIndicator());
-                                }
-                                if (snap.hasError) {
-                                  return Center(child: Text('تعذر تحميل إحصاءات التجربة: ${snap.error}'));
-                                }
-                                final data = snap.data;
-                                if (data == null || data.offices.isEmpty) {
-                                  return const Center(child: Text('لا توجد مكاتب تجريبية خلال آخر 30 يوم'));
-                                }
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    Text(
-                                      'مكاتب التجربة (آخر ${data.days} يوم): ${data.totalTrialOffices}',
-                                      style: Theme.of(context).textTheme.titleMedium,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      height: 240,
-                                      child: ListView.separated(
-                                        itemCount: data.offices.length,
-                                        separatorBuilder: (context, index) => const Divider(height: 1),
-                                        itemBuilder: (context, i) {
-                                          final o = data.offices[i];
-                                          return ListTile(
-                                            dense: true,
-                                            title: Text(o.officeName),
-                                            subtitle: Text(
-                                              'المستخدمين الآن: ${o.activeUsersCount} — ينتهي: ${o.trialEndAt.toLocal()}',
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            )
-                                      : (_loading
-                                          ? const Center(child: CircularProgressIndicator())
-                                          : (_sub == null
-                                              ? const Center(child: Text('لا توجد بيانات اشتراك'))
-                                              : Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                                  children: [
-                                                    Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
-                                                    const SizedBox(height: 8),
-                                                    Text('بداية: ${_sub!.startAt.toLocal()}'),
-                                                    Text('نهاية: ${_sub!.endAt.toLocal()}'),
-                                                    if ((_sub!.notes ?? '').isNotEmpty) ...[
-                                                      const SizedBox(height: 8),
-                                                      Text('ملاحظات: ${_sub!.notes}'),
-                                                    ],
-                                                  ],
-                                                ))),
-                                ),
-                              ),
-                            ),
+                            const SizedBox(width: 8),
+                            Text('${o.activeUsersCount} مستخدم'),
                           ],
                         ),
+                        const SizedBox(height: 2),
+                        Text('أيام نشاط: ${o.activeDaysCount} — ينتهي: ${o.trialEndAt.toLocal()}', style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveSubsCard extends StatelessWidget {
+  const _ActiveSubsCard({required this.future});
+  final Future<AdminSubscriptionsAnalyticsDto> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: FutureBuilder<AdminSubscriptionsAnalyticsDto>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (snap.hasError) return Text('تعذر تحميل الاشتراكات: ${snap.error}');
+            final data = snap.data;
+            if (data == null) return const Text('لا توجد بيانات');
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('الاشتراكات الفعلية', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text('إجمالي المكاتب المشتركة: ${data.totalActiveOffices}'),
+                const SizedBox(height: 10),
+                ...data.byPlan.take(6).map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(p.planName, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        Text('${p.officeCount}'),
+                        const SizedBox(width: 8),
+                        Text('متوسط متبقي: ${p.avgRemainingDays} يوم', style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
                 ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AlertsCard extends StatelessWidget {
+  const _AlertsCard({required this.future});
+  final Future<AdminAlertsDto> future;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: FutureBuilder<AdminAlertsDto>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 90, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (snap.hasError) return Text('تعذر تحميل التحذيرات: ${snap.error}');
+            final a = snap.data;
+            if (a == null) return const Text('لا توجد بيانات');
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('تحذيرات', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text('تجارب تنتهي خلال 3 أيام: ${a.trialExpiring3d}'),
+                Text('اشتراكات تنتهي خلال 7 أيام: ${a.activeExpiring7d}'),
+                Text('منتهية/غير فعّالة: ${a.expiredOrInactive}'),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _SuperAdminsCard extends StatelessWidget {
+  const _SuperAdminsCard({required this.future, required this.adminApi, required this.onRefresh});
+  final Future<List<AdminSuperAdminDto>> future;
+  final AdminApi adminApi;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: FutureBuilder<List<AdminSuperAdminDto>>(
+          future: future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
+            }
+            if (snap.hasError) return Text('تعذر تحميل مستخدمي السوبر أدمن: ${snap.error}');
+            final items = snap.data ?? const <AdminSuperAdminDto>[];
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Text('المستخدمين والصلاحيات', style: Theme.of(context).textTheme.titleMedium),
+                    const Spacer(),
+                    IconButton(onPressed: onRefresh, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
+                    FilledButton.tonal(
+                      onPressed: () async {
+                        final name = TextEditingController();
+                        final email = TextEditingController();
+                        final pass = TextEditingController();
+                        try {
+                          final ok = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('إضافة سوبر أدمن'),
+                              content: SizedBox(
+                                width: 520,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    TextField(controller: name, decoration: const InputDecoration(labelText: 'الاسم')),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: email, decoration: const InputDecoration(labelText: 'البريد')),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: pass, decoration: const InputDecoration(labelText: 'كلمة المرور'), obscureText: true),
+                                  ],
+                                ),
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+                                FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('إضافة')),
+                              ],
+                            ),
+                          );
+                          if (ok != true) return;
+                          await adminApi.createSuperAdmin(fullName: name.text.trim(), email: email.text.trim(), password: pass.text);
+                          onRefresh();
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل الإضافة: $e')));
+                          }
+                        } finally {
+                          name.dispose();
+                          email.dispose();
+                          pass.dispose();
+                        }
+                      },
+                      child: const Text('إضافة'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (items.isEmpty) const Text('لا يوجد مستخدمين') else ...items.take(5).map((u) {
+                  return Row(
+                    children: [
+                      Expanded(child: Text(u.fullName ?? u.email, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      Text(u.isActive ? 'نشط' : 'مُعطّل', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(width: 6),
+                      if (u.isActive)
+                        IconButton(
+                          tooltip: 'تعطيل',
+                          onPressed: () async {
+                            try {
+                              await adminApi.disableSuperAdmin(u.id);
+                              onRefresh();
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل التعطيل: $e')));
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.block),
+                        ),
+                    ],
+                  );
+                }),
               ],
             );
           },
