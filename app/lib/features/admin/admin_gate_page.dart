@@ -2,10 +2,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/constants/plan_perm_labels.dart';
 import 'package:lawyer_app/core/constants/plan_sidebar_perm_keys.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
 import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
+import 'package:lawyer_app/core/widgets/promo_image_memory.dart';
 import 'package:lawyer_app/data/api/admin_api.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
@@ -810,6 +812,48 @@ class _PlansTabState extends State<_PlansTab> {
     }
   }
 
+  Future<void> _confirmDeactivatePlan(AdminPlanDto p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تعطيل الباقة؟'),
+        content: Text('«${p.name}» — لن تظهر للمستأجرين كخيار اشتراك. الاشتراكات الحالية لا تتأثر.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تعطيل')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.adminApi.deletePlan(p.id);
+      if (!mounted) return;
+      widget.onRefresh();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تعطيل الباقة')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل: $e')));
+    }
+  }
+
+  Future<void> _openEditPlan(AdminPlanDto p) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _EditPlanDialog(
+        plan: p,
+        adminApi: widget.adminApi,
+        permsFuture: _permsFuture,
+        onSuccess: () {
+          Navigator.pop(ctx);
+          widget.onRefresh();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ التعديلات')));
+          }
+        },
+      ),
+    );
+  }
+
   Future<void> _createPackageWithOptions() async {
     final packageName = _name.text.trim();
     final packageKeyVal = _packageKey.text.trim().isEmpty ? packageName : _packageKey.text.trim();
@@ -916,8 +960,56 @@ class _PlansTabState extends State<_PlansTab> {
               ],
             ),
             const SizedBox(height: 12),
-            Flexible(
-              fit: FlexFit.loose,
+            Text('الباقات الحالية', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Expanded(
+              flex: 2,
+              child: FutureBuilder<List<AdminPlanDto>>(
+                future: widget.future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  }
+                  if (snap.hasError) return Center(child: Text('تعذر التحميل: ${snap.error}'));
+                  final plans = snap.data ?? const <AdminPlanDto>[];
+                  if (plans.isEmpty) return const Center(child: Text('لا توجد باقات بعد'));
+                  return ListView.separated(
+                    itemCount: plans.length,
+                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final p = plans[i];
+                      final price = (p.priceCents / 100).toStringAsFixed(0);
+                      return ListTile(
+                        dense: true,
+                        title: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          '$price ج — ${p.durationDays} يوم — ${p.isActive ? 'نشط' : 'معطّل'}${p.packageKey != null && p.packageKey!.trim().isNotEmpty ? ' — ${p.packageKey}' : ''}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'تعديل',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: _saving ? null : () => _openEditPlan(p),
+                            ),
+                            IconButton(
+                              tooltip: 'تعطيل',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: _saving || !p.isActive ? null : () => _confirmDeactivatePlan(p),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              flex: 3,
               child: SingleChildScrollView(
                 padding: EdgeInsets.zero,
                 child: Card(
@@ -1080,6 +1172,200 @@ class _PlansTabState extends State<_PlansTab> {
   }
 }
 
+class _EditPlanDialog extends StatefulWidget {
+  const _EditPlanDialog({
+    required this.plan,
+    required this.adminApi,
+    required this.permsFuture,
+    required this.onSuccess,
+  });
+
+  final AdminPlanDto plan;
+  final AdminApi adminApi;
+  final Future<List<PermissionCatalogItemDto>> permsFuture;
+  final VoidCallback onSuccess;
+
+  @override
+  State<_EditPlanDialog> createState() => _EditPlanDialogState();
+}
+
+class _EditPlanDialogState extends State<_EditPlanDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _price;
+  late final TextEditingController _days;
+  late final TextEditingController _link;
+  late final TextEditingController _packageKey;
+  late final TextEditingController _packageName;
+  late final TextEditingController _maxUsers;
+  late List<String> _permKeys;
+  late bool _active;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.plan;
+    _name = TextEditingController(text: p.name);
+    _price = TextEditingController(text: (p.priceCents / 100).toStringAsFixed(2));
+    _days = TextEditingController(text: '${p.durationDays}');
+    _link = TextEditingController(text: p.instapayLink ?? '');
+    _packageKey = TextEditingController(text: p.packageKey ?? '');
+    _packageName = TextEditingController(text: p.packageName ?? '');
+    _maxUsers = TextEditingController(text: p.maxUsers == null ? '' : '${p.maxUsers}');
+    _permKeys = List<String>.from(p.allowedPermKeys ?? kDefaultPlanSidebarPermKeys);
+    _active = p.isActive;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _price.dispose();
+    _days.dispose();
+    _link.dispose();
+    _packageKey.dispose();
+    _packageName.dispose();
+    _maxUsers.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _name.text.trim();
+    final price = double.tryParse(_price.text.trim());
+    final days = int.tryParse(_days.text.trim());
+    final maxU = int.tryParse(_maxUsers.text.trim());
+    if (name.length < 2 || price == null || price <= 0 || days == null || days <= 0 || maxU == null || maxU <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تحقق من الاسم والسعر والمدة وحد المستخدمين')));
+      return;
+    }
+    final perms = _permKeys.isEmpty ? List<String>.from(kDefaultPlanSidebarPermKeys) : List<String>.from(_permKeys);
+    setState(() => _busy = true);
+    try {
+      await widget.adminApi.updatePlan(
+        widget.plan.id,
+        name: name,
+        priceCents: (price * 100).round(),
+        durationDays: days,
+        instapayLink: _link.text.trim().isEmpty ? '' : _link.text.trim(),
+        packageKey: _packageKey.text.trim().isEmpty ? '' : _packageKey.text.trim(),
+        packageName: _packageName.text.trim().isEmpty ? '' : _packageName.text.trim(),
+        maxUsers: maxU,
+        allowedPermKeys: perms,
+        isActive: _active,
+      );
+      if (!mounted) return;
+      widget.onSuccess();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل الحفظ: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('تعديل باقة #${widget.plan.id}'),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: _name, decoration: const InputDecoration(labelText: 'اسم الباقة')),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _price,
+                      decoration: const InputDecoration(labelText: 'السعر (ج)'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _days,
+                      decoration: const InputDecoration(labelText: 'المدة (يوم)'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(controller: _link, decoration: const InputDecoration(labelText: 'رابط إنستاباي')),
+              const SizedBox(height: 8),
+              TextField(controller: _packageKey, decoration: const InputDecoration(labelText: 'package_key')),
+              const SizedBox(height: 8),
+              TextField(controller: _packageName, decoration: const InputDecoration(labelText: 'package_name')),
+              const SizedBox(height: 8),
+              TextField(controller: _maxUsers, decoration: const InputDecoration(labelText: 'حد المستخدمين'), keyboardType: TextInputType.number),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('باقة نشطة'),
+                value: _active,
+                onChanged: _busy
+                    ? null
+                    : (v) {
+                        setState(() => _active = v);
+                      },
+              ),
+              const SizedBox(height: 8),
+              Text('وحدات التحكم', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              FutureBuilder<List<PermissionCatalogItemDto>>(
+                future: widget.permsFuture,
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    );
+                  }
+                  final items = snap.data ?? const <PermissionCatalogItemDto>[];
+                  return Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: items.map((it) {
+                      final sel = _permKeys.contains(it.key);
+                      return FilterChip(
+                        label: Text(it.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        selected: sel,
+                        onSelected: _busy
+                            ? null
+                            : (v) {
+                                setState(() {
+                                  if (v) {
+                                    _permKeys.add(it.key);
+                                  } else {
+                                    _permKeys.remove(it.key);
+                                  }
+                                });
+                              },
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _busy ? null : () => Navigator.pop(context), child: const Text('إلغاء')),
+        FilledButton(
+          onPressed: _busy ? null : _save,
+          child: _busy
+              ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('حفظ'),
+        ),
+      ],
+    );
+  }
+}
+
 String _adminPlanGroupKey(AdminPlanDto p) {
   final pk = p.packageKey?.trim() ?? '';
   if (pk.isNotEmpty) return 'k:$pk';
@@ -1157,13 +1443,7 @@ class _PackagesTabState extends State<_PackagesTab> {
             child: const Center(child: Icon(Icons.broken_image_outlined, size: 48)),
           );
         }
-        return Image.memory(
-          s.data!,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          alignment: Alignment.center,
-        );
+        return PromoImageMemory(bytes: s.data!);
       },
     );
   }
@@ -1205,7 +1485,6 @@ class _PackagesTabState extends State<_PackagesTab> {
                       final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
                       const gap = 16.0;
                       final itemW = (w - gap * (cross - 1)) / cross;
-                      final imageH = (itemW * 0.78).clamp(340.0, 540.0);
                       return Wrap(
                         spacing: gap,
                         runSpacing: gap,
@@ -1217,15 +1496,15 @@ class _PackagesTabState extends State<_PackagesTab> {
                                 title: (group.first.packageName ?? '').trim().isNotEmpty
                                     ? group.first.packageName!.trim()
                                     : group.first.name,
-                                sharedDetailLines: [
-                                  if (group.first.maxUsers != null) 'حتى: ${group.first.maxUsers} مستخدم',
-                                  if (group.first.allowedPermKeys != null)
-                                    'عدد وحدات القائمة: ${group.first.allowedPermKeys!.length} (بدون إدارة الاشتراك)'
-                                  else
-                                    'وحدات القائمة: غير محددة في الباقة',
+                                sharedDetailWidgets: [
+                                  if (group.first.maxUsers != null)
+                                    Text('حتى: ${group.first.maxUsers} مستخدم', style: Theme.of(context).textTheme.bodyMedium),
+                                  if (group.first.maxUsers != null) const SizedBox(height: 4),
+                                  Builder(
+                                    builder: (ctx) => controlUnitsCountLine(ctx, group.first.allowedPermKeys),
+                                  ),
                                 ],
                                 packageKeyText: group.first.packageKey,
-                                imageMaxHeight: imageH,
                                 footerHint: () {
                                   final optionsLines = group
                                       .map(

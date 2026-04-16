@@ -8,20 +8,24 @@ class PlanOfferCard extends StatelessWidget {
     required this.image,
     this.packageKeyText,
     this.sharedDetailLines = const [],
+    this.sharedDetailWidgets,
     this.footerHint,
     this.actions = const [],
     this.selected = false,
-    this.imageMaxHeight = 400,
+    this.imageMaxHeight,
   });
 
   final String title;
   final Widget image;
   final String? packageKeyText;
   final List<String> sharedDetailLines;
+  /// إن وُجدت تُعرض بدل [sharedDetailLines].
+  final List<Widget>? sharedDetailWidgets;
   final String? footerHint;
   final List<Widget> actions;
   final bool selected;
-  final double imageMaxHeight;
+  /// إن كان `null` يُسمح لمنطقة الصورة بتحديد الارتفاع من المحتوى (مثل [PromoImageMemory]).
+  final double? imageMaxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -37,14 +41,19 @@ class PlanOfferCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: imageMaxHeight,
-            width: double.infinity,
-            child: ColoredBox(
-              color: const Color(0xFFEEF2F7),
-              child: image,
-            ),
-          ),
+          imageMaxHeight != null
+              ? SizedBox(
+                  height: imageMaxHeight,
+                  width: double.infinity,
+                  child: ColoredBox(
+                    color: const Color(0xFFEEF2F7),
+                    child: image,
+                  ),
+                )
+              : ColoredBox(
+                  color: const Color(0xFFEEF2F7),
+                  child: image,
+                ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             child: Column(
@@ -57,7 +66,10 @@ class PlanOfferCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (sharedDetailLines.isNotEmpty) ...[
+                if (sharedDetailWidgets != null && sharedDetailWidgets!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  ...sharedDetailWidgets!,
+                ] else if (sharedDetailLines.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   for (final line in sharedDetailLines) Text(line, style: Theme.of(context).textTheme.bodyMedium),
                 ],

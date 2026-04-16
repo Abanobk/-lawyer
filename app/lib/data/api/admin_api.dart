@@ -470,19 +470,19 @@ class AdminApi {
     List<String>? allowedPermKeys,
     bool? isActive,
   }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (priceCents != null) body['price_cents'] = priceCents;
+    if (durationDays != null) body['duration_days'] = durationDays;
+    if (instapayLink != null) body['instapay_link'] = instapayLink;
+    if (packageKey != null) body['package_key'] = packageKey;
+    if (packageName != null) body['package_name'] = packageName;
+    if (maxUsers != null) body['max_users'] = maxUsers;
+    if (allowedPermKeys != null) body['allowed_perm_keys'] = allowedPermKeys;
+    if (isActive != null) body['is_active'] = isActive;
     return _client.putJson<AdminPlanDto>(
       'admin/plans/$planId',
-      {
-        'name': name,
-        'price_cents': priceCents,
-        'duration_days': durationDays,
-        'instapay_link': instapayLink,
-        'package_key': packageKey,
-        'package_name': packageName,
-        'max_users': maxUsers,
-        'allowed_perm_keys': allowedPermKeys,
-        'is_active': isActive,
-      },
+      body,
       decode: (json) => AdminPlanDto.fromJson(json as Map<String, dynamic>),
     );
   }

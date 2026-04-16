@@ -2,9 +2,11 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:lawyer_app/core/constants/plan_perm_labels.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/util/plan_display.dart';
 import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
+import 'package:lawyer_app/core/widgets/promo_image_memory.dart';
 import 'package:lawyer_app/data/api/plans_api.dart';
 import 'package:lawyer_app/data/api/subscription_api.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -127,13 +129,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             child: const Center(child: Icon(Icons.broken_image_outlined, size: 48)),
           );
         }
-        return Image.memory(
-          fs.data!,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          alignment: Alignment.center,
-        );
+        return PromoImageMemory(bytes: fs.data!);
       },
     );
   }
@@ -180,30 +176,26 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                         final w = c.maxWidth;
                         final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
                         const gap = 16.0;
-                        final itemW = (w - gap * (cross - 1)) / cross;
-                        // صورة أوضح: ارتفاع يتبع عرض البطاقة (دعاية أعرض = مساحة أطول).
-                        final imageH = (itemW * 0.78).clamp(340.0, 540.0);
+                        final cardW = (w - gap * (cross - 1)) / cross;
                         return Wrap(
                           spacing: gap,
                           runSpacing: gap,
                           children: [
                             for (final group in groups)
                               SizedBox(
-                                width: itemW,
+                                width: cardW,
                                 child: PlanOfferCard(
                                   title: (group.first.packageName ?? '').trim().isNotEmpty
                                       ? group.first.packageName!.trim()
                                       : group.first.name,
-                                  sharedDetailLines: [
-                                    if (group.first.maxUsers != null) 'حتى: ${group.first.maxUsers} مستخدم',
-                                    if (group.first.allowedPermKeys != null)
-                                      'عدد وحدات القائمة: ${group.first.allowedPermKeys!.length} (بدون إدارة الاشتراك)'
-                                    else
-                                      'وحدات القائمة: غير محددة في الباقة — راجع الأدمن',
+                                  sharedDetailWidgets: [
+                                    if (group.first.maxUsers != null)
+                                      Text('حتى: ${group.first.maxUsers} مستخدم', style: Theme.of(context).textTheme.bodyMedium),
+                                    if (group.first.maxUsers != null) const SizedBox(height: 4),
+                                    controlUnitsCountLine(context, group.first.allowedPermKeys),
                                   ],
                                   footerHint: 'بعد اختيار الاشتراك وإتمام التحويل، ارفع الإثبات أسفل الصفحة.',
                                   image: _promoArea(planForPromoImage(group)),
-                                  imageMaxHeight: imageH,
                                   selected: group.any((p) => p.id == _selectedPlanId),
                                   actions: [
                                     for (final p in group)
