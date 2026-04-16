@@ -19,6 +19,10 @@ class Settings(BaseSettings):
 
     trial_days_default: int = 30
 
+    # Where case attachments are stored inside the backend container.
+    # Mount a persistent host path to this directory in docker-compose.
+    upload_dir: str = "/data/uploads"
+
 
 settings = Settings()
 

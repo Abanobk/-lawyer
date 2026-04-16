@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -96,3 +96,123 @@ class PaymentProof(Base):
 
 Index("idx_payment_proofs_office_status", PaymentProof.office_id, PaymentProof.status)
 
+
+class CaseKind(str, enum.Enum):
+    civil = "civil"
+    misdemeanor = "misdemeanor"  # جنح
+    felony = "felony"  # جنايات
+    family = "family"
+    other = "other"
+
+
+class MoneyDirection(str, enum.Enum):
+    income = "income"
+    expense = "expense"
+
+
+class Client(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+
+    full_name: Mapped[str] = mapped_column(String(200), index=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    national_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    cases: Mapped[list["Case"]] = relationship(back_populates="client")
+
+
+class Case(Base):
+    __tablename__ = "cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+
+    title: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[CaseKind] = mapped_column(Enum(CaseKind), default=CaseKind.other, index=True)
+
+    court: Mapped[str | None] = mapped_column(String(200), nullable=True)  # مثال: الجيزة / القاهرة
+    case_number: Mapped[str | None] = mapped_column(String(100), nullable=True)  # رقم القضية
+    case_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    first_hearing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+    fee_total: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)  # إجمالي الأتعاب
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    client: Mapped["Client"] = relationship(back_populates="cases")
+    assignments: Mapped[list["CaseAssignment"]] = relationship(back_populates="case", cascade="all, delete-orphan")
+    sessions: Mapped[list["CaseSession"]] = relationship(back_populates="case", cascade="all, delete-orphan")
+    files: Mapped[list["CaseFile"]] = relationship(back_populates="case", cascade="all, delete-orphan")
+    transactions: Mapped[list["CaseTransaction"]] = relationship(back_populates="case", cascade="all, delete-orphan")
+
+
+class CaseAssignment(Base):
+    __tablename__ = "case_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    case: Mapped["Case"] = relationship(back_populates="assignments")
+    user: Mapped["User"] = relationship()
+
+
+class CaseSession(Base):
+    __tablename__ = "case_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), index=True)
+
+    session_number: Mapped[str | None] = mapped_column(String(50), nullable=True)  # رقم الجلسة
+    session_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    session_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    case: Mapped["Case"] = relationship(back_populates="sessions")
+
+
+class CaseFile(Base):
+    __tablename__ = "case_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), index=True)
+
+    original_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    storage_path: Mapped[str] = mapped_column(String(800), unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    case: Mapped["Case"] = relationship(back_populates="files")
+
+
+class CaseTransaction(Base):
+    __tablename__ = "case_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), index=True)
+
+    direction: Mapped[MoneyDirection] = mapped_column(Enum(MoneyDirection), index=True)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    case: Mapped["Case"] = relationship(back_populates="transactions")

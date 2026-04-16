@@ -30,9 +30,12 @@ services:
       DATABASE_URL: postgresql+psycopg://lawyer:1642017@db:5432/lawyer
     ports:
       - "8000:8000"
+    volumes:
+      - backend_uploads:/data/uploads
     depends_on:
       - db
 
 volumes:
   db_data:
+  backend_uploads:
 

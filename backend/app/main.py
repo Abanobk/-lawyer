@@ -1,9 +1,12 @@
+import os
 import secrets
 import string
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
@@ -11,10 +14,31 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
 from app.db import Base, engine, get_db
-from app.models import Office, OfficeStatus, Subscription, SubscriptionStatus, User, UserRole
+from app.models import (
+    Case,
+    CaseAssignment,
+    CaseFile,
+    CaseSession,
+    CaseTransaction,
+    Client,
+    MoneyDirection,
+    Office,
+    OfficeStatus,
+    Subscription,
+    SubscriptionStatus,
+    User,
+    UserRole,
+)
 from app.schemas import (
     AdminUpdateTrialRequest,
+    CaseCreate,
+    CaseOut,
+    CaseTransactionCreate,
+    CaseTransactionOut,
+    ClientCreate,
+    ClientOut,
     LoginRequest,
+    OfficeUserOut,
     OfficeOut,
     SignupRequest,
     SignupResponse,
@@ -65,9 +89,14 @@ def init_db(max_wait_seconds: int = 30) -> None:
     raise RuntimeError("DB not ready after retries") from last_err
 
 
+def _ensure_upload_dir() -> None:
+    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+
+
 @app.on_event("startup")
 def _startup():
     init_db()
+    _ensure_upload_dir()
     # Ensure super admin exists
     with Session(engine) as db:
         existing = db.scalar(select(User).where(User.email == settings.super_admin_email))
@@ -205,6 +234,253 @@ def my_office(db: Session = Depends(get_db), user: User = Depends(require_office
     if not office:
         raise HTTPException(status_code=404, detail="Office not found")
     return OfficeOut(id=office.id, code=office.code, name=office.name, status=office.status, created_at=office.created_at)
+
+
+@app.get("/office/users", response_model=list[OfficeUserOut])
+def office_users(db: Session = Depends(get_db), user: User = Depends(require_office_user)):
+    users = db.scalars(select(User).where(User.office_id == user.office_id).order_by(User.id.asc())).all()
+    return [OfficeUserOut(id=u.id, email=u.email, role=u.role, created_at=u.created_at) for u in users]
+
+
+@app.get("/clients", response_model=list[ClientOut])
+def list_clients(db: Session = Depends(get_db), user: User = Depends(require_active_subscription)):
+    items = db.scalars(select(Client).where(Client.office_id == user.office_id).order_by(Client.id.desc())).all()
+    return [
+        ClientOut(
+            id=c.id,
+            full_name=c.full_name,
+            phone=c.phone,
+            national_id=c.national_id,
+            address=c.address,
+            notes=c.notes,
+            created_at=c.created_at,
+        )
+        for c in items
+    ]
+
+
+@app.post("/clients", response_model=ClientOut)
+def create_client(payload: ClientCreate, db: Session = Depends(get_db), user: User = Depends(require_active_subscription)):
+    c = Client(
+        office_id=user.office_id,
+        full_name=payload.full_name,
+        phone=payload.phone,
+        national_id=payload.national_id,
+        address=payload.address,
+        notes=payload.notes,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return ClientOut(
+        id=c.id,
+        full_name=c.full_name,
+        phone=c.phone,
+        national_id=c.national_id,
+        address=c.address,
+        notes=c.notes,
+        created_at=c.created_at,
+    )
+
+
+@app.get("/cases", response_model=list[CaseOut])
+def list_cases(db: Session = Depends(get_db), user: User = Depends(require_active_subscription)):
+    rows = db.execute(
+        select(Case, Client)
+        .join(Client, Client.id == Case.client_id)
+        .where(Case.office_id == user.office_id)
+        .order_by(Case.id.desc())
+    ).all()
+
+    # Preload primary assignments and users
+    case_ids = [c.id for c, _ in rows]
+    assigns = {}
+    if case_ids:
+        arows = db.execute(
+            select(CaseAssignment, User)
+            .join(User, User.id == CaseAssignment.user_id)
+            .where(CaseAssignment.office_id == user.office_id, CaseAssignment.case_id.in_(case_ids), CaseAssignment.is_primary == True)  # noqa: E712
+        ).all()
+        for a, u in arows:
+            assigns[a.case_id] = u
+
+    out: list[CaseOut] = []
+    for case, client in rows:
+        u = assigns.get(case.id)
+        out.append(
+            CaseOut(
+                id=case.id,
+                client_id=case.client_id,
+                client_name=client.full_name,
+                title=case.title,
+                kind=case.kind,
+                court=case.court,
+                case_number=case.case_number,
+                case_year=case.case_year,
+                first_hearing_at=case.first_hearing_at,
+                fee_total=float(case.fee_total) if case.fee_total is not None else None,
+                is_active=case.is_active,
+                primary_lawyer_user_id=u.id if u else None,
+                primary_lawyer_email=u.email if u else None,
+                created_at=case.created_at,
+            )
+        )
+    return out
+
+
+@app.post("/cases", response_model=CaseOut)
+def create_case(payload: CaseCreate, db: Session = Depends(get_db), user: User = Depends(require_active_subscription)):
+    client = db.get(Client, payload.client_id)
+    if not client or client.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    case = Case(
+        office_id=user.office_id,
+        client_id=payload.client_id,
+        title=payload.title,
+        kind=payload.kind,
+        court=payload.court,
+        case_number=payload.case_number,
+        case_year=payload.case_year,
+        first_hearing_at=payload.first_hearing_at,
+        fee_total=payload.fee_total,
+        is_active=True,
+    )
+    db.add(case)
+    db.flush()
+
+    primary_user: User | None = None
+    if payload.primary_lawyer_user_id is not None:
+        primary_user = db.get(User, payload.primary_lawyer_user_id)
+        if not primary_user or primary_user.office_id != user.office_id:
+            raise HTTPException(status_code=404, detail="Lawyer not found")
+        db.add(
+            CaseAssignment(
+                office_id=user.office_id,
+                case_id=case.id,
+                user_id=primary_user.id,
+                is_primary=True,
+            )
+        )
+
+    if payload.first_hearing_at is not None:
+        db.add(
+            CaseSession(
+                office_id=user.office_id,
+                case_id=case.id,
+                session_number=payload.first_session_number,
+                session_year=payload.first_session_year,
+                session_date=payload.first_hearing_at,
+                notes=None,
+            )
+        )
+
+    db.commit()
+    db.refresh(case)
+    return CaseOut(
+        id=case.id,
+        client_id=case.client_id,
+        client_name=client.full_name,
+        title=case.title,
+        kind=case.kind,
+        court=case.court,
+        case_number=case.case_number,
+        case_year=case.case_year,
+        first_hearing_at=case.first_hearing_at,
+        fee_total=float(case.fee_total) if case.fee_total is not None else None,
+        is_active=case.is_active,
+        primary_lawyer_user_id=primary_user.id if primary_user else None,
+        primary_lawyer_email=primary_user.email if primary_user else None,
+        created_at=case.created_at,
+    )
+
+
+@app.post("/cases/{case_id}/files")
+def upload_case_file(
+    case_id: int,
+    upload: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_active_subscription),
+):
+    case = db.get(Case, case_id)
+    if not case or case.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    _ensure_upload_dir()
+    safe_name = os.path.basename(upload.filename or "file")
+    ext = Path(safe_name).suffix[:10]
+    file_id = uuid4().hex
+    rel_path = f"{user.office_id}/{case_id}/{file_id}{ext}"
+    full_path = Path(settings.upload_dir) / rel_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = upload.file.read()
+    full_path.write_bytes(data)
+
+    rec = CaseFile(
+        office_id=user.office_id,
+        case_id=case_id,
+        original_name=safe_name,
+        content_type=upload.content_type,
+        storage_path=str(full_path),
+        size_bytes=len(data),
+        uploaded_by_user_id=user.id,
+    )
+    db.add(rec)
+    db.commit()
+    return {"ok": True, "id": rec.id, "name": rec.original_name}
+
+
+@app.get("/cases/{case_id}/transactions", response_model=list[CaseTransactionOut])
+def list_case_transactions(case_id: int, db: Session = Depends(get_db), user: User = Depends(require_active_subscription)):
+    case = db.get(Case, case_id)
+    if not case or case.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    items = db.scalars(
+        select(CaseTransaction)
+        .where(CaseTransaction.office_id == user.office_id, CaseTransaction.case_id == case_id)
+        .order_by(CaseTransaction.occurred_at.desc(), CaseTransaction.id.desc())
+    ).all()
+    return [
+        CaseTransactionOut(
+            id=t.id,
+            case_id=t.case_id,
+            direction=t.direction,
+            amount=float(t.amount),
+            description=t.description,
+            occurred_at=t.occurred_at,
+            created_at=t.created_at,
+        )
+        for t in items
+    ]
+
+
+@app.post("/transactions", response_model=CaseTransactionOut)
+def create_transaction(payload: CaseTransactionCreate, db: Session = Depends(get_db), user: User = Depends(require_active_subscription)):
+    case = db.get(Case, payload.case_id)
+    if not case or case.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    t = CaseTransaction(
+        office_id=user.office_id,
+        case_id=payload.case_id,
+        direction=payload.direction,
+        amount=payload.amount,
+        description=payload.description,
+        occurred_at=payload.occurred_at,
+        created_by_user_id=user.id,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return CaseTransactionOut(
+        id=t.id,
+        case_id=t.case_id,
+        direction=t.direction,
+        amount=float(t.amount),
+        description=t.description,
+        occurred_at=t.occurred_at,
+        created_at=t.created_at,
+    )
 
 
 @app.get("/billing/status", response_model=SubscriptionOut)

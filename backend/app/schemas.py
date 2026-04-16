@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models import OfficeStatus, ProofStatus, SubscriptionStatus, UserRole
+from app.models import CaseKind, MoneyDirection, OfficeStatus, ProofStatus, SubscriptionStatus, UserRole
 
 
 class TokenPair(BaseModel):
@@ -68,4 +68,78 @@ class PaymentProofOut(BaseModel):
     status: ProofStatus
     notes: str | None
     uploaded_at: datetime
+
+
+class OfficeUserOut(BaseModel):
+    id: int
+    email: EmailStr
+    role: UserRole
+    created_at: datetime
+
+
+class ClientCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=200)
+    phone: str | None = Field(default=None, max_length=50)
+    national_id: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=500)
+    notes: str | None = None
+
+
+class ClientOut(BaseModel):
+    id: int
+    full_name: str
+    phone: str | None
+    national_id: str | None
+    address: str | None
+    notes: str | None
+    created_at: datetime
+
+
+class CaseCreate(BaseModel):
+    client_id: int
+    title: str = Field(min_length=2, max_length=200)
+    kind: CaseKind = CaseKind.other
+    court: str | None = Field(default=None, max_length=200)
+    case_number: str | None = Field(default=None, max_length=100)
+    case_year: int | None = None
+    first_hearing_at: datetime | None = None
+    fee_total: float | None = None
+    primary_lawyer_user_id: int | None = None
+    first_session_number: str | None = Field(default=None, max_length=50)
+    first_session_year: int | None = None
+
+
+class CaseOut(BaseModel):
+    id: int
+    client_id: int
+    client_name: str
+    title: str
+    kind: CaseKind
+    court: str | None
+    case_number: str | None
+    case_year: int | None
+    first_hearing_at: datetime | None
+    fee_total: float | None
+    is_active: bool
+    primary_lawyer_user_id: int | None
+    primary_lawyer_email: str | None
+    created_at: datetime
+
+
+class CaseTransactionCreate(BaseModel):
+    case_id: int
+    direction: MoneyDirection
+    amount: float = Field(gt=0)
+    description: str | None = Field(default=None, max_length=300)
+    occurred_at: datetime
+
+
+class CaseTransactionOut(BaseModel):
+    id: int
+    case_id: int
+    direction: MoneyDirection
+    amount: float
+    description: str | None
+    occurred_at: datetime
+    created_at: datetime
 
