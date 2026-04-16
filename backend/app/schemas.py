@@ -321,6 +321,14 @@ class SessionUpdate(BaseModel):
     notes: str | None = None
 
 
+class SessionCreate(BaseModel):
+    case_id: int
+    session_date: datetime
+    session_number: str | None = Field(default=None, max_length=50)
+    session_year: int | None = None
+    notes: str | None = None
+
+
 class CustodyAccountOut(BaseModel):
     id: int
     user_id: int

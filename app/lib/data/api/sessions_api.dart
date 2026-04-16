@@ -52,6 +52,33 @@ class SessionsApi {
     );
   }
 
+  Future<SessionDto> create({
+    required int caseId,
+    required DateTime sessionDate,
+    String? sessionNumber,
+    int? sessionYear,
+    String? notes,
+  }) async {
+    return _client.postJson<SessionDto>(
+      'sessions',
+      {
+        'case_id': caseId,
+        'session_date': sessionDate.toUtc().toIso8601String(),
+        'session_number': sessionNumber,
+        'session_year': sessionYear,
+        'notes': notes,
+      },
+      decode: (json) => SessionDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<void> deleteSession(int sessionId) async {
+    await _client.deleteJson<Map<String, dynamic>>(
+      'sessions/$sessionId',
+      decode: (json) => json as Map<String, dynamic>,
+    );
+  }
+
   Future<SessionDto> reschedule({
     required int sessionId,
     required DateTime newDate,

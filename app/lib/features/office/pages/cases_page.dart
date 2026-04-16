@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
@@ -154,6 +155,7 @@ class _CasesPageState extends State<CasesPage> {
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(12),
                   child: DataTable(
+                    showCheckboxColumn: false,
                     columns: const [
                       DataColumn(label: Text('الموكل')),
                       DataColumn(label: Text('نوع القضية')),
@@ -167,6 +169,11 @@ class _CasesPageState extends State<CasesPage> {
                     rows: cases
                         .map(
                           (c) => DataRow(
+                            onSelectChanged: (_) {
+                              final code = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+                              if (code.isEmpty) return;
+                              context.go('/o/$code/cases/${c.id}');
+                            },
                             cells: [
                               DataCell(Text(c.clientName)),
                               DataCell(Text(_kindLabel(c.kind))),

@@ -70,6 +70,13 @@ class CasesApi {
     );
   }
 
+  Future<CaseDto> get(int caseId) async {
+    return _client.getJson<CaseDto>(
+      'cases/$caseId',
+      decode: (json) => CaseDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
   Future<CaseDto> create({
     required int clientId,
     required String title,

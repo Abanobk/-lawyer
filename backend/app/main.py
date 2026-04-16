@@ -92,6 +92,7 @@ from app.schemas import (
     UserOut,
     UserPermissionsOut,
     UserPermissionsUpdate,
+    SessionCreate,
     SessionOut,
     SessionUpdate,
     PaymentProofOut,
@@ -840,6 +841,25 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db), user: Us
     )
 
 
+def _case_to_out(case: Case, client: Client, primary: User | None) -> CaseOut:
+    return CaseOut(
+        id=case.id,
+        client_id=case.client_id,
+        client_name=client.full_name,
+        title=case.title,
+        kind=case.kind,
+        court=case.court,
+        case_number=case.case_number,
+        case_year=case.case_year,
+        first_hearing_at=case.first_hearing_at,
+        fee_total=float(case.fee_total) if case.fee_total is not None else None,
+        is_active=case.is_active,
+        primary_lawyer_user_id=primary.id if primary else None,
+        primary_lawyer_email=primary.email if primary else None,
+        created_at=case.created_at,
+    )
+
+
 @app.get("/cases", response_model=list[CaseOut])
 def list_cases(
     client_id: int | None = Query(default=None),
@@ -866,25 +886,34 @@ def list_cases(
     out: list[CaseOut] = []
     for case, client in rows:
         u = assigns.get(case.id)
-        out.append(
-            CaseOut(
-                id=case.id,
-                client_id=case.client_id,
-                client_name=client.full_name,
-                title=case.title,
-                kind=case.kind,
-                court=case.court,
-                case_number=case.case_number,
-                case_year=case.case_year,
-                first_hearing_at=case.first_hearing_at,
-                fee_total=float(case.fee_total) if case.fee_total is not None else None,
-                is_active=case.is_active,
-                primary_lawyer_user_id=u.id if u else None,
-                primary_lawyer_email=u.email if u else None,
-                created_at=case.created_at,
-            )
-        )
+        out.append(_case_to_out(case, client, u))
     return out
+
+
+@app.get("/cases/{case_id}", response_model=CaseOut)
+def get_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("cases.read")),
+):
+    row = db.execute(
+        select(Case, Client)
+        .join(Client, Client.id == Case.client_id)
+        .where(Case.office_id == user.office_id, Case.id == case_id)
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found")
+    case, client = row
+    primary = db.scalar(
+        select(User)
+        .join(CaseAssignment, CaseAssignment.user_id == User.id)
+        .where(
+            CaseAssignment.office_id == user.office_id,
+            CaseAssignment.case_id == case.id,
+            CaseAssignment.is_primary == True,  # noqa: E712
+        )
+    )
+    return _case_to_out(case, client, primary)
 
 
 @app.post("/cases", response_model=CaseOut)
@@ -1024,6 +1053,26 @@ def download_case_file(file_id: int, db: Session = Depends(get_db), user: User =
     return FileResponse(path, media_type=f.content_type or "application/octet-stream", filename=f.original_name)
 
 
+@app.delete("/case-files/{file_id}")
+def delete_case_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("cases.upload")),
+):
+    f = db.get(CaseFile, file_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    path = Path(f.storage_path)
+    db.delete(f)
+    db.commit()
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    return {"ok": True}
+
+
 @app.get("/cases/{case_id}/transactions", response_model=list[CaseTransactionOut])
 def list_case_transactions(case_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
     case = db.get(Case, case_id)
@@ -1073,6 +1122,43 @@ def list_sessions(db: Session = Depends(get_db), user: User = Depends(require_pe
     ]
 
 
+@app.post("/sessions", response_model=SessionOut)
+def create_session(
+    payload: SessionCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_office_admin),
+):
+    case = db.get(Case, payload.case_id)
+    if not case or case.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    s = CaseSession(
+        office_id=user.office_id,
+        case_id=payload.case_id,
+        session_number=payload.session_number,
+        session_year=payload.session_year,
+        session_date=payload.session_date,
+        notes=payload.notes,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    c = db.get(Case, s.case_id)
+    cl = db.get(Client, c.client_id) if c else None
+    if not c or not cl:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return SessionOut(
+        id=s.id,
+        case_id=s.case_id,
+        case_title=c.title,
+        client_name=cl.full_name,
+        session_number=s.session_number,
+        session_year=s.session_year,
+        session_date=s.session_date,
+        notes=s.notes,
+        created_at=s.created_at,
+    )
+
+
 @app.put("/sessions/{session_id}", response_model=SessionOut)
 def update_session(
     session_id: int,
@@ -1109,6 +1195,20 @@ def update_session(
         notes=s.notes,
         created_at=s.created_at,
     )
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session_endpoint(
+    session_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_office_admin),
+):
+    s = db.get(CaseSession, session_id)
+    if not s or s.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/transactions", response_model=CaseTransactionOut)

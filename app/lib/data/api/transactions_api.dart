@@ -51,6 +51,7 @@ class TransactionsApi {
     required String direction,
     required double amount,
     String? description,
+    DateTime? occurredAt,
   }) async {
     return _client.postJson<CaseTransactionDto>(
       'transactions',
@@ -59,6 +60,7 @@ class TransactionsApi {
         'direction': direction,
         'amount': amount,
         'description': description,
+        if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
       },
       decode: (json) => CaseTransactionDto.fromJson(json as Map<String, dynamic>),
     );

@@ -98,6 +98,19 @@ class CaseFilesApi {
     return list.map(CaseFileDto.fromJson).toList();
   }
 
+  Future<void> delete({required int fileId}) async {
+    final token = await _tokens.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw CaseFilesApiException('سجّل الدخول أولاً');
+    }
+    final uri = ApiConfig.uri('case-files/$fileId');
+    final res = await _client.delete(uri, headers: {'Authorization': 'Bearer $token'});
+    final body = utf8.decode(res.bodyBytes);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw CaseFilesApiException(_parseErrorDetail(body), statusCode: res.statusCode);
+    }
+  }
+
   Future<(Uint8List bytes, String filename, String contentType)> download({required int fileId}) async {
     final token = await _tokens.getAccessToken();
     if (token == null || token.isEmpty) {
