@@ -218,7 +218,7 @@ class _SuperAdminDashboard extends StatefulWidget {
   State<_SuperAdminDashboard> createState() => _SuperAdminDashboardState();
 }
 
-enum _AdminSection { offices, plans, proofs, settings }
+enum _AdminSection { offices, plans, packages, proofs, settings }
 
 enum _AdminOfficePanel {
   dashboard,
@@ -444,6 +444,10 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
           adminApi: _adminApi,
           onRefresh: () => setState(() => _plansFuture = _adminApi.listPlans()),
         ),
+      _AdminSection.packages => _PackagesTab(
+          future: _plansFuture,
+          onRefresh: () => setState(() => _plansFuture = _adminApi.listPlans()),
+        ),
       _AdminSection.proofs => _ProofsTab(
           future: _proofsFuture,
           adminApi: _adminApi,
@@ -490,111 +494,123 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
               ],
             ),
             const SizedBox(height: 10),
-            _navItem(
-              selected: _section == _AdminSection.offices,
-              onTap: () => setState(() => _section = _AdminSection.offices),
-              icon: Icons.apartment_outlined,
-              label: 'المكاتب',
-            ),
-            _navItem(
-              selected: _section == _AdminSection.plans,
-              onTap: () => setState(() => _section = _AdminSection.plans),
-              icon: Icons.view_module_outlined,
-              label: 'الباقات',
-            ),
-            _navItem(
-              selected: _section == _AdminSection.proofs,
-              onTap: () => setState(() => _section = _AdminSection.proofs),
-              icon: Icons.payments_outlined,
-              label: 'التحويلات',
-            ),
-            _navItem(
-              selected: _section == _AdminSection.settings,
-              onTap: () => setState(() => _section = _AdminSection.settings),
-              icon: Icons.settings_outlined,
-              label: 'إعدادات',
-            ),
-
-            if (_section == _AdminSection.offices) ...[
-              divider,
-              _navItem(
-                selected: _officePanel == _AdminOfficePanel.dashboard,
-                onTap: () => setState(() => _officePanel = _AdminOfficePanel.dashboard),
-                icon: Icons.dashboard_outlined,
-                label: 'لوحة التحكم',
-              ),
-              FutureBuilder<List<AdminOfficeDto>>(
-                future: _officesFuture,
-                builder: (context, snap) {
-                  final n = (snap.data ?? const <AdminOfficeDto>[]).length;
-                  return _navItem(
-                    selected: _officePanel == _AdminOfficePanel.offices,
-                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.offices),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _navItem(
+                    selected: _section == _AdminSection.offices,
+                    onTap: () => setState(() => _section = _AdminSection.offices),
                     icon: Icons.apartment_outlined,
                     label: 'المكاتب',
-                    trailing: _badge('$n'),
-                  );
-                },
+                  ),
+                  _navItem(
+                    selected: _section == _AdminSection.plans,
+                    onTap: () => setState(() => _section = _AdminSection.plans),
+                    icon: Icons.view_module_outlined,
+                    label: 'إدارة الباقات',
+                  ),
+                  _navItem(
+                    selected: _section == _AdminSection.packages,
+                    onTap: () => setState(() => _section = _AdminSection.packages),
+                    icon: Icons.local_offer_outlined,
+                    label: 'الباقات',
+                  ),
+                  _navItem(
+                    selected: _section == _AdminSection.proofs,
+                    onTap: () => setState(() => _section = _AdminSection.proofs),
+                    icon: Icons.payments_outlined,
+                    label: 'التحويلات',
+                  ),
+                  _navItem(
+                    selected: _section == _AdminSection.settings,
+                    onTap: () => setState(() => _section = _AdminSection.settings),
+                    icon: Icons.settings_outlined,
+                    label: 'إعدادات',
+                  ),
+                  if (_section == _AdminSection.offices) ...[
+                    divider,
+                    _navItem(
+                      selected: _officePanel == _AdminOfficePanel.dashboard,
+                      onTap: () => setState(() => _officePanel = _AdminOfficePanel.dashboard),
+                      icon: Icons.dashboard_outlined,
+                      label: 'لوحة التحكم',
+                    ),
+                    FutureBuilder<List<AdminOfficeDto>>(
+                      future: _officesFuture,
+                      builder: (context, snap) {
+                        final n = (snap.data ?? const <AdminOfficeDto>[]).length;
+                        return _navItem(
+                          selected: _officePanel == _AdminOfficePanel.offices,
+                          onTap: () => setState(() => _officePanel = _AdminOfficePanel.offices),
+                          icon: Icons.apartment_outlined,
+                          label: 'قائمة المكاتب',
+                          trailing: _badge('$n'),
+                        );
+                      },
+                    ),
+                    FutureBuilder<AdminTrialAnalyticsDto>(
+                      future: _trialAnalyticsFuture,
+                      builder: (context, snapTrial) {
+                        final n = snapTrial.data?.totalTrialOffices;
+                        return _navItem(
+                          selected: _officePanel == _AdminOfficePanel.trial,
+                          onTap: () => setState(() => _officePanel = _AdminOfficePanel.trial),
+                          icon: Icons.hourglass_bottom,
+                          label: 'التجربة',
+                          trailing: n == null ? null : _badge('$n'),
+                        );
+                      },
+                    ),
+                    FutureBuilder<AdminSubscriptionsAnalyticsDto>(
+                      future: _subsAnalyticsFuture,
+                      builder: (context, snapSubs) {
+                        final n = snapSubs.data?.totalActiveOffices;
+                        return _navItem(
+                          selected: _officePanel == _AdminOfficePanel.activeSubs,
+                          onTap: () => setState(() => _officePanel = _AdminOfficePanel.activeSubs),
+                          icon: Icons.credit_card_outlined,
+                          label: 'الاشتراكات',
+                          trailing: n == null ? null : _badge('$n'),
+                        );
+                      },
+                    ),
+                    FutureBuilder<AdminAlertsDto>(
+                      future: _alertsFuture,
+                      builder: (context, snapA) {
+                        final a = snapA.data;
+                        final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
+                        return _navItem(
+                          selected: _officePanel == _AdminOfficePanel.alerts,
+                          onTap: () => setState(() => _officePanel = _AdminOfficePanel.alerts),
+                          icon: Icons.notifications_active_outlined,
+                          label: 'تحذيرات',
+                          trailing: total == null ? null : _badge('$total'),
+                        );
+                      },
+                    ),
+                    FutureBuilder<List<AdminSuperAdminDto>>(
+                      future: _superAdminsFuture,
+                      builder: (context, snapU) {
+                        final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
+                        return _navItem(
+                          selected: _officePanel == _AdminOfficePanel.superAdmins,
+                          onTap: () => setState(() => _officePanel = _AdminOfficePanel.superAdmins),
+                          icon: Icons.manage_accounts_outlined,
+                          label: 'المستخدمين',
+                          trailing: _badge('$n'),
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Text(
+                    'اضغط عنصر لعرض التفاصيل',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                  ),
+                ],
               ),
-              FutureBuilder<AdminTrialAnalyticsDto>(
-                future: _trialAnalyticsFuture,
-                builder: (context, snapTrial) {
-                  final n = snapTrial.data?.totalTrialOffices;
-                  return _navItem(
-                    selected: _officePanel == _AdminOfficePanel.trial,
-                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.trial),
-                    icon: Icons.hourglass_bottom,
-                    label: 'التجربة',
-                    trailing: n == null ? null : _badge('$n'),
-                  );
-                },
-              ),
-              FutureBuilder<AdminSubscriptionsAnalyticsDto>(
-                future: _subsAnalyticsFuture,
-                builder: (context, snapSubs) {
-                  final n = snapSubs.data?.totalActiveOffices;
-                  return _navItem(
-                    selected: _officePanel == _AdminOfficePanel.activeSubs,
-                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.activeSubs),
-                    icon: Icons.credit_card_outlined,
-                    label: 'الاشتراكات',
-                    trailing: n == null ? null : _badge('$n'),
-                  );
-                },
-              ),
-              FutureBuilder<AdminAlertsDto>(
-                future: _alertsFuture,
-                builder: (context, snapA) {
-                  final a = snapA.data;
-                  final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
-                  return _navItem(
-                    selected: _officePanel == _AdminOfficePanel.alerts,
-                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.alerts),
-                    icon: Icons.notifications_active_outlined,
-                    label: 'تحذيرات',
-                    trailing: total == null ? null : _badge('$total'),
-                  );
-                },
-              ),
-              FutureBuilder<List<AdminSuperAdminDto>>(
-                future: _superAdminsFuture,
-                builder: (context, snapU) {
-                  final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
-                  return _navItem(
-                    selected: _officePanel == _AdminOfficePanel.superAdmins,
-                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.superAdmins),
-                    icon: Icons.manage_accounts_outlined,
-                    label: 'المستخدمين',
-                    trailing: _badge('$n'),
-                  );
-                },
-              ),
-            ],
-            const Spacer(),
-            Text(
-              'اضغط عنصر لعرض التفاصيل',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
             ),
           ],
         ),
@@ -640,7 +656,6 @@ class _PlansTabState extends State<_PlansTab> {
   final _link6 = TextEditingController();
   final _selectedPermKeys = <String>[];
   bool _saving = false;
-  bool _uploadingPromo = false;
   final _promoFilesApi = AdminPlanPromoFilesApi();
   PlatformFile? _packagePromoFile;
   late Future<List<PermissionCatalogItemDto>> _permsFuture;
@@ -772,97 +787,6 @@ class _PlansTabState extends State<_PlansTab> {
     }
   }
 
-  Future<void> _edit(AdminPlanDto p) async {
-    final name = TextEditingController(text: p.name);
-    final price = TextEditingController(text: (p.priceCents / 100).toStringAsFixed(2));
-    final days = TextEditingController(text: '${p.durationDays}');
-    final link = TextEditingController(text: p.instapayLink ?? '');
-    bool? active = p.isActive;
-    try {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('تعديل باقة #${p.id}'),
-          content: SizedBox(
-            width: 520,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'الاسم')),
-                const SizedBox(height: 12),
-                TextField(controller: price, decoration: const InputDecoration(labelText: 'السعر (جنيه)'), keyboardType: TextInputType.number),
-                const SizedBox(height: 12),
-                TextField(controller: days, decoration: const InputDecoration(labelText: 'المدة (أيام)'), keyboardType: TextInputType.number),
-                const SizedBox(height: 12),
-                TextField(controller: link, decoration: const InputDecoration(labelText: 'رابط إنستاباي')),
-                const SizedBox(height: 12),
-                StatefulBuilder(
-                  builder: (context, setInner) => SwitchListTile(
-                    title: const Text('مفعّلة'),
-                    value: active ?? true,
-                    onChanged: (v) => setInner(() => active = v),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حفظ')),
-          ],
-        ),
-      );
-      if (ok != true) return;
-      final priceVal = double.tryParse(price.text.trim());
-      final daysVal = int.tryParse(days.text.trim());
-      if (!mounted) return;
-      await widget.adminApi.updatePlan(
-        p.id,
-        name: name.text.trim(),
-        priceCents: priceVal == null ? null : (priceVal * 100).round(),
-        durationDays: daysVal,
-        instapayLink: link.text.trim().isEmpty ? '' : link.text.trim(),
-        isActive: active,
-      );
-      widget.onRefresh();
-    } finally {
-      name.dispose();
-      price.dispose();
-      days.dispose();
-      link.dispose();
-    }
-  }
-
-  Future<void> _uploadPromo(AdminPlanDto p) async {
-    if (_uploadingPromo) return;
-    final res = await FilePicker.pickFiles(
-      withData: true,
-      allowMultiple: false,
-      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
-      type: FileType.image,
-    );
-    final file = (res?.files.isNotEmpty ?? false) ? res!.files.first : null;
-    if (file == null) return;
-    if (file.bytes == null || file.bytes!.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الملف غير متاح للرفع')));
-      return;
-    }
-
-    setState(() => _uploadingPromo = true);
-    try {
-      await _promoFilesApi.uploadPromoImage(planId: p.id, file: file);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم رفع صورة الباقة')));
-      widget.onRefresh();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل رفع الصورة: $e')));
-    } finally {
-      if (mounted) setState(() => _uploadingPromo = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -873,7 +797,7 @@ class _PlansTabState extends State<_PlansTab> {
           children: [
             Row(
               children: [
-                Text('الباقات', style: Theme.of(context).textTheme.titleLarge),
+                Text('إدارة الباقات', style: Theme.of(context).textTheme.titleLarge),
                 const Spacer(),
                 IconButton(onPressed: widget.onRefresh, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
               ],
@@ -1031,46 +955,57 @@ class _PlansTabState extends State<_PlansTab> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PackagesTab extends StatelessWidget {
+  const _PackagesTab({required this.future, required this.onRefresh});
+  final Future<List<AdminPlanDto>> future;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Text('الباقات', style: Theme.of(context).textTheme.titleLarge),
+                const Spacer(),
+                IconButton(onPressed: onRefresh, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
+              ],
+            ),
             const SizedBox(height: 12),
             Expanded(
               child: FutureBuilder<List<AdminPlanDto>>(
-                future: widget.future,
+                future: future,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                   if (snap.hasError) return Center(child: Text('تعذر تحميل الباقات: ${snap.error}'));
-                  final plans = snap.data ?? const <AdminPlanDto>[];
-                  if (plans.isEmpty) return const Center(child: Text('لا توجد باقات'));
+                  final all = snap.data ?? const <AdminPlanDto>[];
+                  final active = all.where((p) => p.isActive).toList();
+                  if (active.isEmpty) return const Center(child: Text('لا توجد باقات مفعّلة'));
+
                   return ListView.separated(
-                    itemCount: plans.length,
+                    itemCount: active.length,
                     separatorBuilder: (context, index) => const Divider(height: 1),
                     itemBuilder: (context, i) {
-                      final p = plans[i];
+                      final p = active[i];
+                      final displayName = (p.packageName ?? '').trim().isNotEmpty ? p.packageName! : p.name;
+                      final price = (p.priceCents / 100).toStringAsFixed(2);
                       return ListTile(
-                        title: Text(p.name),
+                        title: Text(displayName),
                         subtitle: Text(
-                          'السعر: ${(p.priceCents / 100).toStringAsFixed(2)} — المدة: ${p.durationDays} يوم'
+                          'الخيار: ${p.name} — السعر: $price — المدة: ${p.durationDays} يوم'
                           ' — حتى: ${p.maxUsers ?? "—"} مستخدم'
-                          ' — صلاحيات: ${p.allowedPermKeys?.length ?? "—"}'
-                          ' — ${p.isActive ? "مفعّلة" : "معطّلة"}',
-                        ),
-                        trailing: Wrap(
-                          spacing: 8,
-                          children: [
-                            IconButton(onPressed: () => _edit(p), tooltip: 'تعديل', icon: const Icon(Icons.edit)),
-                            IconButton(
-                              onPressed: () => _uploadPromo(p),
-                              tooltip: 'رفع صورة الدعاية',
-                              icon: const Icon(Icons.image_outlined),
-                            ),
-                            IconButton(
-                              onPressed: () async {
-                                await widget.adminApi.deletePlan(p.id);
-                                widget.onRefresh();
-                              },
-                              tooltip: 'تعطيل',
-                              icon: const Icon(Icons.block),
-                            ),
-                          ],
+                          ' — صلاحيات: ${p.allowedPermKeys?.length ?? "—"}',
                         ),
                       );
                     },
