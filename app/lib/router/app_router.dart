@@ -8,6 +8,7 @@ import 'package:lawyer_app/features/office/office_shell.dart';
 import 'package:lawyer_app/features/office/pages/accounts_page.dart';
 import 'package:lawyer_app/features/office/pages/cases_page.dart';
 import 'package:lawyer_app/features/office/pages/clients_page.dart';
+import 'package:lawyer_app/features/office/pages/custody_page.dart';
 import 'package:lawyer_app/features/office/pages/dashboard_page.dart';
 import 'package:lawyer_app/features/office/pages/employees_page.dart';
 import 'package:lawyer_app/features/office/pages/sessions_page.dart';
@@ -71,6 +72,10 @@ GoRouter createAppRouter() {
               GoRoute(
                 path: 'accounts',
                 builder: (context, state) => const AccountsPage(),
+              ),
+              GoRoute(
+                path: 'custody',
+                builder: (context, state) => const CustodyPage(),
               ),
               GoRoute(
                 path: 'employees',

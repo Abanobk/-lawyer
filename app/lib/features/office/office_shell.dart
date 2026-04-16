@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/data/auth_token_storage.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 
 class OfficeShell extends StatelessWidget {
   const OfficeShell({
@@ -20,6 +22,7 @@ class OfficeShell extends StatelessWidget {
     _OfficeNavItem('cases', 'القضايا', Icons.work_outline),
     _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
     _OfficeNavItem('accounts', 'الحسابات', Icons.account_balance_wallet_outlined),
+    _OfficeNavItem('custody', 'العُهد', Icons.payments_outlined),
     _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
     _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
   ];
@@ -103,6 +106,8 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = AuthTokenStorage();
+    final permsApi = PermissionsApi();
     final nav = Material(
       color: AppColors.sidebar,
       child: SafeArea(
@@ -140,41 +145,21 @@ class _Sidebar extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  itemCount: OfficeShell._items.length,
-                  itemBuilder: (context, i) {
-                    final item = OfficeShell._items[i];
-                    final selected = item.segment == current;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Material(
-                        color: selected ? AppColors.sidebarActive : Colors.transparent,
-                        borderRadius: BorderRadius.circular(10),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () => context.go('/o/$officeCode/${item.segment}'),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  item.icon,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    item.label,
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                child: FutureBuilder<String?>(
+                  future: tokens.getAccessToken(),
+                  builder: (context, snap) {
+                    final hasAuth = (snap.data ?? '').isNotEmpty;
+                    if (!hasAuth) {
+                      final items = [OfficeShell._items.first];
+                      return _NavList(officeCode: officeCode, current: current, items: items);
+                    }
+                    return FutureBuilder<UserPermissionsDto>(
+                      future: permsApi.myPermissions(),
+                      builder: (context, ps) {
+                        final keys = ps.data?.permissions.toSet() ?? const <String>{};
+                        final items = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
+                        return _NavList(officeCode: officeCode, current: current, items: items);
+                      },
                     );
                   },
                 ),
@@ -196,6 +181,87 @@ class _Sidebar extends StatelessWidget {
     );
 
     return nav;
+  }
+}
+
+bool _allowNav(String segment, Set<String> keys) {
+  String? required;
+  switch (segment) {
+    case 'dashboard':
+      required = 'dashboard.view';
+      break;
+    case 'clients':
+      required = 'clients.read';
+      break;
+    case 'cases':
+      required = 'cases.read';
+      break;
+    case 'sessions':
+      required = 'cases.read';
+      break;
+    case 'accounts':
+      required = 'accounts.read';
+      break;
+    case 'custody':
+      return keys.contains('custody.me') ||
+          keys.contains('custody.admin.view') ||
+          keys.contains('custody.admin.advance') ||
+          keys.contains('custody.admin.approve');
+    case 'employees':
+      required = 'employees.read';
+      break;
+    case 'settings':
+      required = 'settings.view';
+      break;
+  }
+  if (required == null) return true;
+  return keys.contains(required);
+}
+
+class _NavList extends StatelessWidget {
+  const _NavList({
+    required this.officeCode,
+    required this.current,
+    required this.items,
+  });
+
+  final String officeCode;
+  final String current;
+  final List<_OfficeNavItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      itemCount: items.length,
+      itemBuilder: (context, i) {
+        final item = items[i];
+        final selected = item.segment == current;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Material(
+            color: selected ? AppColors.sidebarActive : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => context.go('/o/$officeCode/${item.segment}'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  children: [
+                    Icon(item.icon, color: Colors.white, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(item.label, style: const TextStyle(color: Colors.white)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 

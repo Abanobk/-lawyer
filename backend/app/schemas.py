@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models import CaseKind, MoneyDirection, OfficeStatus, ProofStatus, SubscriptionStatus, UserRole
+from app.models import CaseKind, CustodySpendStatus, MoneyDirection, OfficeStatus, ProofStatus, SubscriptionStatus, UserRole
 
 
 class TokenPair(BaseModel):
@@ -77,6 +77,31 @@ class OfficeUserOut(BaseModel):
     created_at: datetime
 
 
+class OfficeUserCreate(BaseModel):
+    email: EmailStr
+
+
+class OfficeUserCreateOut(BaseModel):
+    id: int
+    email: EmailStr
+    role: UserRole
+    temp_password: str
+
+
+class PermissionCatalogItem(BaseModel):
+    key: str
+    label: str
+
+
+class UserPermissionsOut(BaseModel):
+    user_id: int
+    permissions: list[str]
+
+
+class UserPermissionsUpdate(BaseModel):
+    permissions: list[str]
+
+
 class ClientCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=200)
     phone: str | None = Field(default=None, max_length=50)
@@ -142,4 +167,55 @@ class CaseTransactionOut(BaseModel):
     description: str | None
     occurred_at: datetime
     created_at: datetime
+
+
+class CustodyAccountOut(BaseModel):
+    id: int
+    user_id: int
+    user_email: EmailStr
+    current_balance: float
+    created_at: datetime
+
+
+class CustodyAccountCreate(BaseModel):
+    user_id: int
+
+
+class CustodyAdvanceCreate(BaseModel):
+    user_id: int
+    amount: float = Field(gt=0)
+    occurred_at: datetime
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class CustodySpendCreate(BaseModel):
+    amount: float = Field(gt=0)
+    occurred_at: datetime
+    description: str | None = Field(default=None, max_length=500)
+    case_id: int | None = None
+
+
+class CustodySpendOut(BaseModel):
+    id: int
+    user_id: int
+    amount: float
+    occurred_at: datetime
+    description: str | None
+    status: CustodySpendStatus
+    case_id: int | None
+    reject_reason: str | None
+    created_at: datetime
+
+
+class CustodyReviewRequest(BaseModel):
+    reject_reason: str | None = Field(default=None, max_length=500)
+
+
+class CustodyReceiptOut(BaseModel):
+    id: int
+    spend_id: int
+    original_name: str
+    content_type: str | None
+    size_bytes: int
+    uploaded_at: datetime
 

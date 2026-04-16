@@ -57,6 +57,19 @@ class User(Base):
     office: Mapped["Office"] = relationship(back_populates="users")
 
 
+class UserPermission(Base):
+    __tablename__ = "user_permissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    perm_key: Mapped[str] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("uq_user_permissions_office_user_key", UserPermission.office_id, UserPermission.user_id, UserPermission.perm_key, unique=True)
+
+
 class Plan(Base):
     __tablename__ = "plans"
 
@@ -108,6 +121,12 @@ class CaseKind(str, enum.Enum):
 class MoneyDirection(str, enum.Enum):
     income = "income"
     expense = "expense"
+
+
+class CustodySpendStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
 
 
 class Client(Base):
@@ -216,3 +235,64 @@ class CaseTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     case: Mapped["Case"] = relationship(back_populates="transactions")
+
+
+class CustodyAccount(Base):
+    __tablename__ = "custody_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    current_balance: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("uq_custody_accounts_office_user", CustodyAccount.office_id, CustodyAccount.user_id, unique=True)
+
+
+class CustodyAdvance(Base):
+    __tablename__ = "custody_advances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("custody_accounts.id"), index=True)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class CustodySpend(Base):
+    __tablename__ = "custody_spends"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("custody_accounts.id"), index=True)
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[CustodySpendStatus] = mapped_column(Enum(CustodySpendStatus), default=CustodySpendStatus.pending, index=True)
+    case_id: Mapped[int | None] = mapped_column(ForeignKey("cases.id"), nullable=True, index=True)
+
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    reject_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class CustodyReceiptFile(Base):
+    __tablename__ = "custody_receipt_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    spend_id: Mapped[int] = mapped_column(ForeignKey("custody_spends.id"), index=True)
+
+    original_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    storage_path: Mapped[str] = mapped_column(String(800), unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)

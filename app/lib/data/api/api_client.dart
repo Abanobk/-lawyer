@@ -51,6 +51,16 @@ class ApiClient {
     return _handleJson(res, decode: decode);
   }
 
+  Future<T> putJson<T>(
+    String path,
+    Object body, {
+    T Function(Object? json)? decode,
+  }) async {
+    final uri = ApiConfig.uri(path);
+    final res = await _http.put(uri, headers: await _authHeaders(), body: jsonEncode(body));
+    return _handleJson(res, decode: decode);
+  }
+
   T _handleJson<T>(http.Response res, {T Function(Object? json)? decode}) {
     final ok = res.statusCode >= 200 && res.statusCode < 300;
     final text = utf8.decode(res.bodyBytes);
