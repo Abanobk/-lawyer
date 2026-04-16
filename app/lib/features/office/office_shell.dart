@@ -28,7 +28,6 @@ class OfficeShell extends StatelessWidget {
     _OfficeNavItem('cases', 'القضايا', Icons.work_outline),
     _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
     _OfficeNavItem('accounts', 'الحسابات', Icons.account_balance_wallet_outlined),
-    _OfficeNavItem('custody', 'العُهد', Icons.payments_outlined),
     _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
     _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
   ];
@@ -233,11 +232,6 @@ bool _allowNav(String segment, Set<String> keys) {
     case 'accounts':
       required = 'accounts.read';
       break;
-    case 'custody':
-      return keys.contains('custody.me') ||
-          keys.contains('custody.admin.view') ||
-          keys.contains('custody.admin.advance') ||
-          keys.contains('custody.admin.approve');
     case 'employees':
       required = 'employees.read';
       break;

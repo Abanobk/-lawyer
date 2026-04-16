@@ -59,9 +59,10 @@ class CasesApi {
   CasesApi({ApiClient? client}) : _client = client ?? ApiClient();
   final ApiClient _client;
 
-  Future<List<CaseDto>> list() async {
+  Future<List<CaseDto>> list({int? clientId}) async {
+    final q = clientId == null ? 'cases' : 'cases?client_id=$clientId';
     return _client.getJson<List<CaseDto>>(
-      'cases',
+      q,
       decode: (json) {
         final list = (json as List).cast<Map<String, dynamic>>();
         return list.map(CaseDto.fromJson).toList();

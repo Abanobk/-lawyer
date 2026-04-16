@@ -172,7 +172,7 @@ class CaseTransactionCreate(BaseModel):
     direction: MoneyDirection
     amount: float = Field(gt=0)
     description: str | None = Field(default=None, max_length=300)
-    occurred_at: datetime
+    occurred_at: datetime | None = None
 
 
 class CaseTransactionOut(BaseModel):

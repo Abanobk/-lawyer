@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -474,13 +474,15 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db), user: Us
 
 
 @app.get("/cases", response_model=list[CaseOut])
-def list_cases(db: Session = Depends(get_db), user: User = Depends(require_perm("cases.read"))):
-    rows = db.execute(
-        select(Case, Client)
-        .join(Client, Client.id == Case.client_id)
-        .where(Case.office_id == user.office_id)
-        .order_by(Case.id.desc())
-    ).all()
+def list_cases(
+    client_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("cases.read")),
+):
+    stmt = select(Case, Client).join(Client, Client.id == Case.client_id).where(Case.office_id == user.office_id)
+    if client_id is not None:
+        stmt = stmt.where(Case.client_id == client_id)
+    rows = db.execute(stmt.order_by(Case.id.desc())).all()
 
     # Preload primary assignments and users
     case_ids = [c.id for c, _ in rows]
@@ -753,7 +755,7 @@ def create_transaction(payload: CaseTransactionCreate, db: Session = Depends(get
         direction=payload.direction,
         amount=payload.amount,
         description=payload.description,
-        occurred_at=payload.occurred_at,
+        occurred_at=payload.occurred_at or _now(),
         created_by_user_id=user.id,
     )
     db.add(t)

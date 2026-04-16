@@ -75,6 +75,10 @@ GoRouter createAppRouter() {
               ),
               GoRoute(
                 path: 'custody',
+                redirect: (context, state) {
+                  final code = state.pathParameters['officeCode']!;
+                  return '/o/$code/accounts?tab=custody';
+                },
                 builder: (context, state) => const CustodyPage(),
               ),
               GoRoute(
