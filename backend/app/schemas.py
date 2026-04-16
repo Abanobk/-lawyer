@@ -54,6 +54,10 @@ class PlanOut(BaseModel):
     duration_days: int
     instapay_link: str | None = None
     promo_image_path: str | None = None
+    package_key: str | None = None
+    package_name: str | None = None
+    max_users: int | None = None
+    allowed_perm_keys: list[str] | None = None
     is_active: bool = True
     created_at: datetime
 
@@ -63,6 +67,10 @@ class PlanCreate(BaseModel):
     price_cents: int = Field(gt=0)
     duration_days: int = Field(gt=0)
     instapay_link: str | None = Field(default=None, max_length=800)
+    package_key: str | None = Field(default=None, max_length=80)
+    package_name: str | None = Field(default=None, max_length=200)
+    max_users: int | None = Field(default=None, gt=0)
+    allowed_perm_keys: list[str] | None = None
     is_active: bool = True
 
 
@@ -71,6 +79,10 @@ class PlanUpdate(BaseModel):
     price_cents: int | None = Field(default=None, gt=0)
     duration_days: int | None = Field(default=None, gt=0)
     instapay_link: str | None = Field(default=None, max_length=800)
+    package_key: str | None = Field(default=None, max_length=80)
+    package_name: str | None = Field(default=None, max_length=200)
+    max_users: int | None = Field(default=None, gt=0)
+    allowed_perm_keys: list[str] | None = None
     is_active: bool | None = None
 
 
@@ -81,6 +93,7 @@ class SubscriptionOut(BaseModel):
     start_at: datetime
     end_at: datetime
     plan_name_snapshot: str | None
+    plan_id: int | None = None
     price_snapshot_cents: int | None
     notes: str | None
 

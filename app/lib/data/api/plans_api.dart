@@ -13,6 +13,10 @@ class PlanDto {
     required this.durationDays,
     this.instapayLink,
     this.promoImagePath,
+    this.packageKey,
+    this.packageName,
+    this.maxUsers,
+    this.allowedPermKeys,
     required this.isActive,
     required this.createdAt,
   });
@@ -23,6 +27,10 @@ class PlanDto {
   final int durationDays;
   final String? instapayLink;
   final String? promoImagePath;
+  final String? packageKey;
+  final String? packageName;
+  final int? maxUsers;
+  final List<String>? allowedPermKeys;
   final bool isActive;
   final DateTime createdAt;
 
@@ -34,6 +42,10 @@ class PlanDto {
       durationDays: json['duration_days'] as int,
       instapayLink: json['instapay_link'] as String?,
       promoImagePath: json['promo_image_path'] as String?,
+      packageKey: json['package_key'] as String?,
+      packageName: json['package_name'] as String?,
+      maxUsers: (json['max_users'] as int?),
+      allowedPermKeys: (json['allowed_perm_keys'] as List?)?.cast<String>(),
       isActive: (json['is_active'] as bool?) ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );

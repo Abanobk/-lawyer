@@ -5,6 +5,7 @@ import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 
 class AdminOfficeDto {
   AdminOfficeDto({
@@ -101,6 +102,10 @@ class AdminPlanDto {
     required this.durationDays,
     this.instapayLink,
     this.promoImagePath,
+    this.packageKey,
+    this.packageName,
+    this.maxUsers,
+    this.allowedPermKeys,
     required this.isActive,
     required this.createdAt,
   });
@@ -111,6 +116,10 @@ class AdminPlanDto {
   final int durationDays;
   final String? instapayLink;
   final String? promoImagePath;
+  final String? packageKey;
+  final String? packageName;
+  final int? maxUsers;
+  final List<String>? allowedPermKeys;
   final bool isActive;
   final DateTime createdAt;
 
@@ -122,6 +131,10 @@ class AdminPlanDto {
       durationDays: json['duration_days'] as int,
       instapayLink: json['instapay_link'] as String?,
       promoImagePath: json['promo_image_path'] as String?,
+      packageKey: json['package_key'] as String?,
+      packageName: json['package_name'] as String?,
+      maxUsers: (json['max_users'] as int?),
+      allowedPermKeys: (json['allowed_perm_keys'] as List?)?.cast<String>(),
       isActive: (json['is_active'] as bool?) ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -225,11 +238,25 @@ class AdminApi {
     );
   }
 
+  Future<List<PermissionCatalogItemDto>> permissionsCatalog() async {
+    return _client.getJson<List<PermissionCatalogItemDto>>(
+      'admin/permissions',
+      decode: (json) {
+        final list = (json as List).cast<Map<String, dynamic>>();
+        return list.map(PermissionCatalogItemDto.fromJson).toList();
+      },
+    );
+  }
+
   Future<AdminPlanDto> createPlan({
     required String name,
     required int priceCents,
     required int durationDays,
     String? instapayLink,
+    String? packageKey,
+    String? packageName,
+    int? maxUsers,
+    List<String>? allowedPermKeys,
     bool isActive = true,
   }) async {
     return _client.postJson<AdminPlanDto>(
@@ -239,6 +266,10 @@ class AdminApi {
         'price_cents': priceCents,
         'duration_days': durationDays,
         'instapay_link': instapayLink,
+        'package_key': packageKey,
+        'package_name': packageName,
+        'max_users': maxUsers,
+        'allowed_perm_keys': allowedPermKeys,
         'is_active': isActive,
       },
       decode: (json) => AdminPlanDto.fromJson(json as Map<String, dynamic>),
@@ -251,6 +282,10 @@ class AdminApi {
     int? priceCents,
     int? durationDays,
     String? instapayLink,
+    String? packageKey,
+    String? packageName,
+    int? maxUsers,
+    List<String>? allowedPermKeys,
     bool? isActive,
   }) async {
     return _client.putJson<AdminPlanDto>(
@@ -260,6 +295,10 @@ class AdminApi {
         'price_cents': priceCents,
         'duration_days': durationDays,
         'instapay_link': instapayLink,
+        'package_key': packageKey,
+        'package_name': packageName,
+        'max_users': maxUsers,
+        'allowed_perm_keys': allowedPermKeys,
         'is_active': isActive,
       },
       decode: (json) => AdminPlanDto.fromJson(json as Map<String, dynamic>),

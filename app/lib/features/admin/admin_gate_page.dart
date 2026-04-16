@@ -7,6 +7,7 @@ import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 
 /// مدخل السوبر أدمن (FAB من الشاشة الرئيسية). الحماية الفعلية من الـ API.
 class AdminGatePage extends StatefulWidget {
@@ -339,9 +340,27 @@ class _PlansTabState extends State<_PlansTab> {
   final _price = TextEditingController();
   final _days = TextEditingController();
   final _link = TextEditingController();
+  final _packageKey = TextEditingController();
+  final _maxUsers = TextEditingController();
+  final _price6 = TextEditingController();
+  final _days6 = TextEditingController();
+  final _link6 = TextEditingController();
+  final _selectedPermKeys = <String>[];
   bool _saving = false;
   bool _uploadingPromo = false;
   final _promoFilesApi = AdminPlanPromoFilesApi();
+  PlatformFile? _packagePromoFile;
+  late Future<List<PermissionCatalogItemDto>> _permsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _maxUsers.text = '3';
+    _days.text = '90';
+    _days6.text = '180';
+    _packageKey.text = '';
+    _permsFuture = widget.adminApi.permissionsCatalog();
+  }
 
   @override
   void dispose() {
@@ -349,32 +368,109 @@ class _PlansTabState extends State<_PlansTab> {
     _price.dispose();
     _days.dispose();
     _link.dispose();
+    _packageKey.dispose();
+    _maxUsers.dispose();
+    _price6.dispose();
+    _days6.dispose();
+    _link6.dispose();
     super.dispose();
   }
 
-  Future<void> _create() async {
-    final name = _name.text.trim();
-    final price = double.tryParse(_price.text.trim());
-    final days = int.tryParse(_days.text.trim());
-    if (name.length < 2 || price == null || price <= 0 || days == null || days <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل اسم الباقة والسعر والمدة بشكل صحيح')));
+  Future<void> _pickPackagePromo() async {
+    final res = await FilePicker.pickFiles(
+      withData: true,
+      allowMultiple: false,
+      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
+      type: FileType.image,
+    );
+    final file = (res?.files.isNotEmpty ?? false) ? res!.files.first : null;
+    if (file == null) return;
+    if (file.bytes == null || file.bytes!.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الملف غير متاح للرفع')));
       return;
     }
+    setState(() => _packagePromoFile = file);
+  }
+
+  Future<void> _createPackageWithOptions() async {
+    final packageName = _name.text.trim();
+    final packageKeyVal = _packageKey.text.trim().isEmpty ? packageName : _packageKey.text.trim();
+    final maxUsersVal = int.tryParse(_maxUsers.text.trim());
+
+    final price3 = double.tryParse(_price.text.trim());
+    final days3 = int.tryParse(_days.text.trim());
+    final link3 = _link.text.trim();
+
+    final price6 = double.tryParse(_price6.text.trim());
+    final days6 = int.tryParse(_days6.text.trim());
+    final link6 = _link6.text.trim();
+
+    if (packageName.length < 2 || maxUsersVal == null || maxUsersVal <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل اسم الباقة وعدد المستخدمين بشكل صحيح')));
+      return;
+    }
+    if (price3 == null || price3 <= 0 || days3 == null || days3 <= 0 || link3.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل خيار 3 شهور (سعر/مدة/رابط) بشكل صحيح')));
+      return;
+    }
+    if (price6 == null || price6 <= 0 || days6 == null || days6 <= 0 || link6.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل خيار 6 شهور (سعر/مدة/رابط) بشكل صحيح')));
+      return;
+    }
+
+    final allowedPermKeys = _selectedPermKeys.isEmpty ? null : List<String>.from(_selectedPermKeys);
+
     setState(() => _saving = true);
     try {
-      await widget.adminApi.createPlan(
-        name: name,
-        priceCents: (price * 100).round(),
-        durationDays: days,
-        instapayLink: _link.text.trim().isEmpty ? null : _link.text.trim(),
+      final plans = <AdminPlanDto>[];
+      final name3 = '$packageName — $days3 يوم';
+      final name6 = '$packageName — $days6 يوم';
+
+      final p3 = await widget.adminApi.createPlan(
+        name: name3,
+        priceCents: (price3 * 100).round(),
+        durationDays: days3,
+        instapayLink: link3,
+        packageKey: packageKeyVal,
+        packageName: packageName,
+        maxUsers: maxUsersVal,
+        allowedPermKeys: allowedPermKeys,
       );
+      plans.add(p3);
+
+      final p6 = await widget.adminApi.createPlan(
+        name: name6,
+        priceCents: (price6 * 100).round(),
+        durationDays: days6,
+        instapayLink: link6,
+        packageKey: packageKeyVal,
+        packageName: packageName,
+        maxUsers: maxUsersVal,
+        allowedPermKeys: allowedPermKeys,
+      );
+      plans.add(p6);
+
+      if (_packagePromoFile != null) {
+        for (final p in plans) {
+          await _promoFilesApi.uploadPromoImage(planId: p.id, file: _packagePromoFile!);
+        }
+      }
+
       if (!mounted) return;
       _name.clear();
+      _packageKey.clear();
+      _maxUsers.text = '3';
       _price.clear();
-      _days.clear();
+      _days.text = '90';
       _link.clear();
+      _price6.clear();
+      _days6.text = '180';
+      _link6.clear();
+      _selectedPermKeys.clear();
+      _packagePromoFile = null;
       widget.onRefresh();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إنشاء الباقة')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إنشاء الباقة + خيارات الدفع')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل إنشاء الباقة: $e')));
@@ -496,31 +592,141 @@ class _PlansTabState extends State<_PlansTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('إضافة باقة', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 12),
-                    TextField(controller: _name, enabled: !_saving, decoration: const InputDecoration(labelText: 'اسم الباقة')),
+                    Text('إضافة باقة (مستخدمين + موديولات + 3/6 شهور)', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: _price,
+                      controller: _packageKey,
                       enabled: !_saving,
-                      decoration: const InputDecoration(labelText: 'السعر (جنيه)'),
-                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'package_key (اختياري للتجميع)'),
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: _days,
+                      controller: _name,
                       enabled: !_saving,
-                      decoration: const InputDecoration(labelText: 'المدة (أيام)'),
+                      decoration: const InputDecoration(labelText: 'اسم الباقة (يظهر للمستاجر)'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _maxUsers,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(labelText: 'عدد المستخدمين (يشمل office_owner)'),
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
-                    TextField(controller: _link, enabled: !_saving, decoration: const InputDecoration(labelText: 'رابط إنستاباي')),
+                    FutureBuilder<List<PermissionCatalogItemDto>>(
+                      future: _permsFuture,
+                      builder: (context, snap) {
+                        if (snap.connectionState == ConnectionState.waiting) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          );
+                        }
+                        if (snap.hasError) return Text('تعذر تحميل صلاحيات: ${snap.error}');
+                        final items = snap.data ?? const <PermissionCatalogItemDto>[];
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: items.map((it) {
+                            final selected = _selectedPermKeys.contains(it.key);
+                            return FilterChip(
+                              label: Text(it.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              selected: selected,
+                              onSelected: _saving
+                                  ? null
+                                  : (v) {
+                                      setState(() {
+                                        if (v) {
+                                          _selectedPermKeys.add(it.key);
+                                        } else {
+                                          _selectedPermKeys.remove(it.key);
+                                        }
+                                      });
+                                    },
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text('خيارات الدفع', style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _days,
+                            enabled: !_saving,
+                            decoration: const InputDecoration(labelText: '3 شهور (أيام)'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _price,
+                            enabled: !_saving,
+                            decoration: const InputDecoration(labelText: 'سعر 3 شهور'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _link,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(labelText: 'رابط إنستاباي (3 شهور)'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _days6,
+                            enabled: !_saving,
+                            decoration: const InputDecoration(labelText: '6 شهور (أيام)'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _price6,
+                            enabled: !_saving,
+                            decoration: const InputDecoration(labelText: 'سعر 6 شهور'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _link6,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(labelText: 'رابط إنستاباي (6 شهور)'),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _packagePromoFile?.name == null ? 'بدون صورة دعاية' : 'تم اختيار صورة: ${_packagePromoFile!.name}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                        FilledButton.tonal(
+                          onPressed: !_saving ? _pickPackagePromo : null,
+                          child: const Text('اختيار صورة'),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     FilledButton(
-                      onPressed: _saving ? null : _create,
+                      onPressed: _saving ? null : _createPackageWithOptions,
                       child: _saving
                           ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('حفظ الباقة'),
+                          : const Text('حفظ الباقة + خياراتها'),
                     ),
                   ],
                 ),
@@ -542,7 +748,12 @@ class _PlansTabState extends State<_PlansTab> {
                       final p = plans[i];
                       return ListTile(
                         title: Text(p.name),
-                        subtitle: Text('السعر: ${(p.priceCents / 100).toStringAsFixed(2)} — المدة: ${p.durationDays} يوم — ${p.isActive ? "مفعّلة" : "معطّلة"}'),
+                        subtitle: Text(
+                          'السعر: ${(p.priceCents / 100).toStringAsFixed(2)} — المدة: ${p.durationDays} يوم'
+                          ' — حتى: ${p.maxUsers ?? "—"} مستخدم'
+                          ' — صلاحيات: ${p.allowedPermKeys?.length ?? "—"}'
+                          ' — ${p.isActive ? "مفعّلة" : "معطّلة"}',
+                        ),
                         trailing: Wrap(
                           spacing: 8,
                           children: [

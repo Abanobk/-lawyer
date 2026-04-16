@@ -81,6 +81,11 @@ class Plan(Base):
     duration_days: Mapped[int] = mapped_column(Integer)
     instapay_link: Mapped[str | None] = mapped_column(String(800), nullable=True)
     promo_image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Package base fields (used to restrict modules + user count).
+    package_key: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    package_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    max_users: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    allowed_perm_keys_csv: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
@@ -95,6 +100,8 @@ class Subscription(Base):
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     price_snapshot_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     plan_name_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Reference to the exact plan option that produced this subscription.
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id"), nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

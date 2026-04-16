@@ -248,6 +248,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                       const SizedBox(height: 6),
                                       Text('السعر: ${(p.priceCents / 100).toStringAsFixed(2)}'),
                                       Text('المدة: ${p.durationDays} يوم'),
+                                      if (p.maxUsers != null) Text('حتى: ${p.maxUsers} مستخدم'),
+                                      if (p.allowedPermKeys != null) Text('صلاحيات: ${p.allowedPermKeys!.length}'),
                                       const SizedBox(height: 10),
                                       FilledButton(
                                         onPressed: _uploading || p.instapayLink == null

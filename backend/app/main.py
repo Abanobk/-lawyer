@@ -164,12 +164,30 @@ def init_db(max_wait_seconds: int = 30) -> None:
                         conn.execute(text("ALTER TABLE plans ADD COLUMN instapay_link VARCHAR(800)"))
                     if "promo_image_path" not in plan_cols:
                         conn.execute(text("ALTER TABLE plans ADD COLUMN promo_image_path VARCHAR(500)"))
+                    if "package_key" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN package_key VARCHAR(80)"))
+                    if "package_name" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN package_name VARCHAR(200)"))
+                    if "max_users" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN max_users INTEGER"))
+                    if "allowed_perm_keys_csv" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN allowed_perm_keys_csv TEXT"))
                     if "is_active" not in plan_cols:
                         conn.execute(text("ALTER TABLE plans ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
                     try:
                         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_plans_is_active ON plans (is_active)"))
                     except Exception:
                         pass
+
+                # Subscriptions: reference plan_id for module/user cap restrictions.
+                if "subscriptions" in table_names:
+                    sub_cols = {c["name"] for c in insp.get_columns("subscriptions")}
+                    if "plan_id" not in sub_cols:
+                        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN plan_id INTEGER"))
+                        try:
+                            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscriptions_plan_id ON subscriptions (plan_id)"))
+                        except Exception:
+                            pass
 
                 # Payment proofs: link to plan + review fields + snapshots
                 if "payment_proofs" in table_names:
@@ -306,11 +324,51 @@ def require_active_subscription(db: Session = Depends(get_db), user: User = Depe
     if sub.end_at <= _now():
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Subscription expired")
 
+    now = _now()
+
+    # Enforce user limit by subscription plan.
+    # include `office_owner` in the user limit count.
+    max_users_total: int | None = None
+    if sub.status == SubscriptionStatus.trial:
+        max_users_total = 3
+    else:
+        plan: Plan | None = None
+        if getattr(sub, "plan_id", None):
+            plan = db.get(Plan, int(sub.plan_id))
+        if not plan and sub.plan_name_snapshot:
+            plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
+        max_users_total = int(getattr(plan, "max_users", None) or 0) or None
+
+    if not max_users_total:
+        # Backwards compatibility: if legacy plans don't have limits.
+        max_users_total = 10_000
+
+    # Only disable when actual limit exceeded.
+    active_count = db.scalar(
+        select(func.count()).select_from(User).where(User.office_id == user.office_id, User.is_active == True)
+    )
+    if active_count is not None and int(active_count) > max_users_total:
+        allowed_staff_count = max(max_users_total - 1, 0)
+        staff_users = db.scalars(
+            select(User).where(
+                User.office_id == user.office_id,
+                User.role == UserRole.staff,
+                User.is_active == True,
+            ).order_by(User.id.asc())
+        ).all()
+        if len(staff_users) > allowed_staff_count:
+            to_disable = [u.id for u in staff_users[allowed_staff_count:]]
+            db.query(User).where(User.id.in_(to_disable)).update({"is_active": False}, synchronize_session=False)
+            db.query(UserPermission).where(UserPermission.office_id == user.office_id, UserPermission.user_id.in_(to_disable)).delete(
+                synchronize_session=False
+            )
+            db.commit()
+
     # If trial is expiring soon, block protected endpoints to prevent data loss.
     # This affects all users inside the office while they are in `trial`.
     TRIAL_BLOCK_DAYS_BEFORE = 3
     if sub.status == SubscriptionStatus.trial:
-        if (sub.end_at - _now()) <= timedelta(days=TRIAL_BLOCK_DAYS_BEFORE):
+        if (sub.end_at - now) <= timedelta(days=TRIAL_BLOCK_DAYS_BEFORE):
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Trial expiring. Please upgrade subscription to avoid data loss.",
@@ -333,10 +391,35 @@ def _user_perm_keys(db: Session, user: User) -> set[str]:
 
 def require_perm(perm_key: str):
     def _dep(db: Session = Depends(get_db), user: User = Depends(require_active_subscription)) -> User:
-        if user.role == UserRole.office_owner:
-            return user
         if perm_key not in PERMISSIONS:
             raise HTTPException(status_code=500, detail="Unknown permission key")
+
+        # Trial: open all modules, but still require a valid subscription.
+        latest = db.scalar(
+            select(Subscription).where(Subscription.office_id == user.office_id).order_by(Subscription.id.desc())
+        )
+        if latest and latest.status == SubscriptionStatus.trial:
+            return user
+
+        plan: Plan | None = None
+        if latest:
+            if getattr(latest, "plan_id", None):
+                plan = db.get(Plan, int(latest.plan_id))
+            if not plan and latest.plan_name_snapshot:
+                plan = db.scalar(select(Plan).where(Plan.name == latest.plan_name_snapshot))
+
+        # Backwards compatibility: if plan doesn't define allowed modules, allow everything.
+        if not plan or not getattr(plan, "allowed_perm_keys_csv", None):
+            allowed_perm_keys = set(PERMISSIONS.keys())
+        else:
+            allowed_perm_keys = {k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS}
+
+        if perm_key not in allowed_perm_keys:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden by plan")
+
+        if user.role == UserRole.office_owner:
+            return user
+
         keys = _user_perm_keys(db, user)
         if perm_key not in keys:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
@@ -426,7 +509,20 @@ def me(user: User = Depends(current_user)):
 @app.get("/me/permissions", response_model=UserPermissionsOut)
 def me_permissions(db: Session = Depends(get_db), user: User = Depends(require_office_user)):
     if user.role == UserRole.office_owner:
-        return UserPermissionsOut(user_id=user.id, permissions=sorted(PERMISSIONS.keys()))
+        sub = db.scalar(select(Subscription).where(Subscription.office_id == user.office_id).order_by(Subscription.id.desc()))
+        if not sub or sub.status == SubscriptionStatus.trial:
+            allowed = sorted(PERMISSIONS.keys())
+        else:
+            plan: Plan | None = None
+            if getattr(sub, "plan_id", None):
+                plan = db.get(Plan, int(sub.plan_id))
+            if not plan and sub.plan_name_snapshot:
+                plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
+            if not plan or not getattr(plan, "allowed_perm_keys_csv", None):
+                allowed = sorted(PERMISSIONS.keys())
+            else:
+                allowed = sorted({k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS})
+        return UserPermissionsOut(user_id=user.id, permissions=allowed)
     keys = db.scalars(
         select(UserPermission.perm_key).where(UserPermission.office_id == user.office_id, UserPermission.user_id == user.id).order_by(UserPermission.perm_key.asc())
     ).all()
@@ -462,6 +558,38 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Enforce subscription + trial protection and user limit.
+    sub = db.scalar(select(Subscription).where(Subscription.office_id == user.office_id).order_by(Subscription.id.desc()))
+    if not sub:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="No subscription")
+    now = _now()
+    if sub.end_at <= now:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Subscription expired")
+    if sub.status == SubscriptionStatus.trial:
+        TRIAL_BLOCK_DAYS_BEFORE = 3
+        if (sub.end_at - now) <= timedelta(days=TRIAL_BLOCK_DAYS_BEFORE):
+            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Trial expiring. Upgrade subscription.")
+        max_users_total = 3
+        allowed_perm_keys = set(PERMISSIONS.keys())
+    else:
+        plan: Plan | None = None
+        if getattr(sub, "plan_id", None):
+            plan = db.get(Plan, int(sub.plan_id))
+        if not plan and sub.plan_name_snapshot:
+            plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
+        max_users_total = int(getattr(plan, "max_users", None) or 0) or 10_000
+        if not plan or not getattr(plan, "allowed_perm_keys_csv", None):
+            allowed_perm_keys = set(PERMISSIONS.keys())
+        else:
+            allowed_perm_keys = {k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS}
+
+    active_count = db.scalar(
+        select(func.count()).select_from(User).where(User.office_id == user.office_id, User.is_active == True)
+    )
+    if active_count is not None and int(active_count) >= int(max_users_total):
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="User limit reached for this subscription")
+
     u = User(
         office_id=user.office_id,
         email=payload.email.strip(),
@@ -471,6 +599,13 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
         role=UserRole.staff,
     )
     db.add(u)
+
+    db.flush()
+
+    # Auto-assign the plan modules permissions for the new staff.
+    for key in allowed_perm_keys:
+        db.add(UserPermission(office_id=u.office_id, user_id=u.id, perm_key=key))
+
     db.commit()
     db.refresh(u)
     return OfficeUserCreateOut(
@@ -529,6 +664,30 @@ def put_user_permissions(
     invalid = [k for k in payload.permissions if k not in PERMISSIONS]
     if invalid:
         raise HTTPException(status_code=400, detail=f"Invalid permission keys: {', '.join(invalid)}")
+
+    # Validate against current plan restrictions (staff/owner must not be granted more than the subscription allows).
+    sub = db.scalar(
+        select(Subscription).where(Subscription.office_id == _.office_id).order_by(Subscription.id.desc())
+    )
+    if sub and sub.status != SubscriptionStatus.trial:
+        plan: Plan | None = None
+        if getattr(sub, "plan_id", None):
+            plan = db.get(Plan, int(sub.plan_id))
+        if not plan and sub.plan_name_snapshot:
+            plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
+
+        allowed_perm_keys: set[str]
+        if plan and getattr(plan, "allowed_perm_keys_csv", None):
+            allowed_perm_keys = {k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS}
+        else:
+            allowed_perm_keys = set(PERMISSIONS.keys())
+
+        disallowed = [k for k in set(payload.permissions) if k not in allowed_perm_keys]
+        if disallowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"These permissions are not allowed by current subscription: {', '.join(sorted(disallowed))}",
+            )
 
     db.query(UserPermission).where(UserPermission.office_id == _.office_id, UserPermission.user_id == user_id).delete()
     for key in sorted(set(payload.permissions)):
@@ -1432,6 +1591,7 @@ def billing_status(db: Session = Depends(get_db), user: User = Depends(require_o
         start_at=sub.start_at,
         end_at=sub.end_at,
         plan_name_snapshot=sub.plan_name_snapshot,
+        plan_id=getattr(sub, "plan_id", None),
         price_snapshot_cents=sub.price_snapshot_cents,
         notes=sub.notes,
     )
@@ -1453,6 +1613,14 @@ def list_plans(db: Session = Depends(get_db), _: User = Depends(require_office_u
             duration_days=p.duration_days,
             instapay_link=getattr(p, "instapay_link", None),
             promo_image_path=getattr(p, "promo_image_path", None),
+            package_key=getattr(p, "package_key", None),
+            package_name=getattr(p, "package_name", None),
+            max_users=getattr(p, "max_users", None),
+            allowed_perm_keys=(
+                [k.strip() for k in p.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS]
+                if getattr(p, "allowed_perm_keys_csv", None)
+                else None
+            ),
             is_active=getattr(p, "is_active", True),
             created_at=p.created_at,
         )
@@ -1573,6 +1741,11 @@ def admin_list_offices(db: Session = Depends(get_db), _: User = Depends(require_
     return [OfficeOut(id=o.id, code=o.code, name=o.name, status=o.status, created_at=o.created_at) for o in offices]
 
 
+@app.get("/admin/permissions", response_model=list[PermissionCatalogItem])
+def admin_permissions_catalog(_: User = Depends(require_super_admin)):
+    return [PermissionCatalogItem(key=k, label=v) for k, v in PERMISSIONS.items()]
+
+
 @app.get("/admin/plans", response_model=list[PlanOut])
 def admin_list_plans(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
     plans = db.scalars(select(Plan).order_by(Plan.id.desc())).all()
@@ -1584,6 +1757,14 @@ def admin_list_plans(db: Session = Depends(get_db), _: User = Depends(require_su
             duration_days=p.duration_days,
             instapay_link=getattr(p, "instapay_link", None),
             promo_image_path=getattr(p, "promo_image_path", None),
+            package_key=getattr(p, "package_key", None),
+            package_name=getattr(p, "package_name", None),
+            max_users=getattr(p, "max_users", None),
+            allowed_perm_keys=(
+                [k.strip() for k in p.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS]
+                if getattr(p, "allowed_perm_keys_csv", None)
+                else None
+            ),
             is_active=getattr(p, "is_active", True),
             created_at=p.created_at,
         )
@@ -1696,6 +1877,7 @@ def admin_approve_payment_proof(
         end_at=end_at,
         price_snapshot_cents=int(plan.price_cents),
         plan_name_snapshot=plan.name,
+        plan_id=plan.id,
         notes=f"proof:{proof.id}",
     )
     db.add(sub)
@@ -1704,6 +1886,39 @@ def admin_approve_payment_proof(
     proof.reviewed_by_user_id = admin.id
     proof.reviewed_at = now
     proof.decision_notes = payload.decision_notes
+
+    # Enforce module/user restrictions immediately after approval.
+    max_users_total = int(getattr(plan, "max_users", None) or 0) or 10_000
+    allowed_perm_keys: set[str]
+    if getattr(plan, "allowed_perm_keys_csv", None):
+        allowed_perm_keys = {k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS}
+    else:
+        allowed_perm_keys = set(PERMISSIONS.keys())
+
+    allowed_staff_count = max(max_users_total - 1, 0)
+    staff_users = db.scalars(
+        select(User).where(
+            User.office_id == proof.office_id,
+            User.role == UserRole.staff,
+            User.is_active == True,
+        ).order_by(User.id.asc())
+    ).all()
+    if len(staff_users) > allowed_staff_count:
+        to_disable = [u.id for u in staff_users[allowed_staff_count:]]
+        db.query(User).where(User.id.in_(to_disable)).update({"is_active": False}, synchronize_session=False)
+        db.query(UserPermission).where(
+            UserPermission.office_id == proof.office_id,
+            UserPermission.user_id.in_(to_disable),
+        ).delete(synchronize_session=False)
+
+    # Prune permissions for remaining staff so they can't see/edit disallowed modules in the UI.
+    keep_staff_ids = [u.id for u in staff_users[:allowed_staff_count]]
+    if keep_staff_ids and allowed_perm_keys != set(PERMISSIONS.keys()):
+        db.query(UserPermission).where(
+            UserPermission.office_id == proof.office_id,
+            UserPermission.user_id.in_(keep_staff_ids),
+        ).filter(~UserPermission.perm_key.in_(allowed_perm_keys)).delete(synchronize_session=False)
+
     db.commit()
     db.refresh(proof)
     return PaymentProofOut(
@@ -1764,11 +1979,23 @@ def admin_create_plan(payload: PlanCreate, db: Session = Depends(get_db), _: Use
     existing = db.scalar(select(Plan).where(Plan.name == payload.name.strip()))
     if existing:
         raise HTTPException(status_code=400, detail="Plan name already exists")
+
+    allowed_perm_keys_csv: str | None = None
+    if payload.allowed_perm_keys is not None:
+        invalid = [k for k in payload.allowed_perm_keys if k not in PERMISSIONS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid permission keys: {', '.join(invalid)}")
+        allowed_perm_keys_csv = ",".join(sorted(set(payload.allowed_perm_keys)))
+
     p = Plan(
         name=payload.name.strip(),
         price_cents=int(payload.price_cents),
         duration_days=int(payload.duration_days),
         instapay_link=(payload.instapay_link.strip() if payload.instapay_link else None),
+        package_key=(payload.package_key.strip() if payload.package_key else None),
+        package_name=(payload.package_name.strip() if payload.package_name else None),
+        max_users=int(payload.max_users) if payload.max_users is not None else None,
+        allowed_perm_keys_csv=allowed_perm_keys_csv,
         is_active=bool(payload.is_active),
     )
     db.add(p)
@@ -1780,6 +2007,14 @@ def admin_create_plan(payload: PlanCreate, db: Session = Depends(get_db), _: Use
         price_cents=p.price_cents,
         duration_days=p.duration_days,
         instapay_link=getattr(p, "instapay_link", None),
+        package_key=getattr(p, "package_key", None),
+        package_name=getattr(p, "package_name", None),
+        max_users=getattr(p, "max_users", None),
+        allowed_perm_keys=(
+            [k.strip() for k in p.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS]
+            if getattr(p, "allowed_perm_keys_csv", None)
+            else None
+        ),
         is_active=getattr(p, "is_active", True),
         created_at=p.created_at,
     )
@@ -1802,6 +2037,17 @@ def admin_update_plan(plan_id: int, payload: PlanUpdate, db: Session = Depends(g
         p.duration_days = int(payload.duration_days)
     if payload.instapay_link is not None:
         p.instapay_link = payload.instapay_link.strip() if payload.instapay_link else None
+    if payload.package_key is not None:
+        p.package_key = payload.package_key.strip() if payload.package_key else None
+    if payload.package_name is not None:
+        p.package_name = payload.package_name.strip() if payload.package_name else None
+    if payload.max_users is not None:
+        p.max_users = int(payload.max_users) if payload.max_users is not None else None
+    if payload.allowed_perm_keys is not None:
+        invalid = [k for k in payload.allowed_perm_keys if k not in PERMISSIONS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid permission keys: {', '.join(invalid)}")
+        p.allowed_perm_keys_csv = ",".join(sorted(set(payload.allowed_perm_keys)))
     if payload.is_active is not None:
         p.is_active = bool(payload.is_active)
     db.commit()
@@ -1812,6 +2058,14 @@ def admin_update_plan(plan_id: int, payload: PlanUpdate, db: Session = Depends(g
         price_cents=p.price_cents,
         duration_days=p.duration_days,
         instapay_link=getattr(p, "instapay_link", None),
+        package_key=getattr(p, "package_key", None),
+        package_name=getattr(p, "package_name", None),
+        max_users=getattr(p, "max_users", None),
+        allowed_perm_keys=(
+            [k.strip() for k in p.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS]
+            if getattr(p, "allowed_perm_keys_csv", None)
+            else None
+        ),
         is_active=getattr(p, "is_active", True),
         created_at=p.created_at,
     )
@@ -1832,6 +2086,14 @@ def admin_delete_plan(plan_id: int, db: Session = Depends(get_db), _: User = Dep
         price_cents=p.price_cents,
         duration_days=p.duration_days,
         instapay_link=getattr(p, "instapay_link", None),
+        package_key=getattr(p, "package_key", None),
+        package_name=getattr(p, "package_name", None),
+        max_users=getattr(p, "max_users", None),
+        allowed_perm_keys=(
+            [k.strip() for k in p.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS]
+            if getattr(p, "allowed_perm_keys_csv", None)
+            else None
+        ),
         is_active=getattr(p, "is_active", True),
         created_at=p.created_at,
     )
@@ -1923,6 +2185,7 @@ def admin_get_subscription(office_id: int, db: Session = Depends(get_db), _: Use
         start_at=sub.start_at,
         end_at=sub.end_at,
         plan_name_snapshot=sub.plan_name_snapshot,
+        plan_id=getattr(sub, "plan_id", None),
         price_snapshot_cents=sub.price_snapshot_cents,
         notes=sub.notes,
     )
@@ -1954,6 +2217,7 @@ def admin_update_trial(
         start_at=sub.start_at,
         end_at=sub.end_at,
         plan_name_snapshot=sub.plan_name_snapshot,
+        plan_id=getattr(sub, "plan_id", None),
         price_snapshot_cents=sub.price_snapshot_cents,
         notes=sub.notes,
     )
