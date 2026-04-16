@@ -64,6 +64,7 @@ from app.schemas import (
     UserOut,
     UserPermissionsOut,
     UserPermissionsUpdate,
+    SessionOut,
 )
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.settings import settings
@@ -581,6 +582,31 @@ def list_case_transactions(case_id: int, db: Session = Depends(get_db), user: Us
             created_at=t.created_at,
         )
         for t in items
+    ]
+
+
+@app.get("/sessions", response_model=list[SessionOut])
+def list_sessions(db: Session = Depends(get_db), user: User = Depends(require_perm("cases.read"))):
+    rows = db.execute(
+        select(CaseSession, Case, Client)
+        .join(Case, Case.id == CaseSession.case_id)
+        .join(Client, Client.id == Case.client_id)
+        .where(CaseSession.office_id == user.office_id)
+        .order_by(CaseSession.session_date.asc(), CaseSession.id.asc())
+    ).all()
+    return [
+        SessionOut(
+            id=s.id,
+            case_id=s.case_id,
+            case_title=c.title,
+            client_name=cl.full_name,
+            session_number=s.session_number,
+            session_year=s.session_year,
+            session_date=s.session_date,
+            notes=s.notes,
+            created_at=s.created_at,
+        )
+        for s, c, cl in rows
     ]
 
 

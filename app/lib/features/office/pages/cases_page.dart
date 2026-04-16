@@ -47,7 +47,7 @@ class _CasesPageState extends State<CasesPage> {
     if (res == null) return;
 
     try {
-      await _casesApi.create(
+      final created = await _casesApi.create(
         clientId: res.clientId,
         title: res.title,
         kind: res.kind,
@@ -60,6 +60,10 @@ class _CasesPageState extends State<CasesPage> {
         firstSessionNumber: res.firstSessionNumber,
         firstSessionYear: res.firstSessionYear,
       );
+
+      if (res.attachFile != null) {
+        await _filesApi.upload(caseId: created.id, file: res.attachFile!);
+      }
       await _reload();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إضافة القضية')));
@@ -232,6 +236,7 @@ class _CreateCaseResult {
     this.primaryLawyerUserId,
     this.firstSessionNumber,
     this.firstSessionYear,
+    this.attachFile,
   });
 
   final int clientId;
@@ -245,6 +250,7 @@ class _CreateCaseResult {
   final int? primaryLawyerUserId;
   final String? firstSessionNumber;
   final int? firstSessionYear;
+  final PlatformFile? attachFile;
 }
 
 class _CreateCaseDialog extends StatefulWidget {
@@ -270,6 +276,7 @@ class _CreateCaseDialogState extends State<_CreateCaseDialog> {
   int? _lawyerId;
   String _kind = 'misdemeanor';
   DateTime? _firstHearing;
+  PlatformFile? _pickedFile;
 
   @override
   void dispose() {
@@ -408,6 +415,40 @@ class _CreateCaseDialogState extends State<_CreateCaseDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: InputDecorator(
+                      decoration: const InputDecoration(labelText: 'ملف القضية (اختياري)'),
+                      child: Text(_pickedFile?.name ?? '—'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final res = await FilePicker.pickFiles(
+                        withData: true,
+                        allowMultiple: false,
+                        type: FileType.custom,
+                        allowedExtensions: const ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp'],
+                      );
+                      final file = (res?.files == null || res!.files.isEmpty) ? null : res.files.first;
+                      setState(() => _pickedFile = file);
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: const Text('اختيار ملف'),
+                  ),
+                  if (_pickedFile != null) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'إزالة',
+                      onPressed: () => setState(() => _pickedFile = null),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
         ),
@@ -443,6 +484,7 @@ class _CreateCaseDialogState extends State<_CreateCaseDialog> {
                 primaryLawyerUserId: _lawyerId,
                 firstSessionNumber: _firstSessionNumber.text.trim().isEmpty ? null : _firstSessionNumber.text.trim(),
                 firstSessionYear: sYear,
+                attachFile: _pickedFile,
               ),
             );
           },

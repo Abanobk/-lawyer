@@ -169,6 +169,18 @@ class CaseTransactionOut(BaseModel):
     created_at: datetime
 
 
+class SessionOut(BaseModel):
+    id: int
+    case_id: int
+    case_title: str
+    client_name: str
+    session_number: str | None
+    session_year: int | None
+    session_date: datetime
+    notes: str | None
+    created_at: datetime
+
+
 class CustodyAccountOut(BaseModel):
     id: int
     user_id: int
