@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Query, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Query, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -32,6 +32,9 @@ from app.models import (
     OfficeExpenseReceiptFile,
     Office,
     OfficeStatus,
+    Plan,
+    PaymentProof,
+    ProofStatus,
     Subscription,
     SubscriptionStatus,
     User,
@@ -43,6 +46,10 @@ from app.schemas import (
     AdminSuperAdminCreate,
     AdminSuperAdminOut,
     AdminUpdateMyCredentials,
+    AdminReviewPaymentProofRequest,
+    PlanCreate,
+    PlanOut,
+    PlanUpdate,
     CaseCreate,
     CaseFileOut,
     CaseOut,
@@ -79,6 +86,7 @@ from app.schemas import (
     UserPermissionsUpdate,
     SessionOut,
     SessionUpdate,
+    PaymentProofOut,
 )
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.settings import settings
@@ -137,6 +145,7 @@ def init_db(max_wait_seconds: int = 30) -> None:
             # Lightweight migration for existing DBs (create_all won't add columns).
             with engine.begin() as conn:
                 insp = inspect(conn)
+                table_names = set(insp.get_table_names())
                 cols = {c["name"] for c in insp.get_columns("users")}
                 if "full_name" not in cols:
                     conn.execute(text('ALTER TABLE users ADD COLUMN full_name VARCHAR(200)'))
@@ -147,6 +156,66 @@ def init_db(max_wait_seconds: int = 30) -> None:
                     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_is_active ON users (is_active)"))
                 except Exception:
                     pass
+
+                # Plans: per-plan InstaPay link + soft disable
+                if "plans" in table_names:
+                    plan_cols = {c["name"] for c in insp.get_columns("plans")}
+                    if "instapay_link" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN instapay_link VARCHAR(800)"))
+                    if "is_active" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+                    try:
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_plans_is_active ON plans (is_active)"))
+                    except Exception:
+                        pass
+
+                # Payment proofs: link to plan + review fields + snapshots
+                if "payment_proofs" in table_names:
+                    proof_cols = {c["name"] for c in insp.get_columns("payment_proofs")}
+                    if "plan_id" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN plan_id INTEGER"))
+                        # Best-effort FK (may fail if plans table missing/permissions).
+                        try:
+                            conn.execute(
+                                text(
+                                    "ALTER TABLE payment_proofs "
+                                    "ADD CONSTRAINT fk_payment_proofs_plan_id "
+                                    "FOREIGN KEY (plan_id) REFERENCES plans (id)"
+                                )
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_proofs_plan_id ON payment_proofs (plan_id)"))
+                        except Exception:
+                            pass
+                    if "amount_snapshot_cents" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN amount_snapshot_cents INTEGER"))
+                    if "instapay_link_snapshot" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN instapay_link_snapshot VARCHAR(800)"))
+                    if "reference_code" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN reference_code VARCHAR(120)"))
+                    if "reviewed_by_user_id" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN reviewed_by_user_id INTEGER"))
+                        try:
+                            conn.execute(
+                                text("CREATE INDEX IF NOT EXISTS ix_payment_proofs_reviewed_by_user_id ON payment_proofs (reviewed_by_user_id)")
+                            )
+                        except Exception:
+                            pass
+                    if "reviewed_at" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN reviewed_at TIMESTAMPTZ"))
+                        try:
+                            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_payment_proofs_reviewed_at ON payment_proofs (reviewed_at)"))
+                        except Exception:
+                            pass
+                    if "decision_notes" not in proof_cols:
+                        conn.execute(text("ALTER TABLE payment_proofs ADD COLUMN decision_notes TEXT"))
+                    # Helpful index for admin queue
+                    try:
+                        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payment_proofs_status_uploaded ON payment_proofs (status, uploaded_at)"))
+                    except Exception:
+                        pass
             return
         except OperationalError as e:
             last_err = e
@@ -1356,6 +1425,116 @@ def billing_status(db: Session = Depends(get_db), user: User = Depends(require_o
     )
 
 
+@app.get("/subscription/me", response_model=SubscriptionOut)
+def subscription_me(db: Session = Depends(get_db), user: User = Depends(require_office_user)):
+    return billing_status(db=db, user=user)
+
+
+@app.get("/plans", response_model=list[PlanOut])
+def list_plans(db: Session = Depends(get_db), _: User = Depends(require_office_user)):
+    plans = db.scalars(select(Plan).where(Plan.is_active == True).order_by(Plan.id.asc())).all()  # noqa: E712
+    return [
+        PlanOut(
+            id=p.id,
+            name=p.name,
+            price_cents=p.price_cents,
+            duration_days=p.duration_days,
+            instapay_link=getattr(p, "instapay_link", None),
+            is_active=getattr(p, "is_active", True),
+            created_at=p.created_at,
+        )
+        for p in plans
+    ]
+
+
+@app.post("/subscription/payment-proofs", response_model=PaymentProofOut)
+def create_payment_proof(
+    plan_id: int = Form(...),
+    upload: UploadFile = File(...),
+    reference_code: str | None = Form(default=None),
+    notes: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_office_admin),
+):
+    plan = db.get(Plan, plan_id)
+    if not plan or getattr(plan, "is_active", True) is False:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    _ensure_upload_dir()
+    safe_name = os.path.basename(upload.filename or "file")
+    ext = Path(safe_name).suffix[:10]
+    file_id = uuid4().hex
+    rel_path = f"payment-proofs/{user.office_id}/{file_id}{ext}"
+    full_path = Path(settings.upload_dir) / rel_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = upload.file.read()
+    full_path.write_bytes(data)
+
+    proof = PaymentProof(
+        office_id=user.office_id,
+        plan_id=plan.id,
+        image_path=str(full_path),
+        status=ProofStatus.pending,
+        notes=notes,
+        amount_snapshot_cents=int(plan.price_cents),
+        instapay_link_snapshot=getattr(plan, "instapay_link", None),
+        reference_code=reference_code,
+    )
+    db.add(proof)
+    db.commit()
+    db.refresh(proof)
+    return PaymentProofOut(
+        id=proof.id,
+        office_id=proof.office_id,
+        image_path=proof.image_path,
+        plan_id=getattr(proof, "plan_id", None),
+        status=proof.status,
+        notes=proof.notes,
+        amount_snapshot_cents=getattr(proof, "amount_snapshot_cents", None),
+        instapay_link_snapshot=getattr(proof, "instapay_link_snapshot", None),
+        reference_code=getattr(proof, "reference_code", None),
+        reviewed_by_user_id=getattr(proof, "reviewed_by_user_id", None),
+        reviewed_at=getattr(proof, "reviewed_at", None),
+        decision_notes=getattr(proof, "decision_notes", None),
+        uploaded_at=proof.uploaded_at,
+    )
+
+
+@app.get("/subscription/payment-proofs", response_model=list[PaymentProofOut])
+def list_payment_proofs(db: Session = Depends(get_db), user: User = Depends(require_office_admin)):
+    items = db.scalars(select(PaymentProof).where(PaymentProof.office_id == user.office_id).order_by(PaymentProof.id.desc())).all()
+    return [
+        PaymentProofOut(
+            id=p.id,
+            office_id=p.office_id,
+            image_path=p.image_path,
+            plan_id=getattr(p, "plan_id", None),
+            status=p.status,
+            notes=p.notes,
+            amount_snapshot_cents=getattr(p, "amount_snapshot_cents", None),
+            instapay_link_snapshot=getattr(p, "instapay_link_snapshot", None),
+            reference_code=getattr(p, "reference_code", None),
+            reviewed_by_user_id=getattr(p, "reviewed_by_user_id", None),
+            reviewed_at=getattr(p, "reviewed_at", None),
+            decision_notes=getattr(p, "decision_notes", None),
+            uploaded_at=p.uploaded_at,
+        )
+        for p in items
+    ]
+
+
+@app.get("/subscription/payment-proofs/{proof_id}")
+def download_payment_proof(proof_id: int, db: Session = Depends(get_db), user: User = Depends(require_office_admin)):
+    p = db.get(PaymentProof, proof_id)
+    if not p or p.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Proof not found")
+    path = Path(p.image_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type="application/octet-stream", filename=f"payment-proof-{p.id}{path.suffix}")
+
+
 @app.get("/protected-example")
 def protected_example(_: User = Depends(require_active_subscription)):
     return {"ok": True, "message": "subscription ok"}
@@ -1365,6 +1544,242 @@ def protected_example(_: User = Depends(require_active_subscription)):
 def admin_list_offices(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
     offices = db.scalars(select(Office).order_by(Office.id.desc())).all()
     return [OfficeOut(id=o.id, code=o.code, name=o.name, status=o.status, created_at=o.created_at) for o in offices]
+
+
+@app.get("/admin/plans", response_model=list[PlanOut])
+def admin_list_plans(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    plans = db.scalars(select(Plan).order_by(Plan.id.desc())).all()
+    return [
+        PlanOut(
+            id=p.id,
+            name=p.name,
+            price_cents=p.price_cents,
+            duration_days=p.duration_days,
+            instapay_link=getattr(p, "instapay_link", None),
+            is_active=getattr(p, "is_active", True),
+            created_at=p.created_at,
+        )
+        for p in plans
+    ]
+
+
+@app.get("/admin/payment-proofs", response_model=list[PaymentProofOut])
+def admin_list_payment_proofs(
+    status: ProofStatus | None = Query(default=None),
+    office_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    stmt = select(PaymentProof)
+    if status is not None:
+        stmt = stmt.where(PaymentProof.status == status)
+    if office_id is not None:
+        stmt = stmt.where(PaymentProof.office_id == office_id)
+    items = db.scalars(stmt.order_by(PaymentProof.uploaded_at.desc(), PaymentProof.id.desc())).all()
+    return [
+        PaymentProofOut(
+            id=p.id,
+            office_id=p.office_id,
+            image_path=p.image_path,
+            plan_id=getattr(p, "plan_id", None),
+            status=p.status,
+            notes=p.notes,
+            amount_snapshot_cents=getattr(p, "amount_snapshot_cents", None),
+            instapay_link_snapshot=getattr(p, "instapay_link_snapshot", None),
+            reference_code=getattr(p, "reference_code", None),
+            reviewed_by_user_id=getattr(p, "reviewed_by_user_id", None),
+            reviewed_at=getattr(p, "reviewed_at", None),
+            decision_notes=getattr(p, "decision_notes", None),
+            uploaded_at=p.uploaded_at,
+        )
+        for p in items
+    ]
+
+
+@app.get("/admin/payment-proofs/{proof_id}")
+def admin_download_payment_proof(proof_id: int, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    p = db.get(PaymentProof, proof_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Proof not found")
+    path = Path(p.image_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type="application/octet-stream", filename=f"payment-proof-{p.id}{path.suffix}")
+
+
+@app.post("/admin/payment-proofs/{proof_id}/approve", response_model=PaymentProofOut)
+def admin_approve_payment_proof(
+    proof_id: int,
+    payload: AdminReviewPaymentProofRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_super_admin),
+):
+    proof = db.get(PaymentProof, proof_id)
+    if not proof:
+        raise HTTPException(status_code=404, detail="Proof not found")
+    if proof.status != ProofStatus.pending:
+        raise HTTPException(status_code=400, detail="Proof already reviewed")
+    if not getattr(proof, "plan_id", None):
+        raise HTTPException(status_code=400, detail="Proof missing plan")
+    plan = db.get(Plan, int(proof.plan_id))
+    if not plan:
+        raise HTTPException(status_code=400, detail="Plan not found")
+
+    now = _now()
+    latest = db.scalar(select(Subscription).where(Subscription.office_id == proof.office_id).order_by(Subscription.id.desc()))
+    if latest and latest.status in (SubscriptionStatus.trial, SubscriptionStatus.active) and latest.end_at > now:
+        start_at = latest.end_at
+    else:
+        start_at = now
+    end_at = start_at + timedelta(days=int(plan.duration_days))
+
+    # Record subscription snapshot.
+    sub = Subscription(
+        office_id=proof.office_id,
+        status=SubscriptionStatus.active,
+        start_at=start_at,
+        end_at=end_at,
+        price_snapshot_cents=int(plan.price_cents),
+        plan_name_snapshot=plan.name,
+        notes=f"proof:{proof.id}",
+    )
+    db.add(sub)
+
+    proof.status = ProofStatus.approved
+    proof.reviewed_by_user_id = admin.id
+    proof.reviewed_at = now
+    proof.decision_notes = payload.decision_notes
+    db.commit()
+    db.refresh(proof)
+    return PaymentProofOut(
+        id=proof.id,
+        office_id=proof.office_id,
+        image_path=proof.image_path,
+        plan_id=getattr(proof, "plan_id", None),
+        status=proof.status,
+        notes=proof.notes,
+        amount_snapshot_cents=getattr(proof, "amount_snapshot_cents", None),
+        instapay_link_snapshot=getattr(proof, "instapay_link_snapshot", None),
+        reference_code=getattr(proof, "reference_code", None),
+        reviewed_by_user_id=getattr(proof, "reviewed_by_user_id", None),
+        reviewed_at=getattr(proof, "reviewed_at", None),
+        decision_notes=getattr(proof, "decision_notes", None),
+        uploaded_at=proof.uploaded_at,
+    )
+
+
+@app.post("/admin/payment-proofs/{proof_id}/reject", response_model=PaymentProofOut)
+def admin_reject_payment_proof(
+    proof_id: int,
+    payload: AdminReviewPaymentProofRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_super_admin),
+):
+    proof = db.get(PaymentProof, proof_id)
+    if not proof:
+        raise HTTPException(status_code=404, detail="Proof not found")
+    if proof.status != ProofStatus.pending:
+        raise HTTPException(status_code=400, detail="Proof already reviewed")
+    now = _now()
+    proof.status = ProofStatus.rejected
+    proof.reviewed_by_user_id = admin.id
+    proof.reviewed_at = now
+    proof.decision_notes = payload.decision_notes
+    db.commit()
+    db.refresh(proof)
+    return PaymentProofOut(
+        id=proof.id,
+        office_id=proof.office_id,
+        image_path=proof.image_path,
+        plan_id=getattr(proof, "plan_id", None),
+        status=proof.status,
+        notes=proof.notes,
+        amount_snapshot_cents=getattr(proof, "amount_snapshot_cents", None),
+        instapay_link_snapshot=getattr(proof, "instapay_link_snapshot", None),
+        reference_code=getattr(proof, "reference_code", None),
+        reviewed_by_user_id=getattr(proof, "reviewed_by_user_id", None),
+        reviewed_at=getattr(proof, "reviewed_at", None),
+        decision_notes=getattr(proof, "decision_notes", None),
+        uploaded_at=proof.uploaded_at,
+    )
+
+
+@app.post("/admin/plans", response_model=PlanOut)
+def admin_create_plan(payload: PlanCreate, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    existing = db.scalar(select(Plan).where(Plan.name == payload.name.strip()))
+    if existing:
+        raise HTTPException(status_code=400, detail="Plan name already exists")
+    p = Plan(
+        name=payload.name.strip(),
+        price_cents=int(payload.price_cents),
+        duration_days=int(payload.duration_days),
+        instapay_link=(payload.instapay_link.strip() if payload.instapay_link else None),
+        is_active=bool(payload.is_active),
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return PlanOut(
+        id=p.id,
+        name=p.name,
+        price_cents=p.price_cents,
+        duration_days=p.duration_days,
+        instapay_link=getattr(p, "instapay_link", None),
+        is_active=getattr(p, "is_active", True),
+        created_at=p.created_at,
+    )
+
+
+@app.put("/admin/plans/{plan_id}", response_model=PlanOut)
+def admin_update_plan(plan_id: int, payload: PlanUpdate, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    p = db.get(Plan, plan_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    if payload.name is not None:
+        name = payload.name.strip()
+        existing = db.scalar(select(Plan).where(Plan.name == name))
+        if existing and existing.id != p.id:
+            raise HTTPException(status_code=400, detail="Plan name already exists")
+        p.name = name
+    if payload.price_cents is not None:
+        p.price_cents = int(payload.price_cents)
+    if payload.duration_days is not None:
+        p.duration_days = int(payload.duration_days)
+    if payload.instapay_link is not None:
+        p.instapay_link = payload.instapay_link.strip() if payload.instapay_link else None
+    if payload.is_active is not None:
+        p.is_active = bool(payload.is_active)
+    db.commit()
+    db.refresh(p)
+    return PlanOut(
+        id=p.id,
+        name=p.name,
+        price_cents=p.price_cents,
+        duration_days=p.duration_days,
+        instapay_link=getattr(p, "instapay_link", None),
+        is_active=getattr(p, "is_active", True),
+        created_at=p.created_at,
+    )
+
+
+@app.delete("/admin/plans/{plan_id}", response_model=PlanOut)
+def admin_delete_plan(plan_id: int, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    p = db.get(Plan, plan_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    # Soft delete: keep history stable for existing subscriptions/proofs.
+    p.is_active = False
+    db.commit()
+    db.refresh(p)
+    return PlanOut(
+        id=p.id,
+        name=p.name,
+        price_cents=p.price_cents,
+        duration_days=p.duration_days,
+        instapay_link=getattr(p, "instapay_link", None),
+        is_active=getattr(p, "is_active", True),
+        created_at=p.created_at,
+    )
 
 
 @app.get("/admin/super-admins", response_model=list[AdminSuperAdminOut])

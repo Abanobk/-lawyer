@@ -13,6 +13,7 @@ import 'package:lawyer_app/features/office/pages/dashboard_page.dart';
 import 'package:lawyer_app/features/office/pages/employees_page.dart';
 import 'package:lawyer_app/features/office/pages/sessions_page.dart';
 import 'package:lawyer_app/features/office/pages/settings_page.dart';
+import 'package:lawyer_app/features/office/pages/subscription_page.dart';
 
 final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -88,6 +89,10 @@ GoRouter createAppRouter() {
               GoRoute(
                 path: 'settings',
                 builder: (context, state) => const SettingsPage(),
+              ),
+              GoRoute(
+                path: 'subscription',
+                builder: (context, state) => const SubscriptionPage(),
               ),
             ],
           ),

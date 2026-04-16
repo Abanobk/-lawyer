@@ -79,6 +79,8 @@ class Plan(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     price_cents: Mapped[int] = mapped_column(Integer)
     duration_days: Mapped[int] = mapped_column(Integer)
+    instapay_link: Mapped[str | None] = mapped_column(String(800), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -103,13 +105,21 @@ class PaymentProof(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id"), nullable=True, index=True)
     image_path: Mapped[str] = mapped_column(String(500))
     status: Mapped[ProofStatus] = mapped_column(Enum(ProofStatus), default=ProofStatus.pending, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    amount_snapshot_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    instapay_link_snapshot: Mapped[str | None] = mapped_column(String(800), nullable=True)
+    reference_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    decision_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 Index("idx_payment_proofs_office_status", PaymentProof.office_id, PaymentProof.status)
+Index("idx_payment_proofs_status_uploaded", PaymentProof.status, PaymentProof.uploaded_at)
 
 
 class CaseKind(str, enum.Enum):

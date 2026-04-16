@@ -47,6 +47,32 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
+class PlanOut(BaseModel):
+    id: int
+    name: str
+    price_cents: int
+    duration_days: int
+    instapay_link: str | None = None
+    is_active: bool = True
+    created_at: datetime
+
+
+class PlanCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    price_cents: int = Field(gt=0)
+    duration_days: int = Field(gt=0)
+    instapay_link: str | None = Field(default=None, max_length=800)
+    is_active: bool = True
+
+
+class PlanUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    price_cents: int | None = Field(default=None, gt=0)
+    duration_days: int | None = Field(default=None, gt=0)
+    instapay_link: str | None = Field(default=None, max_length=800)
+    is_active: bool | None = None
+
+
 class SubscriptionOut(BaseModel):
     id: int
     office_id: int
@@ -83,12 +109,23 @@ class AdminUpdateMyCredentials(BaseModel):
     new_password: str | None = Field(default=None, min_length=8, max_length=200)
 
 
+class AdminReviewPaymentProofRequest(BaseModel):
+    decision_notes: str | None = Field(default=None, max_length=2000)
+
+
 class PaymentProofOut(BaseModel):
     id: int
     office_id: int
     image_path: str
+    plan_id: int | None = None
     status: ProofStatus
     notes: str | None
+    amount_snapshot_cents: int | None = None
+    instapay_link_snapshot: str | None = None
+    reference_code: str | None = None
+    reviewed_by_user_id: int | None = None
+    reviewed_at: datetime | None = None
+    decision_notes: str | None = None
     uploaded_at: datetime
 
 

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 
@@ -29,6 +30,7 @@ class OfficeShell extends StatelessWidget {
     _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
     _OfficeNavItem('accounts', 'الحسابات', Icons.account_balance_wallet_outlined),
     _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
+    _OfficeNavItem('subscription', 'الاشتراك', Icons.subscriptions_outlined),
     _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
   ];
 
@@ -113,6 +115,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = AuthTokenStorage();
     final permsApi = PermissionsApi();
+    final meApi = MeApi();
     final officeLink = '${Uri.base.origin}/o/$officeCode';
     final nav = Material(
       color: AppColors.sidebar,
@@ -187,8 +190,15 @@ class _Sidebar extends StatelessWidget {
                       future: permsApi.myPermissions(),
                       builder: (context, ps) {
                         final keys = ps.data?.permissions.toSet() ?? const <String>{};
-                        final items = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
-                        return _NavList(officeCode: officeCode, current: current, items: items);
+                        final base = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
+                        return FutureBuilder<MeDto>(
+                          future: meApi.me(),
+                          builder: (context, ms) {
+                            final role = ms.data?.role;
+                            final items = base.where((i) => i.segment != 'subscription' || role == 'office_owner').toList();
+                            return _NavList(officeCode: officeCode, current: current, items: items);
+                          },
+                        );
                       },
                     );
                   },
@@ -234,6 +244,9 @@ bool _allowNav(String segment, Set<String> keys) {
       break;
     case 'employees':
       required = 'employees.read';
+      break;
+    case 'subscription':
+      required = 'settings.view';
       break;
     case 'settings':
       required = 'settings.view';

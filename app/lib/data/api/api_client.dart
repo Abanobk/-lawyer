@@ -34,9 +34,13 @@ class ApiClient {
 
   Future<T> getJson<T>(
     String path, {
+    Map<String, String>? query,
     T Function(Object? json)? decode,
   }) async {
-    final uri = ApiConfig.uri(path);
+    var uri = ApiConfig.uri(path);
+    if (query != null && query.isNotEmpty) {
+      uri = uri.replace(queryParameters: {...uri.queryParameters, ...query});
+    }
     final res = await _http.get(uri, headers: await _authHeaders());
     return _handleJson(res, decode: decode);
   }
