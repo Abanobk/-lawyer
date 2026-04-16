@@ -289,6 +289,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
         final c = data.caseDto;
         final allTx = data.transactions;
         final collections = allTx.where((t) => t.direction == 'income').fold<double>(0, (a, t) => a + t.amount);
+        final expenses = allTx.where((t) => t.direction == 'expense').fold<double>(0, (a, t) => a + t.amount);
         final fee = c.feeTotal;
         // المتبقي من الأتعاب = المتفق عليه ناقص التحصيلات (دخل «أتعاب» فقط)، دون خصم المصروفات من رصيد الأتعاب.
         final remainingFromFee = fee == null ? null : (fee - collections);
@@ -335,8 +336,8 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
               const SizedBox(height: 20),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 720;
-                  final cards = [
+                  final w = constraints.maxWidth;
+                  final cards = <Widget>[
                     _FinSummaryCard(
                       color: const Color(0xFF1E40AF),
                       label: 'إجمالي الأتعاب المتفق عليها',
@@ -348,20 +349,46 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                       value: '${money.format(collections)} ج.م',
                     ),
                     _FinSummaryCard(
+                      color: const Color(0xFFDC2626),
+                      label: 'إجمالي المصروفات',
+                      value: '${money.format(expenses)} ج.م',
+                    ),
+                    _FinSummaryCard(
                       color: const Color(0xFFD97706),
                       label: 'إجمالي المتبقي',
                       value: remainingFromFee == null ? '—' : '${money.format(remainingFromFee)} ج.م',
                       subtitle: fee == null ? null : 'المتفق عليه ناقص التحصيلات',
                     ),
                   ];
-                  if (wide) {
+                  Widget rowPair(int a, int b) {
                     return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        for (var i = 0; i < cards.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 12),
+                        Expanded(child: cards[a]),
+                        const SizedBox(width: 10),
+                        Expanded(child: cards[b]),
+                      ],
+                    );
+                  }
+
+                  if (w >= 1000) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < 4; i++) ...[
+                          if (i > 0) const SizedBox(width: 10),
                           Expanded(child: cards[i]),
                         ],
+                      ],
+                    );
+                  }
+                  if (w >= 520) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        rowPair(0, 1),
+                        const SizedBox(height: 10),
+                        rowPair(2, 3),
                       ],
                     );
                   }
@@ -369,7 +396,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (var i = 0; i < cards.length; i++) ...[
-                        if (i > 0) const SizedBox(height: 12),
+                        if (i > 0) const SizedBox(height: 10),
                         cards[i],
                       ],
                     ],
@@ -410,16 +437,16 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                           child: Center(child: Text('لا توجد عمليات')),
                         )
                       else
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Table(
-                              columnWidths: const {
-                                0: FixedColumnWidth(102),
-                                1: FixedColumnWidth(148),
-                                2: FixedColumnWidth(168),
-                                3: FixedColumnWidth(86),
-                                4: FixedColumnWidth(88),
-                                5: FixedColumnWidth(102),
+                        LayoutBuilder(
+                          builder: (context, tableConstraints) {
+                            return Table(
+                              columnWidths: {
+                                0: const FixedColumnWidth(108),
+                                1: FlexColumnWidth(tableConstraints.maxWidth >= 700 ? 2.4 : 2),
+                                2: FlexColumnWidth(tableConstraints.maxWidth >= 700 ? 2 : 1.6),
+                                3: const FixedColumnWidth(96),
+                                4: const FixedColumnWidth(104),
+                                5: const FixedColumnWidth(118),
                               },
                               border: TableBorder(
                                 horizontalInside: BorderSide(color: Colors.grey.shade200),
@@ -441,7 +468,14 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                                   return TableRow(
                                     children: [
                                       _cellPadding(Text(df.format(t.occurredAt.toLocal()))),
-                                      _cellPadding(Text(t.description ?? '—')),
+                                      _cellPadding(
+                                        Text(
+                                          t.description ?? '—',
+                                          softWrap: true,
+                                          maxLines: 4,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                                       _cellPadding(
                                         Wrap(
                                           crossAxisAlignment: WrapCrossAlignment.center,
@@ -500,7 +534,8 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                                   );
                                 }),
                               ],
-                            ),
+                            );
+                          },
                         ),
                     ],
                   ),
@@ -555,43 +590,50 @@ class _FinSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final fill = Color.alphaBlend(color.withValues(alpha: 0.14), Colors.white);
     final borderTint = Color.alphaBlend(color.withValues(alpha: 0.35), Colors.grey.shade300);
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderTint),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 4,
-                height: 40,
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label, style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 132),
+      child: SizedBox(
+        width: double.infinity,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderTint),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color)),
-          if (subtitle != null) ...[
-            const SizedBox(height: 6),
-            Text(subtitle!, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-          ],
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(label, style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(subtitle!, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
