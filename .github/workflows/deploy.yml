@@ -20,4 +20,6 @@ jobs:
           # يطابق نسخة GitHub حتى لو في تعديلات محلية على السيرفر (مثل docker-compose)
           git reset --hard origin/main
           cd infra
+          # يمنع أخطاء «No such container» عند إعادة إنشاء الحاويات بعد تغيّر الـ IDs
+          docker compose down --remove-orphans || true
           docker compose up -d --build --remove-orphans

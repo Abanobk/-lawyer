@@ -1,7 +1,7 @@
 import os
 import secrets
 import string
-import time
+import time as time_std
 from datetime import date, datetime, timedelta, timezone, time as dt_time
 from pathlib import Path
 from uuid import uuid4
@@ -204,10 +204,10 @@ def init_db(max_wait_seconds: int = 30) -> None:
     Ensure DB is reachable before trying to create tables.
     On fresh starts, Postgres may not accept connections immediately.
     """
-    deadline = time.time() + max_wait_seconds
+    deadline = time_std.time() + max_wait_seconds
     last_err: Exception | None = None
 
-    while time.time() < deadline:
+    while time_std.time() < deadline:
         try:
             Base.metadata.create_all(bind=engine)
             # Lightweight migration for existing DBs (create_all won't add columns).
@@ -319,7 +319,7 @@ def init_db(max_wait_seconds: int = 30) -> None:
             return
         except OperationalError as e:
             last_err = e
-            time.sleep(1)
+            time_std.sleep(1)
 
     raise RuntimeError("DB not ready after retries") from last_err
 
