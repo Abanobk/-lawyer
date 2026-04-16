@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
+import 'dart:js_interop';
+import 'package:web/web.dart' as web;
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/case_files_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
@@ -173,10 +176,19 @@ class _CasesPageState extends State<CasesPage> {
                               DataCell(Text(c.primaryLawyerEmail ?? '—')),
                               DataCell(Text(c.feeTotal == null ? '—' : c.feeTotal!.toStringAsFixed(2))),
                               DataCell(
-                                TextButton.icon(
-                                  onPressed: () => _uploadForCase(c.id),
-                                  icon: const Icon(Icons.upload_file),
-                                  label: const Text('رفع ملف'),
+                                Row(
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => _uploadForCase(c.id),
+                                      icon: const Icon(Icons.upload_file),
+                                      label: const Text('رفع'),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    TextButton(
+                                      onPressed: () => _openFilesDialog(c.id),
+                                      child: const Text('ملفات'),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -191,6 +203,24 @@ class _CasesPageState extends State<CasesPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _openFilesDialog(int caseId) async {
+    try {
+      final files = await _filesApi.list(caseId: caseId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _CaseFilesDialog(
+          caseId: caseId,
+          files: files,
+          api: _filesApi,
+        ),
+      );
+    } on CaseFilesApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   String _numYear(String? n, int? y) {
@@ -213,6 +243,84 @@ class _CasesPageState extends State<CasesPage> {
       default:
         return 'أخرى';
     }
+  }
+}
+
+class _CaseFilesDialog extends StatefulWidget {
+  const _CaseFilesDialog({required this.caseId, required this.files, required this.api});
+  final int caseId;
+  final List<CaseFileDto> files;
+  final CaseFilesApi api;
+
+  @override
+  State<_CaseFilesDialog> createState() => _CaseFilesDialogState();
+}
+
+class _CaseFilesDialogState extends State<_CaseFilesDialog> {
+  bool _downloadingAll = false;
+
+  Future<void> _downloadOne(CaseFileDto f) async {
+    final res = await widget.api.download(fileId: f.id);
+    if (!kIsWeb) return;
+    final bytesPart = res.$1.toJS as web.BlobPart;
+    final parts = <web.BlobPart>[bytesPart].toJS;
+    final blob = web.Blob(parts, web.BlobPropertyBag(type: res.$3));
+    final url = web.URL.createObjectURL(blob);
+    final a = web.HTMLAnchorElement()
+      ..href = url
+      ..download = res.$2;
+    a.click();
+    web.URL.revokeObjectURL(url);
+  }
+
+  Future<void> _downloadAll() async {
+    setState(() => _downloadingAll = true);
+    try {
+      for (final f in widget.files) {
+        await _downloadOne(f);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingAll = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final df = DateFormat('yyyy-MM-dd HH:mm');
+    return AlertDialog(
+      title: Text('ملفات القضية #${widget.caseId}'),
+      content: SizedBox(
+        width: 720,
+        child: widget.files.isEmpty
+            ? const Text('لا يوجد ملفات')
+            : ListView.separated(
+                shrinkWrap: true,
+                itemCount: widget.files.length,
+                separatorBuilder: (_, i) => const Divider(height: 1),
+                itemBuilder: (context, i) {
+                  final f = widget.files[i];
+                  return ListTile(
+                    title: Text(f.originalName),
+                    subtitle: Text('${(f.sizeBytes / 1024).toStringAsFixed(1)} KB • ${df.format(f.uploadedAt.toLocal())}'),
+                    trailing: TextButton(
+                      onPressed: () => _downloadOne(f),
+                      child: const Text('تنزيل'),
+                    ),
+                  );
+                },
+              ),
+      ),
+      actions: [
+        if (widget.files.isNotEmpty)
+          FilledButton.icon(
+            onPressed: _downloadingAll ? null : _downloadAll,
+            icon: const Icon(Icons.download),
+            label: Text(_downloadingAll ? 'جارٍ تنزيل الكل…' : 'تنزيل الكل (بكب)'),
+          ),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إغلاق')),
+      ],
+    );
   }
 }
 

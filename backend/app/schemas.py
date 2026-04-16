@@ -151,6 +151,15 @@ class CaseOut(BaseModel):
     created_at: datetime
 
 
+class CaseFileOut(BaseModel):
+    id: int
+    case_id: int
+    original_name: str
+    content_type: str | None
+    size_bytes: int
+    uploaded_at: datetime
+
+
 class CaseTransactionCreate(BaseModel):
     case_id: int
     direction: MoneyDirection

@@ -39,6 +39,7 @@ from app.models import (
 from app.schemas import (
     AdminUpdateTrialRequest,
     CaseCreate,
+    CaseFileOut,
     CaseOut,
     CaseTransactionCreate,
     CaseTransactionOut,
@@ -561,6 +562,40 @@ def upload_case_file(
     db.add(rec)
     db.commit()
     return {"ok": True, "id": rec.id, "name": rec.original_name}
+
+
+@app.get("/cases/{case_id}/files", response_model=list[CaseFileOut])
+def list_case_files(case_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("cases.read"))):
+    case = db.get(Case, case_id)
+    if not case or case.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    items = db.scalars(
+        select(CaseFile)
+        .where(CaseFile.office_id == user.office_id, CaseFile.case_id == case_id)
+        .order_by(CaseFile.uploaded_at.desc(), CaseFile.id.desc())
+    ).all()
+    return [
+        CaseFileOut(
+            id=f.id,
+            case_id=f.case_id,
+            original_name=f.original_name,
+            content_type=f.content_type,
+            size_bytes=f.size_bytes,
+            uploaded_at=f.uploaded_at,
+        )
+        for f in items
+    ]
+
+
+@app.get("/case-files/{file_id}")
+def download_case_file(file_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("cases.read"))):
+    f = db.get(CaseFile, file_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    path = Path(f.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type=f.content_type or "application/octet-stream", filename=f.original_name)
 
 
 @app.get("/cases/{case_id}/transactions", response_model=list[CaseTransactionOut])
