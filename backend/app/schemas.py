@@ -266,3 +266,27 @@ class CustodyLedgerEntryOut(BaseModel):
     status: CustodySpendStatus | None = None
     spend_id: int | None = None
 
+
+class OfficeExpenseCreate(BaseModel):
+    amount: float = Field(gt=0)
+    description: str | None = Field(default=None, max_length=500)
+    occurred_at: datetime | None = None
+
+
+class OfficeExpenseOut(BaseModel):
+    id: int
+    amount: float
+    description: str | None
+    occurred_at: datetime
+    created_by_user_id: int | None
+    created_at: datetime
+
+
+class OfficeExpenseReceiptOut(BaseModel):
+    id: int
+    expense_id: int
+    original_name: str
+    content_type: str | None
+    size_bytes: int
+    uploaded_at: datetime
+

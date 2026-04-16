@@ -239,6 +239,37 @@ class CaseTransaction(Base):
     case: Mapped["Case"] = relationship(back_populates="transactions")
 
 
+class OfficeExpense(Base):
+    __tablename__ = "office_expenses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=datetime.utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("idx_office_expenses_office_occurred", OfficeExpense.office_id, OfficeExpense.occurred_at)
+
+
+class OfficeExpenseReceiptFile(Base):
+    __tablename__ = "office_expense_receipt_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey("office_expenses.id"), index=True)
+
+    original_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    storage_path: Mapped[str] = mapped_column(String(800), unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
 class CustodyAccount(Base):
     __tablename__ = "custody_accounts"
 

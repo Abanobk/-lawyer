@@ -28,6 +28,8 @@ from app.models import (
     CustodySpend,
     CustodySpendStatus,
     MoneyDirection,
+    OfficeExpense,
+    OfficeExpenseReceiptFile,
     Office,
     OfficeStatus,
     Subscription,
@@ -54,6 +56,9 @@ from app.schemas import (
     CustodyReviewRequest,
     CustodySpendCreate,
     CustodySpendOut,
+    OfficeExpenseCreate,
+    OfficeExpenseOut,
+    OfficeExpenseReceiptOut,
     OfficeUserCreate,
     OfficeUserCreateOut,
     PermissionCatalogItem,
@@ -1106,6 +1111,118 @@ def custody_list_receipts(spend_id: int, db: Session = Depends(get_db), user: Us
 @app.get("/custody/receipts/{file_id}")
 def custody_download_receipt(file_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("custody.admin.view"))):
     f = db.get(CustodyReceiptFile, file_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    path = Path(f.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type=f.content_type or "application/octet-stream", filename=f.original_name)
+
+
+@app.post("/office-expenses", response_model=OfficeExpenseOut)
+def create_office_expense(payload: OfficeExpenseCreate, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    exp = OfficeExpense(
+        office_id=user.office_id,
+        amount=payload.amount,
+        description=payload.description,
+        occurred_at=payload.occurred_at or _now(),
+        created_by_user_id=user.id,
+    )
+    db.add(exp)
+    db.commit()
+    db.refresh(exp)
+    return OfficeExpenseOut(
+        id=exp.id,
+        amount=float(exp.amount),
+        description=exp.description,
+        occurred_at=exp.occurred_at,
+        created_by_user_id=exp.created_by_user_id,
+        created_at=exp.created_at,
+    )
+
+
+@app.get("/office-expenses", response_model=list[OfficeExpenseOut])
+def list_office_expenses(db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    items = db.scalars(
+        select(OfficeExpense)
+        .where(OfficeExpense.office_id == user.office_id)
+        .order_by(OfficeExpense.occurred_at.desc(), OfficeExpense.id.desc())
+    ).all()
+    return [
+        OfficeExpenseOut(
+            id=e.id,
+            amount=float(e.amount),
+            description=e.description,
+            occurred_at=e.occurred_at,
+            created_by_user_id=e.created_by_user_id,
+            created_at=e.created_at,
+        )
+        for e in items
+    ]
+
+
+@app.post("/office-expenses/{expense_id}/receipts")
+def upload_office_expense_receipt(
+    expense_id: int,
+    upload: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    exp = db.get(OfficeExpense, expense_id)
+    if not exp or exp.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    _ensure_upload_dir()
+    safe_name = os.path.basename(upload.filename or "file")
+    ext = Path(safe_name).suffix[:10]
+    file_id = uuid4().hex
+    rel_path = f"office-expenses/{user.office_id}/{expense_id}/{file_id}{ext}"
+    full_path = Path(settings.upload_dir) / rel_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = upload.file.read()
+    full_path.write_bytes(data)
+
+    rec = OfficeExpenseReceiptFile(
+        office_id=user.office_id,
+        expense_id=expense_id,
+        original_name=safe_name,
+        content_type=upload.content_type,
+        storage_path=str(full_path),
+        size_bytes=len(data),
+        uploaded_by_user_id=user.id,
+    )
+    db.add(rec)
+    db.commit()
+    return {"ok": True, "id": rec.id, "name": rec.original_name}
+
+
+@app.get("/office-expenses/{expense_id}/receipts", response_model=list[OfficeExpenseReceiptOut])
+def list_office_expense_receipts(expense_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    exp = db.get(OfficeExpense, expense_id)
+    if not exp or exp.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    items = db.scalars(
+        select(OfficeExpenseReceiptFile)
+        .where(OfficeExpenseReceiptFile.office_id == user.office_id, OfficeExpenseReceiptFile.expense_id == expense_id)
+        .order_by(OfficeExpenseReceiptFile.id.desc())
+    ).all()
+    return [
+        OfficeExpenseReceiptOut(
+            id=f.id,
+            expense_id=f.expense_id,
+            original_name=f.original_name,
+            content_type=f.content_type,
+            size_bytes=f.size_bytes,
+            uploaded_at=f.uploaded_at,
+        )
+        for f in items
+    ]
+
+
+@app.get("/office-expense-receipts/{file_id}")
+def download_office_expense_receipt(file_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    f = db.get(OfficeExpenseReceiptFile, file_id)
     if not f or f.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="File not found")
     path = Path(f.storage_path)

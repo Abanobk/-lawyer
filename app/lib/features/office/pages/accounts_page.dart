@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
+import 'package:lawyer_app/data/api/office_expenses_api.dart';
 import 'package:lawyer_app/data/api/transactions_api.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 
@@ -298,11 +302,256 @@ class _OfficeExpensesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Card(
+    return const _OfficeExpensesView();
+  }
+}
+
+class _OfficeExpensesView extends StatefulWidget {
+  const _OfficeExpensesView();
+
+  @override
+  State<_OfficeExpensesView> createState() => _OfficeExpensesViewState();
+}
+
+class _OfficeExpensesViewState extends State<_OfficeExpensesView> {
+  final _api = OfficeExpensesApi();
+  final _files = OfficeExpenseFilesApi();
+
+  late Future<List<OfficeExpenseDto>> _future = _api.list();
+
+  final _amount = TextEditingController();
+  final _desc = TextEditingController();
+
+  void _reload() => setState(() => _future = _api.list());
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final amt = double.tryParse(_amount.text.trim());
+    if (amt == null || amt <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اكتب مبلغ صحيح')));
+      return;
+    }
+    final upload = await FilePicker.pickFiles(
+      withData: true,
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
+    );
+    final file = (upload?.files == null || upload!.files.isEmpty) ? null : upload.files.first;
+    if (file == null || file.bytes == null || file.bytes!.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اختر إيصال/مستند للمصروف')));
+      return;
+    }
+    try {
+      final exp = await _api.create(amount: amt, description: _desc.text.trim().isEmpty ? null : _desc.text.trim());
+      await _files.uploadReceipt(expenseId: exp.id, file: file);
+      if (!mounted) return;
+      _amount.clear();
+      _desc.clear();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل المصروف ورفع الإيصال')));
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تسجيل المصروف: $e')));
+    }
+  }
+
+  Future<void> _viewReceipts(int expenseId) async {
+    try {
+      final receipts = await _api.listReceipts(expenseId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _OfficeExpenseReceiptsDialog(
+          expenseId: expenseId,
+          receipts: receipts,
+          filesApi: _files,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تحميل الإيصالات: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final df = DateFormat('yyyy-MM-dd');
+    return Card(
       child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Text('قريبًا: مصروفات المكتب ورفع إيصالاتها.'),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: TextField(
+                    controller: _amount,
+                    decoration: const InputDecoration(labelText: 'المبلغ'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+                SizedBox(
+                  width: 520,
+                  child: TextField(
+                    controller: _desc,
+                    decoration: const InputDecoration(labelText: 'الوصف'),
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: _create,
+                  icon: const Icon(Icons.add),
+                  label: const Text('تسجيل مصروف + رفع إيصال'),
+                ),
+                const SizedBox(width: 8),
+                IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: FutureBuilder<List<OfficeExpenseDto>>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError) {
+                    return Center(child: Text('تعذر تحميل مصروفات المكتب: ${snap.error}'));
+                  }
+                  final items = snap.data ?? const <OfficeExpenseDto>[];
+                  if (items.isEmpty) {
+                    return const Center(child: Text('لا يوجد مصروفات بعد'));
+                  }
+                  return SingleChildScrollView(
+                    child: DataTable(
+                      columns: const [
+                        DataColumn(label: Text('التاريخ')),
+                        DataColumn(label: Text('المبلغ')),
+                        DataColumn(label: Text('الوصف')),
+                        DataColumn(label: Text('إيصالات')),
+                      ],
+                      rows: items
+                          .map(
+                            (e) => DataRow(
+                              cells: [
+                                DataCell(Text(df.format(e.occurredAt.toLocal()))),
+                                DataCell(Text(e.amount.toStringAsFixed(2))),
+                                DataCell(Text(e.description ?? '—')),
+                                DataCell(
+                                  TextButton(
+                                    onPressed: () => _viewReceipts(e.id),
+                                    child: const Text('عرض'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _OfficeExpenseReceiptsDialog extends StatefulWidget {
+  const _OfficeExpenseReceiptsDialog({
+    required this.expenseId,
+    required this.receipts,
+    required this.filesApi,
+  });
+
+  final int expenseId;
+  final List<OfficeExpenseReceiptDto> receipts;
+  final OfficeExpenseFilesApi filesApi;
+
+  @override
+  State<_OfficeExpenseReceiptsDialog> createState() => _OfficeExpenseReceiptsDialogState();
+}
+
+class _OfficeExpenseReceiptsDialogState extends State<_OfficeExpenseReceiptsDialog> {
+  Uint8List? _previewBytes;
+  String? _previewContentType;
+  bool _loading = false;
+
+  Future<void> _preview(int fileId) async {
+    setState(() => _loading = true);
+    try {
+      final res = await widget.filesApi.downloadReceipt(fileId);
+      setState(() {
+        _previewBytes = res.$1;
+        _previewContentType = res.$2;
+      });
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('إيصالات المصروف #${widget.expenseId}'),
+      content: SizedBox(
+        width: 900,
+        child: Row(
+          children: [
+            Expanded(
+              child: ListView(
+                shrinkWrap: true,
+                children: widget.receipts
+                    .map(
+                      (r) => ListTile(
+                        title: Text(r.originalName),
+                        subtitle: Text(r.contentType ?? '—'),
+                        trailing: TextButton(
+                          onPressed: _loading ? null : () => _preview(r.id),
+                          child: const Text('عرض'),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Card(
+                child: Center(
+                  child: _loading
+                      ? const CircularProgressIndicator()
+                      : _previewBytes == null
+                          ? const Text('اختر إيصال لعرضه')
+                          : (_previewContentType?.startsWith('image/') ?? false)
+                              ? Image.memory(_previewBytes!, fit: BoxFit.contain)
+                              : const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: Text('المعاينة داخل التطبيق مدعومة للصور فقط. يمكن تنزيل الملف عند الحاجة.'),
+                                ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إغلاق')),
+      ],
     );
   }
 }
