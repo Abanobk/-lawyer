@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -154,6 +154,17 @@ class AdminSubscriptionsAnalyticsOut(BaseModel):
     days: int
     total_active_offices: int
     by_plan: list[AdminActivePlanSummaryOut]
+
+
+class AdminSubscriptionsSeriesPointOut(BaseModel):
+    day: date
+    active_offices: int
+    pct_of_max: int
+
+
+class AdminSubscriptionsSeriesOut(BaseModel):
+    days: int
+    points: list[AdminSubscriptionsSeriesPointOut]
 
 
 class AdminAlertsOut(BaseModel):

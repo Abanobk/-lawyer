@@ -163,6 +163,40 @@ class AdminSubscriptionsAnalyticsDto {
   }
 }
 
+class AdminSubscriptionsSeriesPointDto {
+  AdminSubscriptionsSeriesPointDto({
+    required this.day,
+    required this.activeOffices,
+    required this.pctOfMax,
+  });
+
+  final DateTime day;
+  final int activeOffices;
+  final int pctOfMax;
+
+  factory AdminSubscriptionsSeriesPointDto.fromJson(Map<String, dynamic> json) {
+    return AdminSubscriptionsSeriesPointDto(
+      day: DateTime.parse(json['day'] as String),
+      activeOffices: json['active_offices'] as int,
+      pctOfMax: json['pct_of_max'] as int,
+    );
+  }
+}
+
+class AdminSubscriptionsSeriesDto {
+  AdminSubscriptionsSeriesDto({required this.days, required this.points});
+
+  final int days;
+  final List<AdminSubscriptionsSeriesPointDto> points;
+
+  factory AdminSubscriptionsSeriesDto.fromJson(Map<String, dynamic> json) {
+    return AdminSubscriptionsSeriesDto(
+      days: json['days'] as int,
+      points: (json['points'] as List).cast<Map<String, dynamic>>().map(AdminSubscriptionsSeriesPointDto.fromJson).toList(),
+    );
+  }
+}
+
 class AdminAlertsDto {
   AdminAlertsDto({
     required this.trialExpiring3d,
@@ -487,6 +521,14 @@ class AdminApi {
       'admin/analytics/subscriptions',
       query: {'days': '$days'},
       decode: (json) => AdminSubscriptionsAnalyticsDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<AdminSubscriptionsSeriesDto> subscriptionsSeries({int days = 30}) async {
+    return _client.getJson<AdminSubscriptionsSeriesDto>(
+      'admin/analytics/subscriptions_series',
+      query: {'days': '$days'},
+      decode: (json) => AdminSubscriptionsSeriesDto.fromJson(json as Map<String, dynamic>),
     );
   }
 

@@ -240,6 +240,8 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   late Future<List<AdminPaymentProofDto>> _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
   late Future<AdminTrialAnalyticsDto> _trialAnalyticsFuture = _adminApi.trialAnalytics(days: 30);
   late Future<AdminSubscriptionsAnalyticsDto> _subsAnalyticsFuture = _adminApi.subscriptionsAnalytics(days: 30);
+  int _chartDays = 30;
+  late Future<AdminSubscriptionsSeriesDto> _subsSeriesFuture = _adminApi.subscriptionsSeries(days: _chartDays);
   late Future<AdminAlertsDto> _alertsFuture = _adminApi.alerts();
   late Future<List<AdminSuperAdminDto>> _superAdminsFuture = _adminApi.listSuperAdmins();
 
@@ -352,6 +354,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
       _meFuture = _meApi.me();
       _trialAnalyticsFuture = _adminApi.trialAnalytics(days: 30);
       _subsAnalyticsFuture = _adminApi.subscriptionsAnalytics(days: 30);
+      _subsSeriesFuture = _adminApi.subscriptionsSeries(days: _chartDays);
       _alertsFuture = _adminApi.alerts();
       _superAdminsFuture = _adminApi.listSuperAdmins();
     });
@@ -378,13 +381,29 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                         children: [
                           SizedBox(width: 360, child: _TrialSummaryCard(future: _trialAnalyticsFuture)),
                           const SizedBox(width: 12),
-                          Expanded(child: _DashboardChartCard(future: _trialAnalyticsFuture)),
+                          Expanded(
+                            child: _DashboardChartCard(
+                              days: _chartDays,
+                              future: _subsSeriesFuture,
+                              onDaysChanged: (d) => setState(() {
+                                _chartDays = d;
+                                _subsSeriesFuture = _adminApi.subscriptionsSeries(days: _chartDays);
+                              }),
+                            ),
+                          ),
                         ],
                       )
                     else ...[
                       _TrialSummaryCard(future: _trialAnalyticsFuture),
                       const SizedBox(height: 12),
-                      _DashboardChartCard(future: _trialAnalyticsFuture),
+                      _DashboardChartCard(
+                        days: _chartDays,
+                        future: _subsSeriesFuture,
+                        onDaysChanged: (d) => setState(() {
+                          _chartDays = d;
+                          _subsSeriesFuture = _adminApi.subscriptionsSeries(days: _chartDays);
+                        }),
+                      ),
                     ],
                     const SizedBox(height: 12),
                     if (isWide)
@@ -1595,15 +1614,17 @@ class _TrialSummaryCard extends StatelessWidget {
 }
 
 class _DashboardChartCard extends StatelessWidget {
-  const _DashboardChartCard({required this.future});
-  final Future<AdminTrialAnalyticsDto> future;
+  const _DashboardChartCard({required this.days, required this.future, required this.onDaysChanged});
+  final int days;
+  final Future<AdminSubscriptionsSeriesDto> future;
+  final ValueChanged<int> onDaysChanged;
 
   @override
   Widget build(BuildContext context) {
     return _SoftCard(
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: FutureBuilder<AdminTrialAnalyticsDto>(
+        child: FutureBuilder<AdminSubscriptionsSeriesDto>(
           future: future,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
@@ -1611,16 +1632,11 @@ class _DashboardChartCard extends StatelessWidget {
             }
             if (snap.hasError) return Text('تعذر تحميل الرسم: ${snap.error}');
             final data = snap.data;
-            if (data == null || data.offices.isEmpty) {
+            if (data == null || data.points.isEmpty) {
               return const SizedBox(height: 190, child: Center(child: Text('لا توجد بيانات للرسم')));
             }
 
-            // Use activeUsersCount as a clearer series.
-            final values = data.offices.take(12).map((o) => o.activeUsersCount.toDouble()).toList();
-            final sum = values.fold<double>(0, (a, b) => a + b);
-            if (sum <= 0.0001) {
-              return const SizedBox(height: 190, child: Center(child: Text('لا يوجد نشاط كافي للرسم')));
-            }
+            final values = data.points.map((p) => p.activeOffices.toDouble()).toList();
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1630,18 +1646,35 @@ class _DashboardChartCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'النشاط (تمثيل مبسط)',
+                        'المشتركين (حسب المدة)',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
                       ),
                     ),
-                    Text('آخر ${data.days} يوم', style: Theme.of(context).textTheme.bodySmall),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: days,
+                        items: const [
+                          DropdownMenuItem(value: 1, child: Text('آخر يوم')),
+                          DropdownMenuItem(value: 7, child: Text('آخر أسبوع')),
+                          DropdownMenuItem(value: 30, child: Text('آخر شهر')),
+                          DropdownMenuItem(value: 90, child: Text('آخر 3 شهور')),
+                          DropdownMenuItem(value: 180, child: Text('آخر 6 شهور')),
+                          DropdownMenuItem(value: 365, child: Text('آخر سنة')),
+                        ],
+                        onChanged: (v) => v == null ? null : onDaysChanged(v),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 170,
                   child: CustomPaint(
-                    painter: _MiniLineChartPainter(values: values),
+                    painter: _MiniLineChartPainter(
+                      values: values,
+                      days: data.days,
+                      labels: _buildXAxisLabels(context, data),
+                    ),
                     child: const SizedBox.expand(),
                   ),
                 ),
@@ -1652,11 +1685,31 @@ class _DashboardChartCard extends StatelessWidget {
       ),
     );
   }
+
+  List<String> _buildXAxisLabels(BuildContext context, AdminSubscriptionsSeriesDto data) {
+    final pts = data.points;
+    if (pts.isEmpty) return const [];
+    final n = pts.length;
+    final isLong = data.days > 31;
+    final monthsAr = const ['ينا', 'فبر', 'مار', 'أبر', 'ماي', 'يون', 'يول', 'أغس', 'سبت', 'أكت', 'نوف', 'ديس'];
+    final labels = <String>[];
+    for (var i = 0; i < n; i++) {
+      final d = pts[i].day;
+      if (isLong) {
+        labels.add(monthsAr[d.month - 1]);
+      } else {
+        labels.add('${d.day}');
+      }
+    }
+    return labels;
+  }
 }
 
 class _MiniLineChartPainter extends CustomPainter {
-  _MiniLineChartPainter({required this.values});
+  _MiniLineChartPainter({required this.values, required this.days, required this.labels});
   final List<double> values;
+  final int days;
+  final List<String> labels;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1672,13 +1725,19 @@ class _MiniLineChartPainter extends CustomPainter {
       ..color = const Color(0xFF1E4DB7).withValues(alpha: 0.10)
       ..style = PaintingStyle.fill;
 
+    // chart paddings for axes/labels
+    const leftPad = 8.0;
+    const rightPad = 40.0;
+    const topPad = 10.0;
+    const bottomPad = 22.0;
+
     final r = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(14));
     canvas.drawRRect(r, bg);
 
     // grid lines
     for (var i = 1; i <= 3; i++) {
-      final y = size.height * (i / 4);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+      final y = topPad + (size.height - topPad - bottomPad) * (i / 4);
+      canvas.drawLine(Offset(leftPad, y), Offset(size.width - rightPad, y), grid);
     }
 
     if (values.isEmpty) return;
@@ -1687,12 +1746,14 @@ class _MiniLineChartPainter extends CustomPainter {
     final span = (maxV - minV).abs() < 0.0001 ? 1.0 : (maxV - minV);
 
     final n = values.length;
-    final dx = n <= 1 ? 0.0 : size.width / (n - 1);
+    final w = size.width - leftPad - rightPad;
+    final h = size.height - topPad - bottomPad;
+    final dx = n <= 1 ? 0.0 : w / (n - 1);
     final pts = <Offset>[];
     for (var i = 0; i < n; i++) {
       final norm = (values[i] - minV) / span;
-      final x = dx * i;
-      final y = size.height - (norm * (size.height - 12)) - 6;
+      final x = leftPad + dx * i;
+      final y = topPad + (h - (norm * h));
       pts.add(Offset(x, y));
     }
 
@@ -1702,8 +1763,8 @@ class _MiniLineChartPainter extends CustomPainter {
     }
 
     final fillPath = Path.from(path)
-      ..lineTo(pts.last.dx, size.height)
-      ..lineTo(pts.first.dx, size.height)
+      ..lineTo(pts.last.dx, topPad + h)
+      ..lineTo(pts.first.dx, topPad + h)
       ..close();
     canvas.drawPath(fillPath, fill);
     canvas.drawPath(path, line);
@@ -1712,10 +1773,39 @@ class _MiniLineChartPainter extends CustomPainter {
     for (final p in pts) {
       canvas.drawCircle(p, 3.2, dot);
     }
+
+    // right axis % labels
+    final tpAxis = TextPainter(textDirection: TextDirection.rtl);
+    for (final pct in const [0, 25, 50, 75, 100]) {
+      final y = topPad + (h - (pct / 100) * h);
+      tpAxis.text = TextSpan(text: '$pct%', style: const TextStyle(color: Color(0xFF7482A6), fontSize: 10));
+      tpAxis.layout();
+      tpAxis.paint(canvas, Offset(size.width - rightPad + 6, y - tpAxis.height / 2));
+    }
+
+    // bottom x labels (sample)
+    final tpX = TextPainter(textDirection: TextDirection.rtl, maxLines: 1, ellipsis: '…');
+    final steps = n <= 6 ? 1 : (n / 6).ceil();
+    for (var i = 0; i < n; i += steps) {
+      if (i >= labels.length) break;
+      tpX.text = TextSpan(text: labels[i], style: const TextStyle(color: Color(0xFF7482A6), fontSize: 10));
+      tpX.layout(maxWidth: 36);
+      tpX.paint(canvas, Offset(pts[i].dx - (tpX.width / 2), topPad + h + 4));
+    }
+
+    // point labels: count
+    final tpVal = TextPainter(textDirection: TextDirection.rtl, maxLines: 1);
+    for (var i = 0; i < pts.length; i++) {
+      final txt = values[i].toInt().toString();
+      tpVal.text = TextSpan(text: txt, style: const TextStyle(color: Color(0xFF0F2A5F), fontSize: 10, fontWeight: FontWeight.w800));
+      tpVal.layout();
+      tpVal.paint(canvas, Offset(pts[i].dx - tpVal.width / 2, pts[i].dy - tpVal.height - 6));
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _MiniLineChartPainter oldDelegate) => oldDelegate.values != values;
+  bool shouldRepaint(covariant _MiniLineChartPainter oldDelegate) =>
+      oldDelegate.values != values || oldDelegate.days != days || oldDelegate.labels != labels;
 }
 
 class _SoftCard extends StatelessWidget {

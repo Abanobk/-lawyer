@@ -2,7 +2,7 @@ import os
 import secrets
 import string
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, time
 from pathlib import Path
 from uuid import uuid4
 
@@ -51,6 +51,8 @@ from app.schemas import (
     AdminTrialAnalyticsOut,
     AdminTrialOfficeUsersOut,
     AdminSubscriptionsAnalyticsOut,
+    AdminSubscriptionsSeriesOut,
+    AdminSubscriptionsSeriesPointOut,
     AdminActivePlanSummaryOut,
     AdminAlertsOut,
     PlanCreate,
@@ -1944,6 +1946,41 @@ def admin_subscriptions_analytics(
     by_plan.sort(key=lambda x: x.office_count, reverse=True)
 
     return AdminSubscriptionsAnalyticsOut(days=int(days), total_active_offices=total_active, by_plan=by_plan)
+
+
+@app.get("/admin/analytics/subscriptions_series", response_model=AdminSubscriptionsSeriesOut)
+def admin_subscriptions_series(
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    now = _now()
+    today = now.date()
+    start_day = today - timedelta(days=int(days) - 1)
+    days_list = [start_day + timedelta(days=i) for i in range(int(days))]
+
+    counts: list[int] = []
+    for d in days_list:
+        dt = datetime.combine(d, time.min).replace(tzinfo=getattr(now, "tzinfo", None))
+        c = db.scalar(
+            select(func.count(func.distinct(Subscription.office_id))).where(
+                Subscription.status == SubscriptionStatus.active,
+                Subscription.start_at <= dt,
+                Subscription.end_at > dt,
+            )
+        )
+        counts.append(int(c or 0))
+
+    max_c = max(counts) if counts else 0
+    points = [
+        AdminSubscriptionsSeriesPointOut(
+            day=d,
+            active_offices=c,
+            pct_of_max=(0 if max_c <= 0 else int(round((c / max_c) * 100))),
+        )
+        for d, c in zip(days_list, counts)
+    ]
+    return AdminSubscriptionsSeriesOut(days=int(days), points=points)
 
 
 @app.get("/admin/alerts", response_model=AdminAlertsOut)
