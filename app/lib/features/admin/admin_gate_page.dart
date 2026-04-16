@@ -92,6 +92,7 @@ class _AdminGatePageState extends State<AdminGatePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = AppLayout.isWebDesktop(context);
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -112,13 +113,16 @@ class _AdminGatePageState extends State<AdminGatePage> {
         ],
       ),
       body: ContentCanvas(
-        child: Align(
-          alignment: AppLayout.isWebDesktop(context) ? Alignment.center : Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1100),
-            child: _authed ? const _SuperAdminDashboard() : _LoginCard(email: _email, pass: _pass, loading: _loading, onSubmit: _submit),
-          ),
-        ),
+        child: _authed
+            // For super admin on desktop: use full width so right sidebar can stick to screen edge.
+            ? const _SuperAdminDashboard()
+            : Align(
+                alignment: isDesktop ? Alignment.center : Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1100),
+                  child: _LoginCard(email: _email, pass: _pass, loading: _loading, onSubmit: _submit),
+                ),
+              ),
       ),
     );
   }
@@ -216,6 +220,15 @@ class _SuperAdminDashboard extends StatefulWidget {
 
 enum _AdminSection { offices, plans, proofs, settings }
 
+enum _AdminOfficePanel {
+  dashboard,
+  offices,
+  trial,
+  activeSubs,
+  alerts,
+  superAdmins,
+}
+
 class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   final _meApi = MeApi();
   final _adminApi = AdminApi();
@@ -225,12 +238,17 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   late final Future<List<AdminOfficeDto>> _officesFuture = _adminApi.listOffices();
   late Future<List<AdminPlanDto>> _plansFuture = _adminApi.listPlans();
   late Future<List<AdminPaymentProofDto>> _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
+  late Future<AdminTrialAnalyticsDto> _trialAnalyticsFuture = _adminApi.trialAnalytics(days: 30);
+  late Future<AdminSubscriptionsAnalyticsDto> _subsAnalyticsFuture = _adminApi.subscriptionsAnalytics(days: 30);
+  late Future<AdminAlertsDto> _alertsFuture = _adminApi.alerts();
+  late Future<List<AdminSuperAdminDto>> _superAdminsFuture = _adminApi.listSuperAdmins();
 
   final _currentPass = TextEditingController();
   final _newEmail = TextEditingController();
   final _newPass = TextEditingController();
   bool _saving = false;
   _AdminSection _section = _AdminSection.offices;
+  _AdminOfficePanel _officePanel = _AdminOfficePanel.dashboard;
 
   @override
   void dispose() {
@@ -274,14 +292,15 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   }
 
   Widget _navItem({
-    required _AdminSection value,
+    required bool selected,
+    required VoidCallback onTap,
     required IconData icon,
     required String label,
+    Widget? trailing,
   }) {
-    final selected = _section == value;
     final isRtl = Directionality.of(context) == TextDirection.rtl;
     return InkWell(
-      onTap: () => setState(() => _section = value),
+      onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -303,6 +322,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            ...? (trailing == null ? null : [trailing, const SizedBox(width: 8)]),
             if (selected) Icon(isRtl ? Icons.chevron_right : Icons.chevron_left, color: Colors.white),
           ],
         ),
@@ -310,11 +330,115 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
     );
   }
 
+  Widget _badge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+    );
+  }
+
+  void _refreshAll() {
+    setState(() {
+      _plansFuture = _adminApi.listPlans();
+      _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
+      _meFuture = _meApi.me();
+      _trialAnalyticsFuture = _adminApi.trialAnalytics(days: 30);
+      _subsAnalyticsFuture = _adminApi.subscriptionsAnalytics(days: 30);
+      _alertsFuture = _adminApi.alerts();
+      _superAdminsFuture = _adminApi.listSuperAdmins();
+    });
+  }
+
+  Widget _buildOfficeContent() {
+    switch (_officePanel) {
+      case _AdminOfficePanel.dashboard:
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              _TrialCard(future: _trialAnalyticsFuture),
+              const SizedBox(height: 12),
+              _ActiveSubsCard(future: _subsAnalyticsFuture),
+              const SizedBox(height: 12),
+              _AlertsCard(future: _alertsFuture),
+              const SizedBox(height: 12),
+              _SuperAdminsCard(
+                future: _superAdminsFuture,
+                adminApi: _adminApi,
+                onRefresh: () => setState(() => _superAdminsFuture = _adminApi.listSuperAdmins()),
+              ),
+            ],
+          ),
+        );
+      case _AdminOfficePanel.offices:
+        return _OfficesTab(future: _officesFuture, adminApi: _adminApi);
+      case _AdminOfficePanel.trial:
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('التجربة', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              _TrialCard(future: _trialAnalyticsFuture),
+            ],
+          ),
+        );
+      case _AdminOfficePanel.activeSubs:
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('الاشتراكات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              _ActiveSubsCard(future: _subsAnalyticsFuture),
+            ],
+          ),
+        );
+      case _AdminOfficePanel.alerts:
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('تحذيرات', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              _AlertsCard(future: _alertsFuture),
+            ],
+          ),
+        );
+      case _AdminOfficePanel.superAdmins:
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('المستخدمين', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 12),
+              _SuperAdminsCard(
+                future: _superAdminsFuture,
+                adminApi: _adminApi,
+                onRefresh: () => setState(() => _superAdminsFuture = _adminApi.listSuperAdmins()),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isRtl = Directionality.of(context) == TextDirection.rtl;
     final content = switch (_section) {
-      _AdminSection.offices => _OfficesTab(future: _officesFuture, adminApi: _adminApi),
+      _AdminSection.offices => _buildOfficeContent(),
       _AdminSection.plans => _PlansTab(
           future: _plansFuture,
           adminApi: _adminApi,
@@ -336,8 +460,9 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
         ),
     };
 
+    final divider = Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 10), color: Colors.white.withValues(alpha: 0.18));
     final sidebar = Container(
-      width: 290,
+      width: 270,
       decoration: BoxDecoration(
         color: const Color(0xFF0F2A5F),
         borderRadius: BorderRadius.circular(18),
@@ -359,22 +484,112 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                 ),
                 IconButton(
                   tooltip: 'تحديث',
-                  onPressed: () {
-                    setState(() {
-                      _plansFuture = _adminApi.listPlans();
-                      _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
-                      _meFuture = _meApi.me();
-                    });
-                  },
+                  onPressed: _refreshAll,
                   icon: const Icon(Icons.refresh, color: Colors.white),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            _navItem(value: _AdminSection.offices, icon: Icons.apartment_outlined, label: 'المكاتب'),
-            _navItem(value: _AdminSection.plans, icon: Icons.view_module_outlined, label: 'الباقات'),
-            _navItem(value: _AdminSection.proofs, icon: Icons.payments_outlined, label: 'التحويلات'),
-            _navItem(value: _AdminSection.settings, icon: Icons.settings_outlined, label: 'إعدادات'),
+            _navItem(
+              selected: _section == _AdminSection.offices,
+              onTap: () => setState(() => _section = _AdminSection.offices),
+              icon: Icons.apartment_outlined,
+              label: 'المكاتب',
+            ),
+            _navItem(
+              selected: _section == _AdminSection.plans,
+              onTap: () => setState(() => _section = _AdminSection.plans),
+              icon: Icons.view_module_outlined,
+              label: 'الباقات',
+            ),
+            _navItem(
+              selected: _section == _AdminSection.proofs,
+              onTap: () => setState(() => _section = _AdminSection.proofs),
+              icon: Icons.payments_outlined,
+              label: 'التحويلات',
+            ),
+            _navItem(
+              selected: _section == _AdminSection.settings,
+              onTap: () => setState(() => _section = _AdminSection.settings),
+              icon: Icons.settings_outlined,
+              label: 'إعدادات',
+            ),
+
+            if (_section == _AdminSection.offices) ...[
+              divider,
+              _navItem(
+                selected: _officePanel == _AdminOfficePanel.dashboard,
+                onTap: () => setState(() => _officePanel = _AdminOfficePanel.dashboard),
+                icon: Icons.dashboard_outlined,
+                label: 'لوحة التحكم',
+              ),
+              FutureBuilder<List<AdminOfficeDto>>(
+                future: _officesFuture,
+                builder: (context, snap) {
+                  final n = (snap.data ?? const <AdminOfficeDto>[]).length;
+                  return _navItem(
+                    selected: _officePanel == _AdminOfficePanel.offices,
+                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.offices),
+                    icon: Icons.apartment_outlined,
+                    label: 'المكاتب',
+                    trailing: _badge('$n'),
+                  );
+                },
+              ),
+              FutureBuilder<AdminTrialAnalyticsDto>(
+                future: _trialAnalyticsFuture,
+                builder: (context, snapTrial) {
+                  final n = snapTrial.data?.totalTrialOffices;
+                  return _navItem(
+                    selected: _officePanel == _AdminOfficePanel.trial,
+                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.trial),
+                    icon: Icons.hourglass_bottom,
+                    label: 'التجربة',
+                    trailing: n == null ? null : _badge('$n'),
+                  );
+                },
+              ),
+              FutureBuilder<AdminSubscriptionsAnalyticsDto>(
+                future: _subsAnalyticsFuture,
+                builder: (context, snapSubs) {
+                  final n = snapSubs.data?.totalActiveOffices;
+                  return _navItem(
+                    selected: _officePanel == _AdminOfficePanel.activeSubs,
+                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.activeSubs),
+                    icon: Icons.credit_card_outlined,
+                    label: 'الاشتراكات',
+                    trailing: n == null ? null : _badge('$n'),
+                  );
+                },
+              ),
+              FutureBuilder<AdminAlertsDto>(
+                future: _alertsFuture,
+                builder: (context, snapA) {
+                  final a = snapA.data;
+                  final total = a == null ? null : (a.trialExpiring3d + a.activeExpiring7d + a.expiredOrInactive);
+                  return _navItem(
+                    selected: _officePanel == _AdminOfficePanel.alerts,
+                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.alerts),
+                    icon: Icons.notifications_active_outlined,
+                    label: 'تحذيرات',
+                    trailing: total == null ? null : _badge('$total'),
+                  );
+                },
+              ),
+              FutureBuilder<List<AdminSuperAdminDto>>(
+                future: _superAdminsFuture,
+                builder: (context, snapU) {
+                  final n = (snapU.data ?? const <AdminSuperAdminDto>[]).length;
+                  return _navItem(
+                    selected: _officePanel == _AdminOfficePanel.superAdmins,
+                    onTap: () => setState(() => _officePanel = _AdminOfficePanel.superAdmins),
+                    icon: Icons.manage_accounts_outlined,
+                    label: 'المستخدمين',
+                    trailing: _badge('$n'),
+                  );
+                },
+              ),
+            ],
             const Spacer(),
             Text(
               'اضغط عنصر لعرض التفاصيل',
@@ -391,12 +606,12 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
           ? [
               // In RTL, first child renders on the right.
               sidebar,
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(child: content),
             ]
           : [
               Expanded(child: content),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               sidebar,
             ],
     );
