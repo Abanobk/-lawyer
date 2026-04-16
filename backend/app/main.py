@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, status
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
@@ -122,6 +122,19 @@ def init_db(max_wait_seconds: int = 30) -> None:
     while time.time() < deadline:
         try:
             Base.metadata.create_all(bind=engine)
+            # Lightweight migration for existing DBs (create_all won't add columns).
+            with engine.begin() as conn:
+                insp = inspect(conn)
+                cols = {c["name"] for c in insp.get_columns("users")}
+                if "full_name" not in cols:
+                    conn.execute(text('ALTER TABLE users ADD COLUMN full_name VARCHAR(200)'))
+                if "is_active" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
+                # Keep is_active indexed for quick auth checks.
+                try:
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_is_active ON users (is_active)"))
+                except Exception:
+                    pass
             return
         except OperationalError as e:
             last_err = e
@@ -167,6 +180,8 @@ def _token_to_user(db: Session, token: str) -> User:
     user = db.get(User, int(user_id))
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if getattr(user, "is_active", True) is False:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User disabled")
     return user
 
 
@@ -281,7 +296,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 @app.post("/auth/login", response_model=TokenPair)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email))
-    if not user or not verify_password(payload.password, user.password_hash):
+    if not user or getattr(user, "is_active", True) is False or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     access = create_access_token(subject=str(user.id), extra={"uid": user.id, "role": user.role, "office_id": user.office_id})
@@ -291,7 +306,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @app.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user)):
-    return UserOut(id=user.id, email=user.email, role=user.role, office_id=user.office_id, created_at=user.created_at)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=getattr(user, "full_name", None),
+        is_active=getattr(user, "is_active", True),
+        role=user.role,
+        office_id=user.office_id,
+        created_at=user.created_at,
+    )
 
 
 @app.get("/me/permissions", response_model=UserPermissionsOut)
@@ -315,7 +338,17 @@ def my_office(db: Session = Depends(get_db), user: User = Depends(require_office
 @app.get("/office/users", response_model=list[OfficeUserOut])
 def office_users(db: Session = Depends(get_db), user: User = Depends(require_perm("employees.read"))):
     users = db.scalars(select(User).where(User.office_id == user.office_id).order_by(User.id.asc())).all()
-    return [OfficeUserOut(id=u.id, email=u.email, role=u.role, created_at=u.created_at) for u in users]
+    return [
+        OfficeUserOut(
+            id=u.id,
+            email=u.email,
+            full_name=getattr(u, "full_name", None),
+            is_active=getattr(u, "is_active", True),
+            role=u.role,
+            created_at=u.created_at,
+        )
+        for u in users
+    ]
 
 
 @app.post("/office/users", response_model=OfficeUserCreateOut)
@@ -323,17 +356,40 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    temp_password = secrets.token_urlsafe(12)
     u = User(
         office_id=user.office_id,
         email=payload.email.strip(),
-        password_hash=hash_password(temp_password),
+        full_name=payload.full_name.strip(),
+        password_hash=hash_password(payload.password),
+        is_active=True,
         role=UserRole.staff,
     )
     db.add(u)
     db.commit()
     db.refresh(u)
-    return OfficeUserCreateOut(id=u.id, email=u.email, role=u.role, temp_password=temp_password)
+    return OfficeUserCreateOut(
+        id=u.id,
+        email=u.email,
+        full_name=getattr(u, "full_name", None),
+        is_active=getattr(u, "is_active", True),
+        role=u.role,
+    )
+
+
+@app.delete("/office/users/{user_id}")
+def office_disable_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_office_admin)):
+    target = db.get(User, user_id)
+    if not target or target.office_id != admin.office_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot disable yourself")
+    if target.role in (UserRole.office_owner, UserRole.super_admin):
+        raise HTTPException(status_code=400, detail="Cannot disable this user")
+    target.is_active = False
+    # Optional cleanup: remove their permissions
+    db.query(UserPermission).where(UserPermission.office_id == admin.office_id, UserPermission.user_id == user_id).delete()
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/office/permissions", response_model=list[PermissionCatalogItem])

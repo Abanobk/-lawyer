@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
+import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 
@@ -13,6 +14,7 @@ class EmployeesPage extends StatefulWidget {
 class _EmployeesPageState extends State<EmployeesPage> {
   final _officeApi = OfficeApi();
   final _permApi = PermissionsApi();
+  final _meApi = MeApi();
 
   late Future<_EmployeesData> _future = _load();
 
@@ -20,38 +22,52 @@ class _EmployeesPageState extends State<EmployeesPage> {
     final results = await Future.wait([
       _officeApi.users(),
       _permApi.catalog(),
+      _meApi.me(),
     ]);
     return _EmployeesData(
       users: results[0] as List<OfficeUserDto>,
       catalog: results[1] as List<PermissionCatalogItemDto>,
+      me: results[2] as MeDto,
     );
   }
 
   void _reload() => setState(() => _future = _load());
 
   Future<void> _createEmployee() async {
-    final email = await showDialog<String>(
+    final data = await showDialog<_CreateEmployeeResult>(
       context: context,
       builder: (context) => const _CreateEmployeeDialog(),
     );
-    if (email == null) return;
+    if (data == null) return;
     try {
-      final res = await _officeApi.createUser(email: email);
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('تم إنشاء الموظف'),
-          content: SelectableText(
-            'البريد: ${res.email}\n'
-            'كلمة المرور المؤقتة: ${res.tempPassword}\n\n'
-            'انسخ كلمة المرور الآن (لن تظهر مرة أخرى).',
-          ),
-          actions: [
-            FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('تم')),
-          ],
-        ),
-      );
+      await _officeApi.createUser(fullName: data.fullName, email: data.email, password: data.password);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إنشاء الموظف')));
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _disableUser(OfficeUserDto u) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تعطيل المستخدم'),
+        content: Text('تأكيد تعطيل المستخدم: ${u.fullName ?? u.email}\nلن يستطيع تسجيل الدخول بعد الآن.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('تعطيل')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _officeApi.disableUser(u.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تعطيل المستخدم')));
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -117,6 +133,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                   return Center(child: Text('تعذر تحميل الموظفين: ${snap.error}'));
                 }
                 final data = snap.data!;
+                final isAdmin = data.me.role == 'office_owner';
                 if (data.users.isEmpty) {
                   return const Center(child: Text('لا يوجد مستخدمين'));
                 }
@@ -124,21 +141,34 @@ class _EmployeesPageState extends State<EmployeesPage> {
                   padding: const EdgeInsets.all(12),
                   child: DataTable(
                     columns: const [
+                      DataColumn(label: Text('الاسم')),
                       DataColumn(label: Text('البريد')),
+                      DataColumn(label: Text('الحالة')),
                       DataColumn(label: Text('الدور')),
                       DataColumn(label: Text('الصلاحيات')),
+                      DataColumn(label: Text('إزالة')),
                     ],
                     rows: data.users
                         .map(
                           (u) => DataRow(
                             cells: [
+                              DataCell(Text(u.fullName ?? '—')),
                               DataCell(Text(u.email)),
+                              DataCell(Text(u.isActive ? 'نشط' : 'مُعطّل')),
                               DataCell(Text(u.role)),
                               DataCell(
                                 TextButton(
                                   onPressed: () => _editPermissions(data, u),
                                   child: const Text('تعديل'),
                                 ),
+                              ),
+                              DataCell(
+                                isAdmin && u.role == 'staff'
+                                    ? TextButton(
+                                        onPressed: u.isActive ? () => _disableUser(u) : null,
+                                        child: const Text('تعطيل'),
+                                      )
+                                    : const Text('—'),
                               ),
                             ],
                           ),
@@ -156,9 +186,10 @@ class _EmployeesPageState extends State<EmployeesPage> {
 }
 
 class _EmployeesData {
-  const _EmployeesData({required this.users, required this.catalog});
+  const _EmployeesData({required this.users, required this.catalog, required this.me});
   final List<OfficeUserDto> users;
   final List<PermissionCatalogItemDto> catalog;
+  final MeDto me;
 }
 
 class _CreateEmployeeDialog extends StatefulWidget {
@@ -169,11 +200,15 @@ class _CreateEmployeeDialog extends StatefulWidget {
 }
 
 class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
+  final _name = TextEditingController();
   final _email = TextEditingController();
+  final _password = TextEditingController();
 
   @override
   void dispose() {
+    _name.dispose();
     _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -183,28 +218,61 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
       title: const Text('إضافة موظف'),
       content: SizedBox(
         width: 520,
-        child: TextField(
-          controller: _email,
-          decoration: const InputDecoration(labelText: 'البريد الإلكتروني'),
-          keyboardType: TextInputType.emailAddress,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'الاسم (يظهر داخل البرنامج)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _email,
+              decoration: const InputDecoration(labelText: 'البريد الإلكتروني'),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _password,
+              decoration: const InputDecoration(labelText: 'كلمة المرور'),
+              obscureText: true,
+            ),
+          ],
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
         FilledButton(
           onPressed: () {
-            final v = _email.text.trim();
-            if (!v.contains('@')) {
+            final name = _name.text.trim();
+            final email = _email.text.trim();
+            final password = _password.text;
+            if (name.length < 2) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اكتب اسم صحيح')));
+              return;
+            }
+            if (!email.contains('@')) {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اكتب بريد صحيح')));
               return;
             }
-            Navigator.of(context).pop(v);
+            if (password.length < 8) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('كلمة المرور ٨ أحرف على الأقل')));
+              return;
+            }
+            Navigator.of(context).pop(_CreateEmployeeResult(fullName: name, email: email, password: password));
           },
           child: const Text('إنشاء'),
         ),
       ],
     );
   }
+}
+
+class _CreateEmployeeResult {
+  const _CreateEmployeeResult({required this.fullName, required this.email, required this.password});
+  final String fullName;
+  final String email;
+  final String password;
 }
 
 class _PermissionsDialog extends StatefulWidget {

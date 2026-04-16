@@ -61,6 +61,15 @@ class ApiClient {
     return _handleJson(res, decode: decode);
   }
 
+  Future<T> deleteJson<T>(
+    String path, {
+    T Function(Object? json)? decode,
+  }) async {
+    final uri = ApiConfig.uri(path);
+    final res = await _http.delete(uri, headers: await _authHeaders());
+    return _handleJson(res, decode: decode);
+  }
+
   T _handleJson<T>(http.Response res, {T Function(Object? json)? decode}) {
     final ok = res.statusCode >= 200 && res.statusCode < 300;
     final text = utf8.decode(res.bodyBytes);

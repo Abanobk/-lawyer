@@ -40,6 +40,8 @@ class OfficeOut(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: EmailStr
+    full_name: str | None = None
+    is_active: bool = True
     role: UserRole
     office_id: int | None
     created_at: datetime
@@ -73,19 +75,24 @@ class PaymentProofOut(BaseModel):
 class OfficeUserOut(BaseModel):
     id: int
     email: EmailStr
+    full_name: str | None = None
+    is_active: bool = True
     role: UserRole
     created_at: datetime
 
 
 class OfficeUserCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=200)
     email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
 
 
 class OfficeUserCreateOut(BaseModel):
     id: int
     email: EmailStr
+    full_name: str | None = None
+    is_active: bool = True
     role: UserRole
-    temp_password: str
 
 
 class PermissionCatalogItem(BaseModel):

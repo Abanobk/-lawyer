@@ -51,6 +51,8 @@ class User(Base):
     office_id: Mapped[int | None] = mapped_column(ForeignKey("offices.id"), nullable=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
