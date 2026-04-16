@@ -279,6 +279,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
     required String label,
   }) {
     final selected = _section == value;
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
     return InkWell(
       onTap: () => setState(() => _section = value),
       child: AnimatedContainer(
@@ -302,7 +303,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (selected) const Icon(Icons.chevron_left, color: Colors.white),
+            if (selected) Icon(isRtl ? Icons.chevron_right : Icons.chevron_left, color: Colors.white),
           ],
         ),
       ),
@@ -311,6 +312,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
     final content = switch (_section) {
       _AdminSection.offices => _OfficesTab(future: _officesFuture, adminApi: _adminApi),
       _AdminSection.plans => _PlansTab(
@@ -334,61 +336,69 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
         ),
     };
 
-    return Row(
-      children: [
-        Expanded(child: content),
-        const SizedBox(width: 12),
-        // Right sidebar (like tenant dashboard).
-        Container(
-          width: 290,
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F2A5F),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+    final sidebar = Container(
+      width: 290,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F2A5F),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.admin_panel_settings, color: Colors.white),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'لوحة السوبر أدمن',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'تحديث',
-                      onPressed: () {
-                        setState(() {
-                          _plansFuture = _adminApi.listPlans();
-                          _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
-                          _meFuture = _meApi.me();
-                        });
-                      },
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                    ),
-                  ],
+                const Icon(Icons.admin_panel_settings, color: Colors.white),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'لوحة السوبر أدمن',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                  ),
                 ),
-                const SizedBox(height: 10),
-                _navItem(value: _AdminSection.offices, icon: Icons.apartment_outlined, label: 'المكاتب'),
-                _navItem(value: _AdminSection.plans, icon: Icons.view_module_outlined, label: 'الباقات'),
-                _navItem(value: _AdminSection.proofs, icon: Icons.payments_outlined, label: 'التحويلات'),
-                _navItem(value: _AdminSection.settings, icon: Icons.settings_outlined, label: 'إعدادات'),
-                const Spacer(),
-                Text(
-                  'اضغط عنصر لعرض التفاصيل',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+                IconButton(
+                  tooltip: 'تحديث',
+                  onPressed: () {
+                    setState(() {
+                      _plansFuture = _adminApi.listPlans();
+                      _proofsFuture = _adminApi.listPaymentProofs(status: 'pending');
+                      _meFuture = _meApi.me();
+                    });
+                  },
+                  icon: const Icon(Icons.refresh, color: Colors.white),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 10),
+            _navItem(value: _AdminSection.offices, icon: Icons.apartment_outlined, label: 'المكاتب'),
+            _navItem(value: _AdminSection.plans, icon: Icons.view_module_outlined, label: 'الباقات'),
+            _navItem(value: _AdminSection.proofs, icon: Icons.payments_outlined, label: 'التحويلات'),
+            _navItem(value: _AdminSection.settings, icon: Icons.settings_outlined, label: 'إعدادات'),
+            const Spacer(),
+            Text(
+              'اضغط عنصر لعرض التفاصيل',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+            ),
+          ],
         ),
-      ],
+      ),
+    );
+
+    return Row(
+      children: isRtl
+          ? [
+              // In RTL, first child renders on the right.
+              sidebar,
+              const SizedBox(width: 12),
+              Expanded(child: content),
+            ]
+          : [
+              Expanded(child: content),
+              const SizedBox(width: 12),
+              sidebar,
+            ],
     );
   }
 }
