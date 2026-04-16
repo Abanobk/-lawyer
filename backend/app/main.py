@@ -652,12 +652,17 @@ def update_session(
     session_id: int,
     payload: SessionUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("sessions.update")),
+    user: User = Depends(require_office_admin),
 ):
     s = db.get(CaseSession, session_id)
     if not s or s.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Session not found")
-    s.session_date = payload.session_date
+    if payload.session_date is not None:
+        s.session_date = payload.session_date
+    if payload.session_number is not None:
+        s.session_number = payload.session_number
+    if payload.session_year is not None:
+        s.session_year = payload.session_year
     if payload.notes is not None:
         s.notes = payload.notes
     db.commit()

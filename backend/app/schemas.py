@@ -191,7 +191,9 @@ class SessionOut(BaseModel):
 
 
 class SessionUpdate(BaseModel):
-    session_date: datetime
+    session_date: datetime | None = None
+    session_number: str | None = Field(default=None, max_length=50)
+    session_year: int | None = None
     notes: str | None = None
 
 

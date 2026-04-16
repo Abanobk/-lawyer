@@ -1,0 +1,37 @@
+import 'package:lawyer_app/data/api/api_client.dart';
+
+class MeDto {
+  MeDto({
+    required this.id,
+    required this.email,
+    required this.role,
+    required this.officeId,
+  });
+
+  final int id;
+  final String email;
+  final String role;
+  final int? officeId;
+
+  factory MeDto.fromJson(Map<String, dynamic> json) {
+    return MeDto(
+      id: json['id'] as int,
+      email: json['email'] as String,
+      role: json['role'] as String,
+      officeId: json['office_id'] as int?,
+    );
+  }
+}
+
+class MeApi {
+  MeApi({ApiClient? client}) : _client = client ?? ApiClient();
+  final ApiClient _client;
+
+  Future<MeDto> me() async {
+    return _client.getJson<MeDto>(
+      'me',
+      decode: (json) => MeDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+}
+

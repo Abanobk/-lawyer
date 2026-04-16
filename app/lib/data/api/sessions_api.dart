@@ -57,10 +57,26 @@ class SessionsApi {
     required DateTime newDate,
     String? notes,
   }) async {
+    return update(
+      sessionId: sessionId,
+      sessionDate: newDate,
+      notes: notes,
+    );
+  }
+
+  Future<SessionDto> update({
+    required int sessionId,
+    DateTime? sessionDate,
+    String? sessionNumber,
+    int? sessionYear,
+    String? notes,
+  }) async {
     return _client.putJson<SessionDto>(
       'sessions/$sessionId',
       {
-        'session_date': newDate.toUtc().toIso8601String(),
+        'session_date': sessionDate?.toUtc().toIso8601String(),
+        'session_number': sessionNumber,
+        'session_year': sessionYear,
         'notes': notes,
       },
       decode: (json) => SessionDto.fromJson(json as Map<String, dynamic>),
