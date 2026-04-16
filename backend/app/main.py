@@ -63,6 +63,7 @@ from app.schemas import (
     CaseOut,
     CaseTransactionCreate,
     CaseTransactionOut,
+    CaseTransactionUpdate,
     ClientCreate,
     ClientOut,
     LoginRequest,
@@ -1237,6 +1238,58 @@ def create_transaction(payload: CaseTransactionCreate, db: Session = Depends(get
         occurred_at=t.occurred_at,
         created_at=t.created_at,
     )
+
+
+@app.put("/transactions/{transaction_id}", response_model=CaseTransactionOut)
+def update_transaction(
+    transaction_id: int,
+    payload: CaseTransactionUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    if (
+        payload.direction is None
+        and payload.amount is None
+        and payload.description is None
+        and payload.occurred_at is None
+    ):
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    t = db.get(CaseTransaction, transaction_id)
+    if not t or t.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if payload.direction is not None:
+        t.direction = payload.direction
+    if payload.amount is not None:
+        t.amount = payload.amount
+    if payload.description is not None:
+        t.description = payload.description
+    if payload.occurred_at is not None:
+        t.occurred_at = payload.occurred_at
+    db.commit()
+    db.refresh(t)
+    return CaseTransactionOut(
+        id=t.id,
+        case_id=t.case_id,
+        direction=t.direction,
+        amount=float(t.amount),
+        description=t.description,
+        occurred_at=t.occurred_at,
+        created_at=t.created_at,
+    )
+
+
+@app.delete("/transactions/{transaction_id}")
+def delete_transaction(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    t = db.get(CaseTransaction, transaction_id)
+    if not t or t.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/custody/accounts", response_model=CustodyAccountOut)

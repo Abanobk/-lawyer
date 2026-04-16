@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/custody_api.dart';
@@ -235,6 +236,7 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.all(12),
                         child: DataTable(
+                          showCheckboxColumn: false,
                           columns: const [
                             DataColumn(label: Text('الموظف')),
                             DataColumn(label: Text('الرصيد')),
@@ -242,6 +244,11 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
                           rows: data.accounts
                               .map(
                                 (a) => DataRow(
+                                  onSelectChanged: (_) {
+                                    final code = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+                                    if (code.isEmpty) return;
+                                    context.go('/o/$code/accounts/custody/${a.userId}');
+                                  },
                                   cells: [
                                     DataCell(Text(_nameForUserEmail(data, a.userEmail))),
                                     DataCell(Text(a.currentBalance.toStringAsFixed(2))),

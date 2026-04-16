@@ -65,5 +65,32 @@ class TransactionsApi {
       decode: (json) => CaseTransactionDto.fromJson(json as Map<String, dynamic>),
     );
   }
+
+  Future<CaseTransactionDto> update({
+    required int transactionId,
+    String? direction,
+    double? amount,
+    String? description,
+    DateTime? occurredAt,
+  }) async {
+    final body = <String, dynamic>{
+      if (direction != null) 'direction': direction,
+      if (amount != null) 'amount': amount,
+      if (description != null) 'description': description,
+      if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
+    };
+    return _client.putJson<CaseTransactionDto>(
+      'transactions/$transactionId',
+      body,
+      decode: (json) => CaseTransactionDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<void> delete(int transactionId) async {
+    await _client.deleteJson<Map<String, dynamic>>(
+      'transactions/$transactionId',
+      decode: (json) => json as Map<String, dynamic>,
+    );
+  }
 }
 

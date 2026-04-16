@@ -6,6 +6,8 @@ import 'package:lawyer_app/features/auth/signup_page.dart';
 import 'package:lawyer_app/features/landing/landing_page.dart';
 import 'package:lawyer_app/features/office/office_shell.dart';
 import 'package:lawyer_app/features/office/pages/accounts_page.dart';
+import 'package:lawyer_app/features/office/pages/case_client_account_page.dart';
+import 'package:lawyer_app/features/office/pages/custody_lawyer_account_page.dart';
 import 'package:lawyer_app/features/office/pages/case_detail_page.dart';
 import 'package:lawyer_app/features/office/pages/cases_page.dart';
 import 'package:lawyer_app/features/office/pages/clients_page.dart';
@@ -84,6 +86,24 @@ GoRouter createAppRouter() {
               GoRoute(
                 path: 'accounts',
                 builder: (context, state) => const AccountsPage(),
+                routes: [
+                  GoRoute(
+                    path: 'case/:caseId',
+                    builder: (context, state) {
+                      final raw = state.pathParameters['caseId'] ?? '';
+                      final id = int.tryParse(raw) ?? 0;
+                      return CaseClientAccountPage(caseId: id);
+                    },
+                  ),
+                  GoRoute(
+                    path: 'custody/:userId',
+                    builder: (context, state) {
+                      final raw = state.pathParameters['userId'] ?? '';
+                      final id = int.tryParse(raw) ?? 0;
+                      return CustodyLawyerAccountPage(userId: id);
+                    },
+                  ),
+                ],
               ),
               GoRoute(
                 path: 'custody',

@@ -302,6 +302,13 @@ class CaseTransactionOut(BaseModel):
     created_at: datetime
 
 
+class CaseTransactionUpdate(BaseModel):
+    direction: MoneyDirection | None = None
+    amount: float | None = Field(default=None, gt=0)
+    description: str | None = Field(default=None, max_length=300)
+    occurred_at: datetime | None = None
+
+
 class SessionOut(BaseModel):
     id: int
     case_id: int
