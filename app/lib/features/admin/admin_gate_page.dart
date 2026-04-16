@@ -586,12 +586,16 @@ class _PlansTabState extends State<_PlansTab> {
               ],
             ),
             const SizedBox(height: 12),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
+            Flexible(
+              fit: FlexFit.loose,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.zero,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                     Text('إضافة باقة (مستخدمين + موديولات + 3/6 شهور)', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 12),
                     TextField(
@@ -728,7 +732,9 @@ class _PlansTabState extends State<_PlansTab> {
                           ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('حفظ الباقة + خياراتها'),
                     ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -940,6 +946,7 @@ class _OfficesTabState extends State<_OfficesTab> {
   int? _selectedOfficeId;
   AdminSubscriptionDto? _sub;
   bool _loading = false;
+  bool _showAllOffices = false;
 
   Future<void> _loadSub(int officeId) async {
     setState(() {
@@ -972,50 +979,118 @@ class _OfficesTabState extends State<_OfficesTab> {
             }
             final offices = snap.data ?? const <AdminOfficeDto>[];
             if (offices.isEmpty) return const Center(child: Text('لا يوجد مكاتب بعد'));
-            return Row(
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  flex: 2,
-                  child: ListView(
-                    children: offices
-                        .map(
-                          (o) => ListTile(
-                            title: Text(o.name),
-                            subtitle: Text('كود: ${o.code} — ${o.status}'),
-                            selected: _selectedOfficeId == o.id,
-                            onTap: () => _loadSub(o.id),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 3,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: _selectedOfficeId == null
-                          ? const Center(child: Text('اختر مكتب لعرض الاشتراك'))
-                          : (_loading
-                              ? const Center(child: CircularProgressIndicator())
-                              : (_sub == null
-                                  ? const Center(child: Text('لا توجد بيانات اشتراك'))
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
-                                        const SizedBox(height: 8),
-                                        Text('بداية: ${_sub!.startAt.toLocal()}'),
-                                        Text('نهاية: ${_sub!.endAt.toLocal()}'),
-                                        if ((_sub!.notes ?? '').isNotEmpty) ...[
-                                          const SizedBox(height: 8),
-                                          Text('ملاحظات: ${_sub!.notes}'),
-                                        ],
-                                      ],
-                                    ))),
+                Row(
+                  children: [
+                    Text('عرض الاشتراكات:', style: Theme.of(context).textTheme.titleMedium),
+                    const Spacer(),
+                    DropdownButton<bool>(
+                      value: _showAllOffices,
+                      items: const [
+                        DropdownMenuItem(value: false, child: Text('اختيار مكتب واحد')),
+                        DropdownMenuItem(value: true, child: Text('جميع المستاجرين')),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setState(() {
+                          _showAllOffices = v;
+                          _selectedOfficeId = null;
+                          _sub = null;
+                          _loading = false;
+                        });
+                      },
                     ),
-                  ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: _showAllOffices
+                      ? FutureBuilder<List<AdminSubscriptionDto?>>(
+                          future: Future.wait(
+                            offices.map((o) async {
+                              try {
+                                return await widget.adminApi.getSubscription(o.id);
+                              } catch (_) {
+                                return null;
+                              }
+                            }),
+                          ),
+                          builder: (context, snapSubs) {
+                            if (snapSubs.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                            if (snapSubs.hasError) return Center(child: Text('تعذر تحميل الاشتراكات: ${snapSubs.error}'));
+                            final subs = (snapSubs.data ?? const <AdminSubscriptionDto?>[]).whereType<AdminSubscriptionDto>().toList();
+                            if (subs.isEmpty) return const Center(child: Text('لا توجد اشتراكات'));
+                            return ListView.separated(
+                              itemCount: subs.length,
+                              separatorBuilder: (context, index) => const Divider(height: 1),
+                              itemBuilder: (context, i) {
+                                final s = subs[i];
+                                final office = (() {
+                                  for (final o in offices) {
+                                    if (o.id == s.officeId) return o;
+                                  }
+                                  return null;
+                                })();
+                                return ListTile(
+                                  title: Text(office?.name ?? 'مكتب #${s.officeId}'),
+                                  subtitle: Text(
+                                    'الحالة: ${s.status} — ${s.endAt.toLocal()}',
+                                  ),
+                                  trailing: const Icon(Icons.chevron_right),
+                                );
+                              },
+                            );
+                          },
+                        )
+                      : Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: ListView(
+                                children: offices
+                                    .map(
+                                      (o) => ListTile(
+                                        title: Text(o.name),
+                                        subtitle: Text('كود: ${o.code} — ${o.status}'),
+                                        selected: _selectedOfficeId == o.id,
+                                        onTap: () => _loadSub(o.id),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 3,
+                              child: Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: _selectedOfficeId == null
+                                      ? const Center(child: Text('اختر مكتب لعرض الاشتراك'))
+                                      : (_loading
+                                          ? const Center(child: CircularProgressIndicator())
+                                          : (_sub == null
+                                              ? const Center(child: Text('لا توجد بيانات اشتراك'))
+                                              : Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                  children: [
+                                                    Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
+                                                    const SizedBox(height: 8),
+                                                    Text('بداية: ${_sub!.startAt.toLocal()}'),
+                                                    Text('نهاية: ${_sub!.endAt.toLocal()}'),
+                                                    if ((_sub!.notes ?? '').isNotEmpty) ...[
+                                                      const SizedBox(height: 8),
+                                                      Text('ملاحظات: ${_sub!.notes}'),
+                                                    ],
+                                                  ],
+                                                ))),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ],
             );
