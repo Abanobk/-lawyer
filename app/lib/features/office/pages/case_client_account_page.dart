@@ -288,10 +288,10 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
         final data = snap.data!;
         final c = data.caseDto;
         final allTx = data.transactions;
-        final income = allTx.where((t) => t.direction == 'income').fold<double>(0, (a, t) => a + t.amount);
-        final expense = allTx.where((t) => t.direction == 'expense').fold<double>(0, (a, t) => a + t.amount);
+        final collections = allTx.where((t) => t.direction == 'income').fold<double>(0, (a, t) => a + t.amount);
         final fee = c.feeTotal;
-        final remaining = fee == null ? null : (fee - (income - expense));
+        // المتبقي من الأتعاب = المتفق عليه ناقص التحصيلات (دخل «أتعاب» فقط)، دون خصم المصروفات من رصيد الأتعاب.
+        final remainingFromFee = fee == null ? null : (fee - collections);
         final rows = _filtered(allTx);
 
         return SingleChildScrollView(
@@ -338,20 +338,20 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                   final wide = constraints.maxWidth >= 720;
                   final cards = [
                     _FinSummaryCard(
+                      color: const Color(0xFF1E40AF),
+                      label: 'إجمالي الأتعاب المتفق عليها',
+                      value: fee == null ? '—' : '${money.format(fee)} ج.م',
+                    ),
+                    _FinSummaryCard(
                       color: const Color(0xFF16A34A),
-                      label: 'إجمالي الأتعاب المحصلة',
-                      value: '${money.format(income)} ج.م',
+                      label: 'إجمالي التحصيلات',
+                      value: '${money.format(collections)} ج.م',
                     ),
                     _FinSummaryCard(
-                      color: const Color(0xFFCA8A04),
-                      label: 'المبلغ المتبقي',
-                      value: remaining == null ? '—' : '${money.format(remaining)} ج.م',
-                      subtitle: fee == null ? null : 'من إجمالي ${money.format(fee)} ج.م',
-                    ),
-                    _FinSummaryCard(
-                      color: const Color(0xFFDC2626),
-                      label: 'إجمالي المصروفات',
-                      value: '${money.format(expense)} ج.م',
+                      color: const Color(0xFFD97706),
+                      label: 'إجمالي المتبقي',
+                      value: remainingFromFee == null ? '—' : '${money.format(remainingFromFee)} ج.م',
+                      subtitle: fee == null ? null : 'المتفق عليه ناقص التحصيلات',
                     ),
                   ];
                   if (wide) {
@@ -412,16 +412,14 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                       else
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(minWidth: constraintsMaxWidth(context)),
-                            child: Table(
+                          child: Table(
                               columnWidths: const {
-                                0: FixedColumnWidth(110),
-                                1: FlexColumnWidth(2),
-                                2: FlexColumnWidth(2),
-                                3: FixedColumnWidth(100),
-                                4: FixedColumnWidth(100),
-                                5: FixedColumnWidth(100),
+                                0: FixedColumnWidth(102),
+                                1: FixedColumnWidth(148),
+                                2: FixedColumnWidth(168),
+                                3: FixedColumnWidth(86),
+                                4: FixedColumnWidth(88),
+                                5: FixedColumnWidth(102),
                               },
                               border: TableBorder(
                                 horizontalInside: BorderSide(color: Colors.grey.shade200),
@@ -503,7 +501,6 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                                 }),
                               ],
                             ),
-                          ),
                         ),
                     ],
                   ),
@@ -516,17 +513,12 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
     );
   }
 
-  double constraintsMaxWidth(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
-    return (w - 40).clamp(600, 1400);
-  }
-
   List<Widget> _tableCellsHeader(List<String> labels) {
     return labels
         .map(
           (s) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600)),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+            child: Text(s, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
           ),
         )
         .toList();
@@ -534,7 +526,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
 
   Widget _cellPadding(Widget child) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       child: child,
     );
   }
@@ -561,17 +553,19 @@ class _FinSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fill = Color.alphaBlend(color.withValues(alpha: 0.14), Colors.white);
+    final borderTint = Color.alphaBlend(color.withValues(alpha: 0.35), Colors.grey.shade300);
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: fill,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: borderTint),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
