@@ -2,7 +2,7 @@ import os
 import secrets
 import string
 import time
-from datetime import date, datetime, timedelta, timezone, time
+from datetime import date, datetime, timedelta, timezone, time as dt_time
 from pathlib import Path
 from uuid import uuid4
 
@@ -1961,7 +1961,7 @@ def admin_subscriptions_series(
 
     counts: list[int] = []
     for d in days_list:
-        dt = datetime.combine(d, time.min).replace(tzinfo=getattr(now, "tzinfo", None))
+        dt = datetime.combine(d, dt_time.min).replace(tzinfo=getattr(now, "tzinfo", None))
         c = db.scalar(
             select(func.count(func.distinct(Subscription.office_id))).where(
                 Subscription.status == SubscriptionStatus.active,
