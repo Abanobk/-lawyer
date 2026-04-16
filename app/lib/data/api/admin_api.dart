@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
+import 'package:file_picker/file_picker.dart';
 
 class AdminOfficeDto {
   AdminOfficeDto({
@@ -99,6 +100,7 @@ class AdminPlanDto {
     required this.priceCents,
     required this.durationDays,
     this.instapayLink,
+    this.promoImagePath,
     required this.isActive,
     required this.createdAt,
   });
@@ -108,6 +110,7 @@ class AdminPlanDto {
   final int priceCents;
   final int durationDays;
   final String? instapayLink;
+  final String? promoImagePath;
   final bool isActive;
   final DateTime createdAt;
 
@@ -118,6 +121,7 @@ class AdminPlanDto {
       priceCents: json['price_cents'] as int,
       durationDays: json['duration_days'] as int,
       instapayLink: json['instapay_link'] as String?,
+      promoImagePath: json['promo_image_path'] as String?,
       isActive: (json['is_active'] as bool?) ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -331,6 +335,49 @@ class AdminPaymentProofFilesApi {
       throw AdminPaymentProofFilesApiException('فشل تنزيل صورة التحويل', statusCode: res.statusCode);
     }
     return (res.bodyBytes, res.headers['content-type']);
+  }
+}
+
+class AdminPlanPromoFilesApiException implements Exception {
+  AdminPlanPromoFilesApiException(this.message, {this.statusCode});
+  final String message;
+  final int? statusCode;
+  @override
+  String toString() => message;
+}
+
+class AdminPlanPromoFilesApi {
+  AdminPlanPromoFilesApi({http.Client? client, AuthTokenStorage? tokenStorage})
+      : _client = client ?? http.Client(),
+        _tokens = tokenStorage ?? AuthTokenStorage();
+
+  final http.Client _client;
+  final AuthTokenStorage _tokens;
+
+  Future<void> uploadPromoImage({
+    required int planId,
+    required PlatformFile file,
+  }) async {
+    final bytes = file.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      throw AdminPlanPromoFilesApiException('الملف غير متاح للرفع');
+    }
+
+    final token = await _tokens.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw AdminPlanPromoFilesApiException('سجّل الدخول أولاً');
+    }
+
+    final uri = ApiConfig.uri('admin/plans/$planId/promo-image');
+    final req = http.MultipartRequest('POST', uri);
+    req.headers['Authorization'] = 'Bearer $token';
+    req.files.add(http.MultipartFile.fromBytes('upload', bytes, filename: file.name));
+
+    final streamed = await _client.send(req);
+    final body = await streamed.stream.bytesToString();
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw AdminPlanPromoFilesApiException(body.isEmpty ? 'فشل رفع الصورة' : body, statusCode: streamed.statusCode);
+    }
   }
 }
 

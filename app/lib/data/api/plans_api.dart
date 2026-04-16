@@ -1,4 +1,9 @@
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
+import 'package:lawyer_app/data/auth_token_storage.dart';
 
 class PlanDto {
   PlanDto({
@@ -7,6 +12,7 @@ class PlanDto {
     required this.priceCents,
     required this.durationDays,
     this.instapayLink,
+    this.promoImagePath,
     required this.isActive,
     required this.createdAt,
   });
@@ -16,6 +22,7 @@ class PlanDto {
   final int priceCents;
   final int durationDays;
   final String? instapayLink;
+  final String? promoImagePath;
   final bool isActive;
   final DateTime createdAt;
 
@@ -26,6 +33,7 @@ class PlanDto {
       priceCents: json['price_cents'] as int,
       durationDays: json['duration_days'] as int,
       instapayLink: json['instapay_link'] as String?,
+      promoImagePath: json['promo_image_path'] as String?,
       isActive: (json['is_active'] as bool?) ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -44,6 +52,36 @@ class PlansApi {
         return list.map(PlanDto.fromJson).toList();
       },
     );
+  }
+}
+
+class PlanPromoFilesApiException implements Exception {
+  PlanPromoFilesApiException(this.message, {this.statusCode});
+  final String message;
+  final int? statusCode;
+  @override
+  String toString() => message;
+}
+
+class PlanPromoFilesApi {
+  PlanPromoFilesApi({http.Client? client, AuthTokenStorage? tokenStorage})
+      : _client = client ?? http.Client(),
+        _tokens = tokenStorage ?? AuthTokenStorage();
+
+  final http.Client _client;
+  final AuthTokenStorage _tokens;
+
+  Future<(Uint8List bytes, String? contentType)> downloadPromo(int planId) async {
+    final token = await _tokens.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw PlanPromoFilesApiException('سجّل الدخول أولاً');
+    }
+    final uri = ApiConfig.uri('plans/$planId/promo-image');
+    final res = await _client.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw PlanPromoFilesApiException('فشل تنزيل صورة الباقة', statusCode: res.statusCode);
+    }
+    return (res.bodyBytes, res.headers['content-type']);
   }
 }
 

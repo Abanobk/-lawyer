@@ -6,6 +6,7 @@ import 'package:lawyer_app/data/api/admin_api.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
+import 'package:file_picker/file_picker.dart';
 
 /// مدخل السوبر أدمن (FAB من الشاشة الرئيسية). الحماية الفعلية من الـ API.
 class AdminGatePage extends StatefulWidget {
@@ -339,6 +340,8 @@ class _PlansTabState extends State<_PlansTab> {
   final _days = TextEditingController();
   final _link = TextEditingController();
   bool _saving = false;
+  bool _uploadingPromo = false;
+  final _promoFilesApi = AdminPlanPromoFilesApi();
 
   @override
   void dispose() {
@@ -441,6 +444,36 @@ class _PlansTabState extends State<_PlansTab> {
     }
   }
 
+  Future<void> _uploadPromo(AdminPlanDto p) async {
+    if (_uploadingPromo) return;
+    final res = await FilePicker.pickFiles(
+      withData: true,
+      allowMultiple: false,
+      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
+      type: FileType.image,
+    );
+    final file = (res?.files.isNotEmpty ?? false) ? res!.files.first : null;
+    if (file == null) return;
+    if (file.bytes == null || file.bytes!.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الملف غير متاح للرفع')));
+      return;
+    }
+
+    setState(() => _uploadingPromo = true);
+    try {
+      await _promoFilesApi.uploadPromoImage(planId: p.id, file: file);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم رفع صورة الباقة')));
+      widget.onRefresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل رفع الصورة: $e')));
+    } finally {
+      if (mounted) setState(() => _uploadingPromo = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -514,6 +547,11 @@ class _PlansTabState extends State<_PlansTab> {
                           spacing: 8,
                           children: [
                             IconButton(onPressed: () => _edit(p), tooltip: 'تعديل', icon: const Icon(Icons.edit)),
+                            IconButton(
+                              onPressed: () => _uploadPromo(p),
+                              tooltip: 'رفع صورة الدعاية',
+                              icon: const Icon(Icons.image_outlined),
+                            ),
                             IconButton(
                               onPressed: () async {
                                 await widget.adminApi.deletePlan(p.id);

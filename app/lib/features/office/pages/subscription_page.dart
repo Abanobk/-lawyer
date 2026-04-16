@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
@@ -16,6 +18,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   final _plansApi = PlansApi();
   final _subApi = SubscriptionApi();
   final _filesApi = SubscriptionFilesApi();
+  final _promoFilesApi = PlanPromoFilesApi();
 
   late final Future<List<PlanDto>> _plansFuture = _plansApi.list();
   late Future<List<PaymentProofDto>> _proofsFuture = _subApi.listPaymentProofs();
@@ -25,6 +28,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   final _reference = TextEditingController();
   final _notes = TextEditingController();
   bool _uploading = false;
+  final Map<int, Future<Uint8List?>> _promoBytesFutures = {};
 
   @override
   void dispose() {
@@ -157,13 +161,19 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                 future: _plansFuture,
                 builder: (context, snap) {
                   final plans = snap.data ?? const <PlanDto>[];
+                  if (snap.connectionState == ConnectionState.done && _selectedPlanId == null && plans.isNotEmpty) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      setState(() => _selectedPlanId = plans.first.id);
+                    });
+                  }
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 8),
-                      const Text('اختر باقة ثم افتح رابط إنستاباي وارفع صورة التحويل للمراجعة.'),
-                      const SizedBox(height: 16),
+                      const Text('اختر الباقة المناسبة، ثم افتح إنستاباي وارفع صورة التحويل للمراجعة.'),
+                      const SizedBox(height: 12),
                       if (snap.connectionState == ConnectionState.waiting)
                         const Center(child: CircularProgressIndicator())
                       else if (snap.hasError)
@@ -171,32 +181,91 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                       else if (plans.isEmpty)
                         const Text('لا توجد باقات متاحة حالياً')
                       else
-                        DropdownButtonFormField<int>(
-                          initialValue: _selectedPlanId,
-                          decoration: const InputDecoration(labelText: 'الباقة'),
-                          items: plans
-                              .map(
-                                (p) => DropdownMenuItem(
-                                  value: p.id,
-                                  child: Text('${p.name} — ${(p.priceCents / 100).toStringAsFixed(2)}'),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: _uploading ? null : (v) => setState(() => _selectedPlanId = v),
-                        ),
-                      const SizedBox(height: 12),
-                      FilledButton.tonal(
-                        onPressed: _uploading
-                            ? null
-                            : (_selectedPlanId == null || plans.isEmpty)
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: plans.map((p) {
+                            final promoFuture = p.promoImagePath == null
                                 ? null
-                                : () {
-                                    final p = plans.firstWhere((e) => e.id == _selectedPlanId, orElse: () => plans.first);
-                                    _openLink(p.instapayLink);
-                                  },
-                        child: const Text('فتح إنستاباي'),
-                      ),
-                      const SizedBox(height: 12),
+                                : _promoBytesFutures.putIfAbsent(
+                                    p.id,
+                                    () async {
+                                      try {
+                                        final (bytes, _) = await _promoFilesApi.downloadPromo(p.id);
+                                        return bytes;
+                                      } catch (_) {
+                                        return null;
+                                      }
+                                    },
+                                  );
+                            final isSelected = p.id == _selectedPlanId;
+                            return SizedBox(
+                              width: AppLayout.isWebDesktop(context) ? 270 : 240,
+                              child: Card(
+                                elevation: isSelected ? 6 : 0,
+                                color: isSelected ? Colors.blue.withValues(alpha: 0.10) : null,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      SizedBox(
+                                        height: 110,
+                                        child: promoFuture == null
+                                            ? Container(
+                                                decoration: BoxDecoration(
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  color: Colors.grey.withValues(alpha: 0.10),
+                                                ),
+                                                child: const Center(child: Icon(Icons.image_outlined)),
+                                              )
+                                            : ClipRRect(
+                                                borderRadius: BorderRadius.circular(10),
+                                                child: FutureBuilder<Uint8List?>(
+                                                  future: promoFuture,
+                                                  builder: (context, fs) {
+                                                    if (fs.connectionState == ConnectionState.waiting) {
+                                                      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                                                    }
+                                                    if (!fs.hasData || fs.data == null) {
+                                                      return Container(
+                                                        color: Colors.grey.withValues(alpha: 0.10),
+                                                        child: const Center(child: Icon(Icons.broken_image_outlined)),
+                                                      );
+                                                    }
+                                                    return Image.memory(fs.data!, fit: BoxFit.cover);
+                                                  },
+                                                ),
+                                              ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        p.name,
+                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text('السعر: ${(p.priceCents / 100).toStringAsFixed(2)}'),
+                                      Text('المدة: ${p.durationDays} يوم'),
+                                      const SizedBox(height: 10),
+                                      FilledButton(
+                                        onPressed: _uploading || p.instapayLink == null
+                                            ? null
+                                            : () {
+                                                setState(() => _selectedPlanId = p.id);
+                                                _openLink(p.instapayLink);
+                                              },
+                                        child: const Text('اشترِ الآن'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      const SizedBox(height: 8),
                       OutlinedButton.icon(
                         onPressed: _uploading ? null : _pickFile,
                         icon: const Icon(Icons.upload_file),

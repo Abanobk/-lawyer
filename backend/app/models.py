@@ -80,6 +80,7 @@ class Plan(Base):
     price_cents: Mapped[int] = mapped_column(Integer)
     duration_days: Mapped[int] = mapped_column(Integer)
     instapay_link: Mapped[str | None] = mapped_column(String(800), nullable=True)
+    promo_image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

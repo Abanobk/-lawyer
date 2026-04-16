@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/data/api/billing_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
+import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
 class OfficeShell extends StatelessWidget {
   const OfficeShell({
@@ -44,49 +46,71 @@ class OfficeShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final desktop = AppLayout.isWebDesktop(context);
     final current = _currentSegment(context);
+    final billingApi = BillingApi();
 
-    if (desktop) {
-      return Scaffold(
-        body: Row(
-          textDirection: TextDirection.rtl,
-          children: [
-            _Sidebar(
+    return FutureBuilder<SubscriptionMeDto>(
+      future: billingApi.subscriptionMe(),
+      builder: (context, snap) {
+        final banner = snap.hasData
+            ? SubscriptionTrialBanner(
+                sub: snap.data!,
+                onSubscribe: () => context.go('/o/$officeCode/subscription'),
+              )
+            : const SizedBox.shrink();
+
+        if (desktop) {
+          return Scaffold(
+            body: Row(
+              textDirection: TextDirection.rtl,
+              children: [
+                _Sidebar(
+                  officeCode: officeCode,
+                  current: current,
+                  width: 280,
+                ),
+                Expanded(
+                  child: ColoredBox(
+                    color: AppColors.surfaceMuted,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _DesktopOfficeHeader(officeLink: officeLinkForCurrentHost()),
+                        banner,
+                        Expanded(
+                          child: ContentCanvas(child: child),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Scaffold(
+          drawer: Drawer(
+            child: _Sidebar(
               officeCode: officeCode,
               current: current,
-              width: 280,
+              width: null,
+              inDrawer: true,
             ),
-            Expanded(
-              child: ColoredBox(
-                color: AppColors.surfaceMuted,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _DesktopOfficeHeader(officeLink: officeLinkForCurrentHost()),
-                    Expanded(
-                      child: ContentCanvas(child: child),
-                    ),
-                  ],
-                ),
-              ),
+          ),
+          appBar: AppBar(
+            title: const Text('لوحة المكتب'),
+          ),
+          body: ContentCanvas(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                banner,
+                child,
+              ],
             ),
-          ],
-        ),
-      );
-    }
-
-    return Scaffold(
-      drawer: Drawer(
-        child: _Sidebar(
-          officeCode: officeCode,
-          current: current,
-          width: null,
-          inDrawer: true,
-        ),
-      ),
-      appBar: AppBar(
-        title: const Text('لوحة المكتب'),
-      ),
-      body: ContentCanvas(child: child),
+          ),
+        );
+      },
     );
   }
 }

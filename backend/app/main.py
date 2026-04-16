@@ -162,6 +162,8 @@ def init_db(max_wait_seconds: int = 30) -> None:
                     plan_cols = {c["name"] for c in insp.get_columns("plans")}
                     if "instapay_link" not in plan_cols:
                         conn.execute(text("ALTER TABLE plans ADD COLUMN instapay_link VARCHAR(800)"))
+                    if "promo_image_path" not in plan_cols:
+                        conn.execute(text("ALTER TABLE plans ADD COLUMN promo_image_path VARCHAR(500)"))
                     if "is_active" not in plan_cols:
                         conn.execute(text("ALTER TABLE plans ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE"))
                     try:
@@ -303,6 +305,16 @@ def require_active_subscription(db: Session = Depends(get_db), user: User = Depe
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="No subscription")
     if sub.end_at <= _now():
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Subscription expired")
+
+    # If trial is expiring soon, block protected endpoints to prevent data loss.
+    # This affects all users inside the office while they are in `trial`.
+    TRIAL_BLOCK_DAYS_BEFORE = 3
+    if sub.status == SubscriptionStatus.trial:
+        if (sub.end_at - _now()) <= timedelta(days=TRIAL_BLOCK_DAYS_BEFORE):
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Trial expiring. Please upgrade subscription to avoid data loss.",
+            )
     if sub.status not in (SubscriptionStatus.trial, SubscriptionStatus.active):
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Subscription inactive")
     return user
@@ -1440,11 +1452,26 @@ def list_plans(db: Session = Depends(get_db), _: User = Depends(require_office_u
             price_cents=p.price_cents,
             duration_days=p.duration_days,
             instapay_link=getattr(p, "instapay_link", None),
+            promo_image_path=getattr(p, "promo_image_path", None),
             is_active=getattr(p, "is_active", True),
             created_at=p.created_at,
         )
         for p in plans
     ]
+
+
+@app.get("/plans/{plan_id}/promo-image")
+def download_plan_promo_image(plan_id: int, db: Session = Depends(get_db), user: User = Depends(require_office_user)):
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    promo_path = getattr(plan, "promo_image_path", None)
+    if not promo_path:
+        raise HTTPException(status_code=404, detail="Promo image not found")
+    path = Path(promo_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Promo image missing")
+    return FileResponse(path, media_type="application/octet-stream", filename=path.name)
 
 
 @app.post("/subscription/payment-proofs", response_model=PaymentProofOut)
@@ -1556,11 +1583,39 @@ def admin_list_plans(db: Session = Depends(get_db), _: User = Depends(require_su
             price_cents=p.price_cents,
             duration_days=p.duration_days,
             instapay_link=getattr(p, "instapay_link", None),
+            promo_image_path=getattr(p, "promo_image_path", None),
             is_active=getattr(p, "is_active", True),
             created_at=p.created_at,
         )
         for p in plans
     ]
+
+
+@app.post("/admin/plans/{plan_id}/promo-image")
+def admin_upload_plan_promo_image(
+    plan_id: int,
+    upload: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    plan = db.get(Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    _ensure_upload_dir()
+    safe_name = os.path.basename(upload.filename or "file")
+    ext = Path(safe_name).suffix[:10]
+    file_id = uuid4().hex
+    rel_path = f"plan-promos/{plan_id}/{file_id}{ext}"
+    full_path = Path(settings.upload_dir) / rel_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = upload.file.read()
+    full_path.write_bytes(data)
+
+    plan.promo_image_path = str(full_path)
+    db.commit()
+    return {"ok": True, "id": plan_id}
 
 
 @app.get("/admin/payment-proofs", response_model=list[PaymentProofOut])

@@ -53,6 +53,7 @@ class PlanOut(BaseModel):
     price_cents: int
     duration_days: int
     instapay_link: str | None = None
+    promo_image_path: str | None = None
     is_active: bool = True
     created_at: datetime
 
