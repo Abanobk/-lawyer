@@ -324,7 +324,10 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
               ),
             ),
             ...? (trailing == null ? null : [trailing, const SizedBox(width: 8)]),
-            if (selected) Icon(isRtl ? Icons.chevron_right : Icons.chevron_left, color: Colors.white),
+            SizedBox(
+              width: 22,
+              child: selected ? Icon(isRtl ? Icons.chevron_right : Icons.chevron_left, color: Colors.white) : null,
+            ),
           ],
         ),
       ),
@@ -539,15 +542,6 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                     label: 'لوحة التحكم',
                   ),
                   _navItem(
-                    selected: _section == _AdminSection.offices,
-                    onTap: () => setState(() {
-                      _section = _AdminSection.offices;
-                      _officesMenuExpanded = true;
-                    }),
-                    icon: Icons.apartment_outlined,
-                    label: 'المكاتب',
-                  ),
-                  _navItem(
                     selected: _section == _AdminSection.plans,
                     onTap: () => setState(() {
                       _section = _AdminSection.plans;
@@ -598,7 +592,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                         childrenPadding: const EdgeInsets.symmetric(horizontal: 8),
                         collapsedIconColor: Colors.white,
                         iconColor: Colors.white,
-                        title: const Text('لوحة التحكم', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+                        title: const Text('المكاتب', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
                         children: [
                           FutureBuilder<List<AdminOfficeDto>>(
                             future: _officesFuture,
