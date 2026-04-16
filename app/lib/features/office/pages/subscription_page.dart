@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
+import 'package:lawyer_app/core/util/plan_display.dart';
 import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
 import 'package:lawyer_app/data/api/plans_api.dart';
 import 'package:lawyer_app/data/api/subscription_api.dart';
@@ -126,7 +127,12 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             child: const Center(child: Icon(Icons.broken_image_outlined, size: 48)),
           );
         }
-        return Image.memory(fs.data!, fit: BoxFit.cover, width: double.infinity);
+        return Image.memory(
+          fs.data!,
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: double.infinity,
+        );
       },
     );
   }
@@ -140,9 +146,11 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
         builder: (context, snap) {
           final plans = snap.data ?? const <PlanDto>[];
           if (snap.connectionState == ConnectionState.done && _selectedPlanId == null && plans.isNotEmpty) {
+            final groupsInit = groupPlansByPackage(plans);
+            final firstId = groupsInit.isNotEmpty ? groupsInit.first.first.id : plans.firstWhere((p) => p.isActive, orElse: () => plans.first).id;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
-              setState(() => _selectedPlanId = plans.first.id);
+              setState(() => _selectedPlanId = firstId);
             });
           }
           return Column(
@@ -150,7 +158,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             children: [
               Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
-              const Text('اختر الباقة، ثم افتح إنستاباي من الزر. بعد الدفع ارفع صورة التحويل في الأسفل للمراجعة.'),
+              const Text('اختر مدة الاشتراك من الأزرار، ثم افتح إنستاباي. بعد التحويل ارفع الإثبات في الأسفل للمراجعة.'),
               const SizedBox(height: 16),
               if (snap.connectionState == ConnectionState.waiting)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
@@ -158,51 +166,65 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                 Text('تعذر تحميل الباقات: ${snap.error}')
               else if (plans.isEmpty)
                 const Text('لا توجد باقات متاحة حالياً')
-              else
-                LayoutBuilder(
-                  builder: (context, c) {
-                    final w = c.maxWidth;
-                    final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
-                    final shown = plans.take(6).toList();
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: cross,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        childAspectRatio: cross == 3 ? 0.58 : (cross == 2 ? 0.62 : 0.58),
-                      ),
-                      itemCount: shown.length,
-                      itemBuilder: (context, i) {
-                        final p = shown[i];
-                        final isSelected = p.id == _selectedPlanId;
-                        final title = (p.packageName ?? '').trim().isNotEmpty ? p.packageName!.trim() : p.name;
-                        return PlanOfferCard(
-                          title: title,
-                          optionName: p.name,
-                          priceText: 'السعر: ${(p.priceCents / 100).toStringAsFixed(2)}',
-                          durationText: 'المدة: ${p.durationDays} يوم',
-                          maxUsersText: p.maxUsers != null ? 'حتى: ${p.maxUsers} مستخدم' : null,
-                          permCountText: p.allowedPermKeys != null ? 'عدد الصلاحيات: ${p.allowedPermKeys!.length}' : null,
-                          packageKeyText: p.packageKey,
-                          footerHint: 'بعد الدفع استخدم زر «اشترِ الآن» لفتح إنستاباي، ثم ارفع الإثبات أسفل الصفحة.',
-                          image: _promoArea(p),
-                          selected: isSelected,
-                          footer: FilledButton(
-                            onPressed: _uploading || p.instapayLink == null
-                                ? null
-                                : () {
-                                    setState(() => _selectedPlanId = p.id);
-                                    _openLink(p.instapayLink);
-                                  },
-                            child: const Text('اشترِ الآن'),
+              else ...[
+                Builder(
+                  builder: (context) {
+                    final groups = groupPlansByPackage(plans);
+                    if (groups.isEmpty) {
+                      return const Text('لا توجد باقات مفعّلة حالياً');
+                    }
+                    return LayoutBuilder(
+                      builder: (context, c) {
+                        final w = c.maxWidth;
+                        final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: cross,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: cross == 3 ? 0.48 : (cross == 2 ? 0.52 : 0.55),
                           ),
+                          itemCount: groups.length,
+                          itemBuilder: (context, i) {
+                            final group = groups[i];
+                            final promoPlan = planForPromoImage(group);
+                            final first = group.first;
+                            final title = (first.packageName ?? '').trim().isNotEmpty ? first.packageName!.trim() : first.name;
+                            final isSelected = group.any((p) => p.id == _selectedPlanId);
+                            final details = <String>[
+                              if (first.maxUsers != null) 'حتى: ${first.maxUsers} مستخدم',
+                              if (first.allowedPermKeys != null) 'عدد الصلاحيات: ${first.allowedPermKeys!.length}',
+                            ];
+                            return PlanOfferCard(
+                              title: title,
+                              sharedDetailLines: details,
+                              footerHint: 'بعد اختيار الاشتراك وإتمام التحويل، ارفع الإثبات أسفل الصفحة.',
+                              image: _promoArea(promoPlan),
+                              selected: isSelected,
+                              actions: [
+                                for (final p in group)
+                                  FilledButton(
+                                    onPressed: _uploading || p.instapayLink == null
+                                        ? null
+                                        : () {
+                                            setState(() => _selectedPlanId = p.id);
+                                            _openLink(p.instapayLink);
+                                          },
+                                    child: Text(
+                                      'اشتراك — ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم',
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
                         );
                       },
                     );
                   },
                 ),
+              ],
               const SizedBox(height: 24),
               Card(
                 child: Padding(

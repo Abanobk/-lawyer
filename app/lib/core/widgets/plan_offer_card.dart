@@ -1,33 +1,27 @@
 import 'package:flutter/material.dart';
 
-/// بطاقة عرض باقة (صورة علوية + تفاصيل) — مستخدمة في اشتراك المستأجر ومعاينة السوبر أدمن.
+/// بطاقة باقة: صورة دعائية كاملة (بدون قص) + تفاصيل مشتركة + أزرار/إجراءات (مثل خيارات اشتراك متعددة).
 class PlanOfferCard extends StatelessWidget {
   const PlanOfferCard({
     super.key,
     required this.title,
-    required this.optionName,
-    required this.priceText,
-    required this.durationText,
-    this.maxUsersText,
-    this.permCountText,
-    this.packageKeyText,
-    this.footerHint,
     required this.image,
+    this.packageKeyText,
+    this.sharedDetailLines = const [],
+    this.footerHint,
+    this.actions = const [],
     this.selected = false,
-    this.footer,
+    this.imageMaxHeight = 320,
   });
 
   final String title;
-  final String optionName;
-  final String priceText;
-  final String durationText;
-  final String? maxUsersText;
-  final String? permCountText;
-  final String? packageKeyText;
-  final String? footerHint;
   final Widget image;
+  final String? packageKeyText;
+  final List<String> sharedDetailLines;
+  final String? footerHint;
+  final List<Widget> actions;
   final bool selected;
-  final Widget? footer;
+  final double imageMaxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -43,9 +37,13 @@ class PlanOfferCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(
-            aspectRatio: 16 / 10,
-            child: image,
+          SizedBox(
+            height: imageMaxHeight,
+            width: double.infinity,
+            child: ColoredBox(
+              color: const Color(0xFFF3F5F9),
+              child: image,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(14),
@@ -58,16 +56,13 @@ class PlanOfferCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 8),
-                Text('الخيار: $optionName', style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 6),
-                Text(priceText, style: const TextStyle(fontWeight: FontWeight.w700)),
-                Text(durationText),
-                if (maxUsersText != null) Text(maxUsersText!),
-                if (permCountText != null) Text(permCountText!),
+                if (sharedDetailLines.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  for (final line in sharedDetailLines) Text(line),
+                ],
                 if (packageKeyText != null && packageKeyText!.trim().isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       'مفتاح التجميع: $packageKeyText',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -77,9 +72,17 @@ class PlanOfferCard extends StatelessWidget {
                   const SizedBox(height: 10),
                   Text(footerHint!, style: Theme.of(context).textTheme.bodySmall),
                 ],
-                if (footer != null) ...[
+                if (actions.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  footer!,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < actions.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 8),
+                        actions[i],
+                      ],
+                    ],
+                  ),
                 ],
               ],
             ),

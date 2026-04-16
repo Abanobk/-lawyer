@@ -1069,6 +1069,40 @@ class _PlansTabState extends State<_PlansTab> {
   }
 }
 
+String _adminPlanGroupKey(AdminPlanDto p) {
+  final pk = p.packageKey?.trim() ?? '';
+  if (pk.isNotEmpty) return 'k:$pk';
+  final pn = p.packageName?.trim() ?? '';
+  if (pn.isNotEmpty) return 'n:$pn';
+  return 'u:${p.id}';
+}
+
+List<List<AdminPlanDto>> _groupAdminPlansByPackage(List<AdminPlanDto> plans, {int maxGroups = 6}) {
+  final active = plans.where((p) => p.isActive).toList();
+  final map = <String, List<AdminPlanDto>>{};
+  for (final p in active) {
+    map.putIfAbsent(_adminPlanGroupKey(p), () => []).add(p);
+  }
+  for (final g in map.values) {
+    g.sort((a, b) {
+      final c = a.priceCents.compareTo(b.priceCents);
+      if (c != 0) return c;
+      return a.durationDays.compareTo(b.durationDays);
+    });
+  }
+  final groups = map.values.toList()..sort((a, b) => a.first.priceCents.compareTo(b.first.priceCents));
+  if (groups.length > maxGroups) return groups.take(maxGroups).toList();
+  return groups;
+}
+
+AdminPlanDto _adminPlanForPromoImage(List<AdminPlanDto> group) {
+  for (final p in group) {
+    final path = p.promoImagePath?.trim() ?? '';
+    if (path.isNotEmpty) return p;
+  }
+  return group.first;
+}
+
 class _PackagesTab extends StatefulWidget {
   const _PackagesTab({required this.future, required this.onRefresh});
   final Future<List<AdminPlanDto>> future;
@@ -1112,7 +1146,12 @@ class _PackagesTabState extends State<_PackagesTab> {
             child: const Center(child: Icon(Icons.broken_image_outlined, size: 48)),
           );
         }
-        return Image.memory(s.data!, fit: BoxFit.cover, width: double.infinity);
+        return Image.memory(
+          s.data!,
+          fit: BoxFit.contain,
+          width: double.infinity,
+          height: double.infinity,
+        );
       },
     );
   }
@@ -1145,8 +1184,8 @@ class _PackagesTabState extends State<_PackagesTab> {
                   if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                   if (snap.hasError) return Center(child: Text('تعذر تحميل الباقات: ${snap.error}'));
                   final all = snap.data ?? const <AdminPlanDto>[];
-                  final active = all.where((p) => p.isActive).take(6).toList();
-                  if (active.isEmpty) return const Center(child: Text('لا توجد باقات مفعّلة'));
+                  final groups = _groupAdminPlansByPackage(all);
+                  if (groups.isEmpty) return const Center(child: Text('لا توجد باقات مفعّلة'));
 
                   return LayoutBuilder(
                     builder: (context, c) {
@@ -1157,24 +1196,31 @@ class _PackagesTabState extends State<_PackagesTab> {
                           crossAxisCount: cross,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
-                          childAspectRatio: cross == 3 ? 0.58 : (cross == 2 ? 0.62 : 0.58),
+                          childAspectRatio: cross == 3 ? 0.48 : (cross == 2 ? 0.52 : 0.55),
                         ),
-                        itemCount: active.length,
+                        itemCount: groups.length,
                         itemBuilder: (context, i) {
-                          final p = active[i];
-                          final title = (p.packageName ?? '').trim().isNotEmpty ? p.packageName!.trim() : p.name;
+                          final group = groups[i];
+                          final promoPlan = _adminPlanForPromoImage(group);
+                          final first = group.first;
+                          final title = (first.packageName ?? '').trim().isNotEmpty ? first.packageName!.trim() : first.name;
+                          final details = <String>[
+                            if (first.maxUsers != null) 'حتى: ${first.maxUsers} مستخدم',
+                            if (first.allowedPermKeys != null) 'عدد الصلاحيات: ${first.allowedPermKeys!.length}',
+                          ];
+                          final optionsLines = group
+                              .map(
+                                (p) =>
+                                    '• ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم — ${p.name}${p.instapayLink != null && p.instapayLink!.trim().isNotEmpty ? '' : ' (بدون رابط إنستاباي)'}',
+                              )
+                              .join('\n');
+                          final linksOk = group.every((p) => p.instapayLink != null && p.instapayLink!.trim().isNotEmpty);
                           return PlanOfferCard(
                             title: title,
-                            optionName: p.name,
-                            priceText: 'السعر: ${(p.priceCents / 100).toStringAsFixed(2)}',
-                            durationText: 'المدة: ${p.durationDays} يوم',
-                            maxUsersText: p.maxUsers != null ? 'حتى: ${p.maxUsers} مستخدم' : null,
-                            permCountText: p.allowedPermKeys != null ? 'عدد الصلاحيات: ${p.allowedPermKeys!.length}' : null,
-                            packageKeyText: p.packageKey,
-                            footerHint: p.instapayLink != null && p.instapayLink!.trim().isNotEmpty
-                                ? 'رابط إنستاباي مضبوط لهذه الباقة.'
-                                : 'لا يوجد رابط إنستاباي لهذه الباقة.',
-                            image: _promoImage(p),
+                            sharedDetailLines: details,
+                            packageKeyText: first.packageKey,
+                            footerHint: 'معاينة كما يظهر للمستأجر (خيارات الاشتراك):\n$optionsLines${linksOk ? '' : '\nتنبيه: راجع روابط إنستاباي لكل خيار.'}',
+                            image: _promoImage(promoPlan),
                           );
                         },
                       );
