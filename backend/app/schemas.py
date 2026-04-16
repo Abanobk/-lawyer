@@ -63,6 +63,20 @@ class AdminUpdateTrialRequest(BaseModel):
     notes: str | None = None
 
 
+class AdminSuperAdminCreate(BaseModel):
+    full_name: str = Field(min_length=2, max_length=200)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+
+
+class AdminSuperAdminOut(BaseModel):
+    id: int
+    full_name: str | None
+    email: EmailStr
+    is_active: bool
+    created_at: datetime
+
+
 class PaymentProofOut(BaseModel):
     id: int
     office_id: int

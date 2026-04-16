@@ -5,6 +5,15 @@ class AuthTokenStorage {
   static const _kRefresh = 'auth_refresh_token';
   static const _kOfficeCode = 'auth_office_code';
 
+  Future<void> saveTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kAccess, accessToken);
+    await p.setString(_kRefresh, refreshToken);
+  }
+
   Future<void> saveSession({
     required String accessToken,
     required String refreshToken,

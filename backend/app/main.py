@@ -40,6 +40,8 @@ from app.models import (
 )
 from app.schemas import (
     AdminUpdateTrialRequest,
+    AdminSuperAdminCreate,
+    AdminSuperAdminOut,
     CaseCreate,
     CaseFileOut,
     CaseOut,
@@ -1349,6 +1351,58 @@ def protected_example(_: User = Depends(require_active_subscription)):
 def admin_list_offices(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
     offices = db.scalars(select(Office).order_by(Office.id.desc())).all()
     return [OfficeOut(id=o.id, code=o.code, name=o.name, status=o.status, created_at=o.created_at) for o in offices]
+
+
+@app.get("/admin/super-admins", response_model=list[AdminSuperAdminOut])
+def admin_list_super_admins(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    items = db.scalars(select(User).where(User.role == UserRole.super_admin).order_by(User.id.asc())).all()
+    return [
+        AdminSuperAdminOut(
+            id=u.id,
+            full_name=getattr(u, "full_name", None),
+            email=u.email,
+            is_active=getattr(u, "is_active", True),
+            created_at=u.created_at,
+        )
+        for u in items
+    ]
+
+
+@app.post("/admin/super-admins", response_model=AdminSuperAdminOut)
+def admin_create_super_admin(payload: AdminSuperAdminCreate, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    existing = db.scalar(select(User).where(User.email == payload.email))
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    u = User(
+        office_id=None,
+        email=payload.email.strip(),
+        password_hash=hash_password(payload.password),
+        full_name=payload.full_name.strip(),
+        is_active=True,
+        role=UserRole.super_admin,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return AdminSuperAdminOut(
+        id=u.id,
+        full_name=getattr(u, "full_name", None),
+        email=u.email,
+        is_active=getattr(u, "is_active", True),
+        created_at=u.created_at,
+    )
+
+
+@app.delete("/admin/super-admins/{user_id}")
+def admin_disable_super_admin(user_id: int, db: Session = Depends(get_db), admin: User = Depends(require_super_admin)):
+    target = db.get(User, user_id)
+    if not target or target.role != UserRole.super_admin:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot disable yourself")
+    target.is_active = False
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/admin/offices/{office_id}/subscription", response_model=SubscriptionOut)
