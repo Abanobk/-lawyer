@@ -21,6 +21,7 @@ class _LoginPageState extends State<LoginPage> {
   final _storage = AuthTokenStorage();
 
   bool _loading = false;
+  bool _showPass = false;
 
   @override
   void dispose() {
@@ -108,8 +109,15 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _pass,
-                      decoration: const InputDecoration(labelText: 'كلمة المرور'),
-                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: 'كلمة المرور',
+                        suffixIcon: IconButton(
+                          tooltip: _showPass ? 'إخفاء' : 'إظهار',
+                          onPressed: _loading ? null : () => setState(() => _showPass = !_showPass),
+                          icon: Icon(_showPass ? Icons.visibility_off : Icons.visibility),
+                        ),
+                      ),
+                      obscureText: !_showPass,
                       onSubmitted: (_) => _loading ? null : _submit(),
                     ),
                     const SizedBox(height: 24),

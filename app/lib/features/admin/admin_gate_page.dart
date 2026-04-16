@@ -123,10 +123,10 @@ class _LoginCard extends StatelessWidget {
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 16),
-            TextField(
+            _PasswordField(
               controller: pass,
-              decoration: const InputDecoration(labelText: 'كلمة المرور'),
-              obscureText: true,
+              labelText: 'كلمة المرور',
+              enabled: !loading,
               onSubmitted: (_) => loading ? null : onSubmit(),
             ),
             const SizedBox(height: 24),
@@ -137,6 +137,45 @@ class _LoginCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PasswordField extends StatefulWidget {
+  const _PasswordField({
+    required this.controller,
+    required this.labelText,
+    required this.enabled,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String labelText;
+  final bool enabled;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  State<_PasswordField> createState() => _PasswordFieldState();
+}
+
+class _PasswordFieldState extends State<_PasswordField> {
+  bool _show = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: widget.controller,
+      decoration: InputDecoration(
+        labelText: widget.labelText,
+        suffixIcon: IconButton(
+          tooltip: _show ? 'إخفاء' : 'إظهار',
+          onPressed: widget.enabled ? () => setState(() => _show = !_show) : null,
+          icon: Icon(_show ? Icons.visibility_off : Icons.visibility),
+        ),
+      ),
+      enabled: widget.enabled,
+      obscureText: !_show,
+      onSubmitted: widget.onSubmitted,
     );
   }
 }
@@ -218,10 +257,10 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                 const SizedBox(height: 16),
                 Text('تغيير البريد/كلمة المرور', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                TextField(
+                _PasswordField(
                   controller: _currentPass,
-                  decoration: const InputDecoration(labelText: 'كلمة المرور الحالية'),
-                  obscureText: true,
+                  labelText: 'كلمة المرور الحالية',
+                  enabled: !_saving,
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -230,10 +269,10 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                _PasswordField(
                   controller: _newPass,
-                  decoration: const InputDecoration(labelText: 'كلمة المرور الجديدة (اختياري)'),
-                  obscureText: true,
+                  labelText: 'كلمة المرور الجديدة (اختياري)',
+                  enabled: !_saving,
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
