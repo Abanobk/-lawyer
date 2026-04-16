@@ -42,6 +42,7 @@ from app.schemas import (
     AdminUpdateTrialRequest,
     AdminSuperAdminCreate,
     AdminSuperAdminOut,
+    AdminUpdateMyCredentials,
     CaseCreate,
     CaseFileOut,
     CaseOut,
@@ -1403,6 +1404,28 @@ def admin_disable_super_admin(user_id: int, db: Session = Depends(get_db), admin
     target.is_active = False
     db.commit()
     return {"ok": True}
+
+
+@app.put("/admin/me/credentials", response_model=AdminSuperAdminOut)
+def admin_update_my_credentials(payload: AdminUpdateMyCredentials, db: Session = Depends(get_db), admin: User = Depends(require_super_admin)):
+    if not verify_password(payload.current_password, admin.password_hash):
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+    if payload.new_email is not None:
+        existing = db.scalar(select(User).where(User.email == payload.new_email))
+        if existing and existing.id != admin.id:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        admin.email = payload.new_email.strip()
+    if payload.new_password is not None:
+        admin.password_hash = hash_password(payload.new_password)
+    db.commit()
+    db.refresh(admin)
+    return AdminSuperAdminOut(
+        id=admin.id,
+        full_name=getattr(admin, "full_name", None),
+        email=admin.email,
+        is_active=getattr(admin, "is_active", True),
+        created_at=admin.created_at,
+    )
 
 
 @app.get("/admin/offices/{office_id}/subscription", response_model=SubscriptionOut)

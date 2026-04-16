@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/data/api/admin_api.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
@@ -140,20 +141,112 @@ class _LoginCard extends StatelessWidget {
   }
 }
 
-class _SuperAdminDashboard extends StatelessWidget {
+class _SuperAdminDashboard extends StatefulWidget {
   const _SuperAdminDashboard();
 
   @override
+  State<_SuperAdminDashboard> createState() => _SuperAdminDashboardState();
+}
+
+class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
+  final _meApi = MeApi();
+  final _adminApi = AdminApi();
+
+  late Future<MeDto> _meFuture = _meApi.me();
+
+  final _currentPass = TextEditingController();
+  final _newEmail = TextEditingController();
+  final _newPass = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _currentPass.dispose();
+    _newEmail.dispose();
+    _newPass.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final cur = _currentPass.text;
+    final email = _newEmail.text.trim();
+    final pass = _newPass.text;
+    if (cur.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اكتب كلمة المرور الحالية')));
+      return;
+    }
+    if (email.isEmpty && pass.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اكتب بريد جديد أو كلمة مرور جديدة')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await _adminApi.updateMyCredentials(
+        currentPassword: cur,
+        newEmail: email.isEmpty ? null : email,
+        newPassword: pass.isEmpty ? null : pass,
+      );
+      if (!mounted) return;
+      _currentPass.clear();
+      _newEmail.clear();
+      _newPass.clear();
+      setState(() => _meFuture = _meApi.me());
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث بيانات السوبر أدمن')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل التحديث: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          'تم تسجيل الدخول كسوبر أدمن.\n\n'
-          'الخطوة التالية: إدارة المكاتب والاشتراكات + إدارة حسابات السوبر أدمن (إضافة/تعطيل).',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      ),
+    return FutureBuilder<MeDto>(
+      future: _meFuture,
+      builder: (context, snap) {
+        final email = snap.data?.email ?? '—';
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('لوحة السوبر أدمن', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 8),
+                Text('الحساب الحالي: $email'),
+                const SizedBox(height: 16),
+                Text('تغيير البريد/كلمة المرور', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _currentPass,
+                  decoration: const InputDecoration(labelText: 'كلمة المرور الحالية'),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _newEmail,
+                  decoration: const InputDecoration(labelText: 'البريد الجديد (اختياري)'),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _newPass,
+                  decoration: const InputDecoration(labelText: 'كلمة المرور الجديدة (اختياري)'),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('حفظ التغييرات'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -77,6 +77,12 @@ class AdminSuperAdminOut(BaseModel):
     created_at: datetime
 
 
+class AdminUpdateMyCredentials(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_email: EmailStr | None = None
+    new_password: str | None = Field(default=None, min_length=8, max_length=200)
+
+
 class PaymentProofOut(BaseModel):
     id: int
     office_id: int
