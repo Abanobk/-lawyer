@@ -947,6 +947,13 @@ class _OfficesTabState extends State<_OfficesTab> {
   AdminSubscriptionDto? _sub;
   bool _loading = false;
   bool _showAllOffices = false;
+  late Future<AdminTrialAnalyticsDto> _trialAnalyticsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30);
+  }
 
   Future<void> _loadSub(int officeId) async {
     setState(() {
@@ -1068,7 +1075,48 @@ class _OfficesTabState extends State<_OfficesTab> {
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: _selectedOfficeId == null
-                                      ? const Center(child: Text('اختر مكتب لعرض الاشتراك'))
+                          ? FutureBuilder<AdminTrialAnalyticsDto>(
+                              future: _trialAnalyticsFuture,
+                              builder: (context, snap) {
+                                if (snap.connectionState == ConnectionState.waiting) {
+                                  return const Center(child: CircularProgressIndicator());
+                                }
+                                if (snap.hasError) {
+                                  return Center(child: Text('تعذر تحميل إحصاءات التجربة: ${snap.error}'));
+                                }
+                                final data = snap.data;
+                                if (data == null || data.offices.isEmpty) {
+                                  return const Center(child: Text('لا توجد مكاتب تجريبية خلال آخر 30 يوم'));
+                                }
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      'مكاتب التجربة (آخر ${data.days} يوم): ${data.totalTrialOffices}',
+                                      style: Theme.of(context).textTheme.titleMedium,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      height: 240,
+                                      child: ListView.separated(
+                                        itemCount: data.offices.length,
+                                        separatorBuilder: (context, index) => const Divider(height: 1),
+                                        itemBuilder: (context, i) {
+                                          final o = data.offices[i];
+                                          return ListTile(
+                                            dense: true,
+                                            title: Text(o.officeName),
+                                            subtitle: Text(
+                                              'المستخدمين الآن: ${o.activeUsersCount} — ينتهي: ${o.trialEndAt.toLocal()}',
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            )
                                       : (_loading
                                           ? const Center(child: CircularProgressIndicator())
                                           : (_sub == null

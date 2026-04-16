@@ -127,6 +127,20 @@ class AdminReviewPaymentProofRequest(BaseModel):
     decision_notes: str | None = Field(default=None, max_length=2000)
 
 
+class AdminTrialOfficeUsersOut(BaseModel):
+    office_id: int
+    office_name: str
+    trial_start_at: datetime
+    trial_end_at: datetime
+    active_users_count: int
+
+
+class AdminTrialAnalyticsOut(BaseModel):
+    days: int
+    total_trial_offices: int
+    offices: list[AdminTrialOfficeUsersOut]
+
+
 class PaymentProofOut(BaseModel):
     id: int
     office_id: int

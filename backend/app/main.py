@@ -47,6 +47,8 @@ from app.schemas import (
     AdminSuperAdminOut,
     AdminUpdateMyCredentials,
     AdminReviewPaymentProofRequest,
+    AdminTrialAnalyticsOut,
+    AdminTrialOfficeUsersOut,
     PlanCreate,
     PlanOut,
     PlanUpdate,
@@ -1744,6 +1746,59 @@ def admin_list_offices(db: Session = Depends(get_db), _: User = Depends(require_
 @app.get("/admin/permissions", response_model=list[PermissionCatalogItem])
 def admin_permissions_catalog(_: User = Depends(require_super_admin)):
     return [PermissionCatalogItem(key=k, label=v) for k, v in PERMISSIONS.items()]
+
+
+@app.get("/admin/analytics/trials", response_model=AdminTrialAnalyticsOut)
+def admin_trial_analytics(
+    days: int = Query(default=30),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    # Offices that had `trial` overlapping the last `days` window,
+    # with the current active user count per office.
+    now = _now()
+    cutoff = now - timedelta(days=int(days))
+
+    trial_subs = db.scalars(
+        select(Subscription)
+        .where(Subscription.status == SubscriptionStatus.trial)
+        .where(Subscription.start_at <= now)
+        .where(Subscription.end_at >= cutoff)
+        .order_by(Subscription.office_id.asc(), Subscription.end_at.desc(), Subscription.id.desc())
+    ).all()
+
+    # Distinct offices (best-effort): keep the trial record with the latest end_at in the window.
+    by_office: dict[int, Subscription] = {}
+    for s in trial_subs:
+        if s.office_id not in by_office:
+            by_office[s.office_id] = s
+
+    office_ids = list(by_office.keys())
+    if not office_ids:
+        return AdminTrialAnalyticsOut(days=int(days), total_trial_offices=0, offices=[])
+
+    offices = db.scalars(select(Office).where(Office.id.in_(office_ids))).all()
+    office_map = {o.id: o for o in offices}
+
+    rows: list = []
+    for oid, sub in by_office.items():
+        office = office_map.get(oid)
+        if not office:
+            continue
+        active_users = db.scalar(select(func.count(User.id)).where(User.office_id == oid, User.is_active == True))
+        active_users_count = int(active_users or 0)
+        rows.append(
+            AdminTrialOfficeUsersOut(
+                office_id=oid,
+                office_name=office.name,
+                trial_start_at=sub.start_at,
+                trial_end_at=sub.end_at,
+                active_users_count=active_users_count,
+            )
+        )
+
+    rows.sort(key=lambda r: r.active_users_count, reverse=True)
+    return AdminTrialAnalyticsOut(days=int(days), total_trial_offices=len(rows), offices=rows)
 
 
 @app.get("/admin/plans", response_model=list[PlanOut])
