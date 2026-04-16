@@ -2,9 +2,8 @@ name: Deploy server
 
 on:
   workflow_dispatch:
-  # بعد التأكد من الأسرار والوصول للسيرفر:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   deploy:
