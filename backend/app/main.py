@@ -65,6 +65,7 @@ from app.schemas import (
     UserPermissionsOut,
     UserPermissionsUpdate,
     SessionOut,
+    SessionUpdate,
 )
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.settings import settings
@@ -87,6 +88,7 @@ PERMISSIONS: dict[str, str] = {
     "cases.read": "عرض القضايا",
     "cases.create": "إضافة قضية",
     "cases.upload": "رفع مرفقات للقضية",
+    "sessions.update": "ترحيل/تعديل مواعيد الجلسات",
     "accounts.read": "عرض الحسابات",
     "employees.read": "عرض الموظفين",
     "employees.manage": "إدارة الموظفين والصلاحيات",
@@ -608,6 +610,39 @@ def list_sessions(db: Session = Depends(get_db), user: User = Depends(require_pe
         )
         for s, c, cl in rows
     ]
+
+
+@app.put("/sessions/{session_id}", response_model=SessionOut)
+def update_session(
+    session_id: int,
+    payload: SessionUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("sessions.update")),
+):
+    s = db.get(CaseSession, session_id)
+    if not s or s.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s.session_date = payload.session_date
+    if payload.notes is not None:
+        s.notes = payload.notes
+    db.commit()
+    db.refresh(s)
+
+    c = db.get(Case, s.case_id)
+    cl = db.get(Client, c.client_id) if c else None
+    if not c or not cl:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return SessionOut(
+        id=s.id,
+        case_id=s.case_id,
+        case_title=c.title,
+        client_name=cl.full_name,
+        session_number=s.session_number,
+        session_year=s.session_year,
+        session_date=s.session_date,
+        notes=s.notes,
+        created_at=s.created_at,
+    )
 
 
 @app.post("/transactions", response_model=CaseTransactionOut)

@@ -51,5 +51,20 @@ class SessionsApi {
       },
     );
   }
+
+  Future<SessionDto> reschedule({
+    required int sessionId,
+    required DateTime newDate,
+    String? notes,
+  }) async {
+    return _client.putJson<SessionDto>(
+      'sessions/$sessionId',
+      {
+        'session_date': newDate.toUtc().toIso8601String(),
+        'notes': notes,
+      },
+      decode: (json) => SessionDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
 }
 

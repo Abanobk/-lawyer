@@ -181,6 +181,11 @@ class SessionOut(BaseModel):
     created_at: datetime
 
 
+class SessionUpdate(BaseModel):
+    session_date: datetime
+    notes: str | None = None
+
+
 class CustodyAccountOut(BaseModel):
     id: int
     user_id: int

@@ -15,6 +15,26 @@ class _SessionsPageState extends State<SessionsPage> {
 
   void _reload() => setState(() => _future = _api.list());
 
+  Future<void> _reschedule(SessionDto s) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 5),
+      initialDate: s.sessionDate.toLocal(),
+    );
+    if (picked == null) return;
+    try {
+      await _api.reschedule(sessionId: s.id, newDate: DateTime(picked.year, picked.month, picked.day));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم ترحيل موعد الجلسة')));
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل ترحيل الجلسة: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('yyyy-MM-dd');
@@ -57,6 +77,7 @@ class _SessionsPageState extends State<SessionsPage> {
                       DataColumn(label: Text('الموكل')),
                       DataColumn(label: Text('القضية')),
                       DataColumn(label: Text('رقم/سنة')),
+                      DataColumn(label: Text('إجراء')),
                     ],
                     rows: items
                         .map(
@@ -66,6 +87,12 @@ class _SessionsPageState extends State<SessionsPage> {
                               DataCell(Text(s.clientName)),
                               DataCell(Text(s.caseTitle)),
                               DataCell(Text(_numYear(s.sessionNumber, s.sessionYear))),
+                              DataCell(
+                                TextButton(
+                                  onPressed: () => _reschedule(s),
+                                  child: const Text('ترحيل'),
+                                ),
+                              ),
                             ],
                           ),
                         )
