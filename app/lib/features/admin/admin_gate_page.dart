@@ -504,6 +504,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
         ),
       _AdminSection.packages => _PackagesTab(
           future: _plansFuture,
+          adminApi: _adminApi,
           onRefresh: () => setState(() => _plansFuture = _adminApi.listPlans()),
         ),
       _AdminSection.proofs => _ProofsTab(
@@ -1401,8 +1402,9 @@ AdminPlanDto _adminPlanForPromoImage(List<AdminPlanDto> group) {
 }
 
 class _PackagesTab extends StatefulWidget {
-  const _PackagesTab({required this.future, required this.onRefresh});
+  const _PackagesTab({required this.future, required this.adminApi, required this.onRefresh});
   final Future<List<AdminPlanDto>> future;
+  final AdminApi adminApi;
   final VoidCallback onRefresh;
 
   @override
@@ -1412,6 +1414,49 @@ class _PackagesTab extends StatefulWidget {
 class _PackagesTabState extends State<_PackagesTab> {
   final _promoApi = AdminPlanPromoFilesApi();
   final Map<int, Future<Uint8List?>> _promoBytes = {};
+  late final Future<List<PermissionCatalogItemDto>> _permsFuture = widget.adminApi.permissionsCatalog();
+
+  Future<void> _confirmDeactivatePlan(AdminPlanDto p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تعطيل الباقة؟'),
+        content: Text('«${p.name}» — لن تظهر للمستأجرين كخيار اشتراك. الاشتراكات الحالية لا تتأثر.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تعطيل')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.adminApi.deletePlan(p.id);
+      if (!mounted) return;
+      widget.onRefresh();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تعطيل الباقة')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل: $e')));
+    }
+  }
+
+  Future<void> _openEditPlan(AdminPlanDto p) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _EditPlanDialog(
+        plan: p,
+        adminApi: widget.adminApi,
+        permsFuture: _permsFuture,
+        onSuccess: () {
+          Navigator.pop(ctx);
+          widget.onRefresh();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ التعديلات')));
+          }
+        },
+      ),
+    );
+  }
 
   Widget _promoImage(AdminPlanDto p) {
     if (p.promoImagePath == null || p.promoImagePath!.trim().isEmpty) {
@@ -1485,40 +1530,85 @@ class _PackagesTabState extends State<_PackagesTab> {
                       final cross = w > 1100 ? 3 : (w > 640 ? 2 : 1);
                       const gap = 16.0;
                       final itemW = (w - gap * (cross - 1)) / cross;
-                      return Wrap(
-                        spacing: gap,
-                        runSpacing: gap,
-                        children: [
-                          for (final group in groups)
-                            SizedBox(
-                              width: itemW,
-                              child: PlanOfferCard(
-                                title: (group.first.packageName ?? '').trim().isNotEmpty
-                                    ? group.first.packageName!.trim()
-                                    : group.first.name,
-                                sharedDetailWidgets: [
-                                  if (group.first.maxUsers != null)
-                                    Text('حتى: ${group.first.maxUsers} مستخدم', style: Theme.of(context).textTheme.bodyMedium),
-                                  if (group.first.maxUsers != null) const SizedBox(height: 4),
-                                  Builder(
-                                    builder: (ctx) => controlUnitsCountLine(ctx, group.first.allowedPermKeys),
-                                  ),
-                                ],
-                                packageKeyText: group.first.packageKey,
-                                footerHint: () {
-                                  final optionsLines = group
-                                      .map(
-                                        (p) =>
-                                            '• ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم — ${p.name}${p.instapayLink != null && p.instapayLink!.trim().isNotEmpty ? '' : ' (بدون رابط إنستاباي)'}',
-                                      )
-                                      .join('\n');
-                                  final linksOk = group.every((p) => p.instapayLink != null && p.instapayLink!.trim().isNotEmpty);
-                                  return 'معاينة كما يظهر للمستأجر (خيارات الاشتراك):\n$optionsLines${linksOk ? '' : '\nتنبيه: راجع روابط إنستاباي لكل خيار.'}';
-                                }(),
-                                image: _promoImage(_adminPlanForPromoImage(group)),
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 32),
+                        child: Wrap(
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            for (final group in groups)
+                              SizedBox(
+                                width: itemW,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    PlanOfferCard(
+                                      title: (group.first.packageName ?? '').trim().isNotEmpty
+                                          ? group.first.packageName!.trim()
+                                          : group.first.name,
+                                      sharedDetailWidgets: [
+                                        if (group.first.maxUsers != null)
+                                          Text('حتى: ${group.first.maxUsers} مستخدم', style: Theme.of(context).textTheme.bodyMedium),
+                                        if (group.first.maxUsers != null) const SizedBox(height: 4),
+                                        Builder(
+                                          builder: (ctx) => controlUnitsCountLine(ctx, group.first.allowedPermKeys),
+                                        ),
+                                      ],
+                                      packageKeyText: group.first.packageKey,
+                                      footerHint: () {
+                                        final optionsLines = group
+                                            .map(
+                                              (p) =>
+                                                  '• ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم — ${p.name}${p.instapayLink != null && p.instapayLink!.trim().isNotEmpty ? '' : ' (بدون رابط إنستاباي)'}',
+                                            )
+                                            .join('\n');
+                                        final linksOk = group.every((p) => p.instapayLink != null && p.instapayLink!.trim().isNotEmpty);
+                                        return 'معاينة كما يظهر للمستأجر (خيارات الاشتراك):\n$optionsLines${linksOk ? '' : '\nتنبيه: راجع روابط إنستاباي لكل خيار.'}';
+                                      }(),
+                                      image: _promoImage(_adminPlanForPromoImage(group)),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text('إدارة الخطط', style: Theme.of(context).textTheme.labelLarge),
+                                    const SizedBox(height: 6),
+                                    for (final p in group)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: Material(
+                                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: Padding(
+                                          padding: const EdgeInsetsDirectional.only(start: 8, end: 4, top: 4, bottom: 4),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  '${(p.priceCents / 100).toStringAsFixed(0)} ج · ${p.durationDays} يوم · #${p.id}',
+                                                  style: Theme.of(context).textTheme.bodySmall,
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip: 'تعديل',
+                                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                                onPressed: () => _openEditPlan(p),
+                                              ),
+                                              IconButton(
+                                                tooltip: 'تعطيل',
+                                                icon: const Icon(Icons.delete_outline, size: 20),
+                                                onPressed: p.isActive ? () => _confirmDeactivatePlan(p) : null,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       );
                     },
                   );
