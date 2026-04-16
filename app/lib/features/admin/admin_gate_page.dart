@@ -26,6 +26,31 @@ class _AdminGatePageState extends State<AdminGatePage> {
   bool _authed = false;
 
   @override
+  void initState() {
+    super.initState();
+    _resumeIfTokenExists();
+  }
+
+  Future<void> _resumeIfTokenExists() async {
+    final access = await _storage.getAccessToken();
+    if (access == null || access.isEmpty) return;
+    try {
+      final me = await _meApi.me();
+      if (!mounted) return;
+      if (me.role == 'super_admin') {
+        setState(() => _authed = true);
+      } else {
+        await _storage.clear();
+      }
+    } catch (_) {
+      // token invalid/expired
+      await _storage.clear();
+    }
+    if (!mounted) return;
+    setState(() {}); // refresh UI
+  }
+
+  @override
   void dispose() {
     _email.dispose();
     _pass.dispose();
@@ -192,6 +217,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
   final _adminApi = AdminApi();
 
   late Future<MeDto> _meFuture = _meApi.me();
+  late final Future<List<AdminOfficeDto>> _officesFuture = _adminApi.listOffices();
 
   final _currentPass = TextEditingController();
   final _newEmail = TextEditingController();
@@ -241,51 +267,207 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<MeDto>(
-      future: _meFuture,
-      builder: (context, snap) {
-        final email = snap.data?.email ?? '—';
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+    return DefaultTabController(
+      length: 2,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxH = constraints.maxHeight.isFinite ? constraints.maxHeight : 650.0;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const TabBar(
+                isScrollable: true,
+                tabs: [
+                  Tab(text: 'المكاتب'),
+                  Tab(text: 'إعدادات'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: (maxH - 60).clamp(420.0, 900.0),
+                child: TabBarView(
+                  children: [
+                    _OfficesTab(future: _officesFuture, adminApi: _adminApi),
+                    _SettingsTab(
+                      meFuture: _meFuture,
+                      currentPass: _currentPass,
+                      newEmail: _newEmail,
+                      newPass: _newPass,
+                      saving: _saving,
+                      onSave: _save,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OfficesTab extends StatefulWidget {
+  const _OfficesTab({required this.future, required this.adminApi});
+  final Future<List<AdminOfficeDto>> future;
+  final AdminApi adminApi;
+
+  @override
+  State<_OfficesTab> createState() => _OfficesTabState();
+}
+
+class _OfficesTabState extends State<_OfficesTab> {
+  int? _selectedOfficeId;
+  AdminSubscriptionDto? _sub;
+  bool _loading = false;
+
+  Future<void> _loadSub(int officeId) async {
+    setState(() {
+      _selectedOfficeId = officeId;
+      _loading = true;
+      _sub = null;
+    });
+    try {
+      final s = await widget.adminApi.getSubscription(officeId);
+      if (!mounted) return;
+      setState(() => _sub = s);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<List<AdminOfficeDto>>(
+          future: widget.future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return Center(child: Text('تعذر تحميل المكاتب: ${snap.error}'));
+            }
+            final offices = snap.data ?? const <AdminOfficeDto>[];
+            if (offices.isEmpty) return const Center(child: Text('لا يوجد مكاتب بعد'));
+            return Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: ListView(
+                    children: offices
+                        .map(
+                          (o) => ListTile(
+                            title: Text(o.name),
+                            subtitle: Text('كود: ${o.code} — ${o.status}'),
+                            selected: _selectedOfficeId == o.id,
+                            onTap: () => _loadSub(o.id),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _selectedOfficeId == null
+                          ? const Center(child: Text('اختر مكتب لعرض الاشتراك'))
+                          : (_loading
+                              ? const Center(child: CircularProgressIndicator())
+                              : (_sub == null
+                                  ? const Center(child: Text('لا توجد بيانات اشتراك'))
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
+                                        const SizedBox(height: 8),
+                                        Text('بداية: ${_sub!.startAt.toLocal()}'),
+                                        Text('نهاية: ${_sub!.endAt.toLocal()}'),
+                                        if ((_sub!.notes ?? '').isNotEmpty) ...[
+                                          const SizedBox(height: 8),
+                                          Text('ملاحظات: ${_sub!.notes}'),
+                                        ],
+                                      ],
+                                    ))),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab({
+    required this.meFuture,
+    required this.currentPass,
+    required this.newEmail,
+    required this.newPass,
+    required this.saving,
+    required this.onSave,
+  });
+
+  final Future<MeDto> meFuture;
+  final TextEditingController currentPass;
+  final TextEditingController newEmail;
+  final TextEditingController newPass;
+  final bool saving;
+  final Future<void> Function() onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<MeDto>(
+          future: meFuture,
+          builder: (context, snap) {
+            final email = snap.data?.email ?? '—';
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('لوحة السوبر أدمن', style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 8),
                 Text('الحساب الحالي: $email'),
                 const SizedBox(height: 16),
                 Text('تغيير البريد/كلمة المرور', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 _PasswordField(
-                  controller: _currentPass,
+                  controller: currentPass,
                   labelText: 'كلمة المرور الحالية',
-                  enabled: !_saving,
+                  enabled: !saving,
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: _newEmail,
+                  controller: newEmail,
                   decoration: const InputDecoration(labelText: 'البريد الجديد (اختياري)'),
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 12),
                 _PasswordField(
-                  controller: _newPass,
+                  controller: newPass,
                   labelText: 'كلمة المرور الجديدة (اختياري)',
-                  enabled: !_saving,
+                  enabled: !saving,
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: _saving
+                  onPressed: saving ? null : onSave,
+                  child: saving
                       ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Text('حفظ التغييرات'),
                 ),
               ],
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }

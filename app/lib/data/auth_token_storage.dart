@@ -36,4 +36,9 @@ class AuthTokenStorage {
     final p = await SharedPreferences.getInstance();
     return p.getString(_kAccess);
   }
+
+  Future<String?> getRefreshToken() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getString(_kRefresh);
+  }
 }
