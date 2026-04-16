@@ -258,9 +258,6 @@ class _CaseFilesDialog extends StatefulWidget {
 
 class _CaseFilesDialogState extends State<_CaseFilesDialog> {
   bool _downloadingAll = false;
-  Uint8List? _previewBytes;
-  String? _previewContentType;
-  String? _previewName;
 
   Future<void> _downloadOne(CaseFileDto f) async {
     final res = await widget.api.download(fileId: f.id);
@@ -276,27 +273,12 @@ class _CaseFilesDialogState extends State<_CaseFilesDialog> {
     web.URL.revokeObjectURL(url);
   }
 
-  Future<void> _previewOne(CaseFileDto f) async {
+  Future<void> _openInNewTab(CaseFileDto f) async {
     final res = await widget.api.download(fileId: f.id);
     if (!kIsWeb) return;
 
     final bytes = res.$1;
     final contentType = res.$3;
-    setState(() {
-      _previewBytes = null;
-      _previewContentType = contentType;
-      _previewName = res.$2;
-    });
-
-    final isImage = contentType.startsWith('image/');
-    if (isImage) {
-      setState(() {
-        _previewBytes = bytes;
-      });
-      return;
-    }
-
-    // PDF/غيرها: فتح في تبويب جديد (معاينة بدون تنزيل مباشر).
     final bytesPart = bytes.toJS as web.BlobPart;
     final parts = <web.BlobPart>[bytesPart].toJS;
     final blob = web.Blob(parts, web.BlobPropertyBag(type: contentType));
@@ -332,77 +314,32 @@ class _CaseFilesDialogState extends State<_CaseFilesDialog> {
         width: 720,
         child: widget.files.isEmpty
             ? const Text('لا يوجد ملفات')
-            : Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: widget.files.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1),
-                      itemBuilder: (context, i) {
-                        final f = widget.files[i];
-                        return ListTile(
-                          title: Text(f.originalName),
-                          subtitle: Text(
-                            '${(f.sizeBytes / 1024).toStringAsFixed(1)} KB • ${df.format(f.uploadedAt.toLocal())}',
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton(
-                                onPressed: () => _previewOne(f),
-                                child: const Text('عرض'),
-                              ),
-                              TextButton(
-                                onPressed: () => _downloadOne(f),
-                                child: const Text('تنزيل'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+            : ListView.separated(
+                shrinkWrap: true,
+                itemCount: widget.files.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, i) {
+                  final f = widget.files[i];
+                  return ListTile(
+                    title: Text(f.originalName),
+                    subtitle: Text(
+                      '${(f.sizeBytes / 1024).toStringAsFixed(1)} KB • ${df.format(f.uploadedAt.toLocal())}',
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    flex: 1,
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              'المعاينة',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 10),
-                            if (_previewBytes != null && (_previewContentType ?? '').startsWith('image/'))
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    _previewBytes!,
-                                    fit: BoxFit.contain,
-                                  ),
-                                ),
-                              )
-                            else
-                              Expanded(
-                                child: Center(
-                                  child: Text(
-                                    _previewName == null ? 'اختر ملف للمعاينة' : 'معاينة غير مدعومة داخل التطبيق لهذا النوع.\nسيتم فتحه في تبويب جديد.',
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ),
-                          ],
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          onPressed: () => _openInNewTab(f),
+                          child: const Text('عرض'),
                         ),
-                      ),
+                        TextButton(
+                          onPressed: () => _downloadOne(f),
+                          child: const Text('تنزيل'),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
       ),
       actions: [
