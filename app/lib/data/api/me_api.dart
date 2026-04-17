@@ -4,12 +4,14 @@ class MeDto {
   MeDto({
     required this.id,
     required this.email,
+    this.fullName,
     required this.role,
     required this.officeId,
   });
 
   final int id;
   final String email;
+  final String? fullName;
   final String role;
   final int? officeId;
 
@@ -17,6 +19,7 @@ class MeDto {
     return MeDto(
       id: json['id'] as int,
       email: json['email'] as String,
+      fullName: json['full_name'] as String?,
       role: json['role'] as String,
       officeId: json['office_id'] as int?,
     );

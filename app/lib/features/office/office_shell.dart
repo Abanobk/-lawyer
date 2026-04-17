@@ -7,7 +7,9 @@ import 'package:lawyer_app/core/widgets/content_canvas.dart';
 import 'package:lawyer_app/data/api/billing_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
+import 'package:lawyer_app/data/api/office_api.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
+import 'package:lawyer_app/features/office/office_welcome_context.dart';
 import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
 class OfficeShell extends StatelessWidget {
@@ -152,16 +154,29 @@ class _Sidebar extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.balance, color: Colors.white, size: 28),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        'مكتب المحاماة',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'مكتب المحاماة',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          Text(
+                            'من إيزي تك',
+                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -169,11 +184,26 @@ class _Sidebar extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  officeCode,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: Colors.white54,
-                      ),
+                child: FutureBuilder<OfficeInfo?>(
+                  future: () async {
+                    try {
+                      return await OfficeApi().myOffice();
+                    } catch (_) {
+                      return null;
+                    }
+                  }(),
+                  builder: (context, snap) {
+                    final name = snap.data?.name;
+                    return Text(
+                      name ?? officeCode,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontWeight: FontWeight.w700,
+                          ),
+                    );
+                  },
                 ),
               ),
               Padding(
@@ -339,35 +369,80 @@ class _DesktopOfficeHeader extends StatelessWidget {
       elevation: 0,
       child: SafeArea(
         bottom: false,
-        child: SizedBox(
-          height: kToolbarHeight,
-          child: Padding(
-            padding: const EdgeInsetsDirectional.only(start: 8, end: 20),
-            child: Row(
-              children: [
-                TextButton.icon(
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: officeLink));
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط المكتب')));
-                    }
-                  },
-                  icon: const Icon(Icons.link, size: 18),
-                  label: const Text('نسخ رابط المكتب'),
-                ),
-                const Spacer(),
-                Text(
-                  'مرحبًا، المدير العام',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(width: 12),
-                CircleAvatar(
-                  backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
-                  foregroundColor: AppColors.primaryBlue,
-                  child: const Text('م'),
-                ),
-              ],
-            ),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(start: 8, end: 20, top: 6, bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              TextButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: officeLink));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط المكتب')));
+                  }
+                },
+                icon: const Icon(Icons.link, size: 18),
+                label: const Text('نسخ رابط المكتب'),
+              ),
+              const Spacer(),
+              FutureBuilder<(MeDto, OfficeInfo)>(
+                future: loadOfficeWelcomeContext(),
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryBlue),
+                        ),
+                        const SizedBox(width: 12),
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
+                          foregroundColor: AppColors.primaryBlue,
+                          child: const Text('…'),
+                        ),
+                      ],
+                    );
+                  }
+                  final me = snap.data!.$1;
+                  final off = snap.data!.$2;
+                  final who = officeUserDisplayName(me);
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'مرحبًا بك أستاذ $who',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'في مكتب المستشار ${off.name}',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 12),
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
+                        foregroundColor: AppColors.primaryBlue,
+                        child: Text(
+                          officeUserInitial(me),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
           ),
         ),
       ),

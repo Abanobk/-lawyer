@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
+import 'package:lawyer_app/data/api/me_api.dart';
+import 'package:lawyer_app/features/office/office_welcome_context.dart';
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
@@ -90,33 +92,49 @@ class _HeroBanner extends StatelessWidget {
           colors: [Color(0xFF0F2744), Color(0xFF1E3A8A)],
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'مرحبًا، أ/ المدير العام',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+      child: FutureBuilder<(MeDto, OfficeInfo)>(
+        future: loadOfficeWelcomeContext(),
+        builder: (context, snap) {
+          final who = snap.hasData ? officeUserDisplayName(snap.data!.$1) : '…';
+          final officeName = snap.hasData ? snap.data!.$2.name : '…';
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'مرحبًا بك أستاذ $who',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'في مكتب المستشار $officeName',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.white70,
+                            height: 1.4,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'لديك جلسات قادمة تحتاج لمتابعتك — سيتم ربط الأرقام بالـ API.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.white60,
+                            height: 1.4,
+                          ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'لديك جلسات قادمة تحتاج لمتابعتك — سيتم ربط الأرقام بالـ API.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
-                        height: 1.4,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Icon(Icons.balance, size: 72, color: Colors.white.withValues(alpha: 0.2)),
-        ],
+              ),
+              const SizedBox(width: 16),
+              Icon(Icons.balance, size: 72, color: Colors.white.withValues(alpha: 0.2)),
+            ],
+          );
+        },
       ),
     );
   }
