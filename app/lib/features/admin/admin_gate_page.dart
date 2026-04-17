@@ -14,7 +14,7 @@ import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' as intl;
 
 /// مدخل السوبر أدمن (FAB من الشاشة الرئيسية). الحماية الفعلية من الـ API.
 class AdminGatePage extends StatefulWidget {
@@ -2167,7 +2167,7 @@ class _AdminEditSubscriptionDialogState extends State<_AdminEditSubscriptionDial
   @override
   Widget build(BuildContext context) {
     final title = widget.officeName ?? 'مكتب #${widget.officeId}';
-    final df = DateFormat.yMMMd().add_Hm();
+    final df = intl.DateFormat.yMMMd().add_Hm();
     return AlertDialog(
       title: Text('تعديل اشتراك / تجربة — $title'),
       content: SingleChildScrollView(
