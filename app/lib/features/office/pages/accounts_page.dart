@@ -278,6 +278,18 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
     _load();
   }
 
+  void _openCaseAccountFromMovement(int caseId) {
+    final code = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+    if (code.isEmpty) return;
+    context.go('/o/$code/accounts/case/$caseId');
+  }
+
+  void _openCaseDetailFromMovement(int caseId) {
+    final code = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+    if (code.isEmpty) return;
+    context.go('/o/$code/cases/$caseId');
+  }
+
   Future<void> _pickFrom() async {
     final p = await showDatePicker(
       context: context,
@@ -512,7 +524,16 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
                                         DataCell(Text(m.direction == 'income' ? 'وارد' : 'صادر')),
                                         DataCell(Text('${_money.format(m.amount)} ج.م')),
                                         DataCell(Text(m.affectsOfficeCash ? 'نعم' : 'لا')),
-                                        DataCell(Text(m.caseId != null ? '${m.caseId}' : '—')),
+                                        DataCell(
+                                          m.caseId == null
+                                              ? const Text('—')
+                                              : _FinanceMovementCaseCell(
+                                                  caseId: m.caseId!,
+                                                  caseTitle: m.caseTitle,
+                                                  onOpenAccount: () => _openCaseAccountFromMovement(m.caseId!),
+                                                  onOpenDetail: () => _openCaseDetailFromMovement(m.caseId!),
+                                                ),
+                                        ),
                                         DataCell(SizedBox(width: 220, child: Text(m.description ?? '—', maxLines: 2, overflow: TextOverflow.ellipsis))),
                                       ],
                                     ),
@@ -543,6 +564,57 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// خلية قابلة للنقر في جدول الحركات: النص يفتح حساب القضية، الأيقونة تفتح تفاصيل القضية.
+class _FinanceMovementCaseCell extends StatelessWidget {
+  const _FinanceMovementCaseCell({
+    required this.caseId,
+    this.caseTitle,
+    required this.onOpenAccount,
+    required this.onOpenDetail,
+  });
+
+  final int caseId;
+  final String? caseTitle;
+  final VoidCallback onOpenAccount;
+  final VoidCallback onOpenDetail;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final t = caseTitle?.trim();
+    final label = (t != null && t.isNotEmpty) ? '$t (#$caseId)' : '#$caseId';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: InkWell(
+            onTap: onOpenAccount,
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
+                decorationColor: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          icon: Icon(Icons.description_outlined, size: 20, color: theme.colorScheme.primary),
+          tooltip: 'تفاصيل القضية',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          onPressed: onOpenDetail,
+        ),
+      ],
     );
   }
 }
