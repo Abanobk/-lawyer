@@ -33,12 +33,21 @@ install -m 755 -o root -g root "$SRC" "$DEST"
 f="/etc/sudoers.d/gh-runner-lawyer-deploy"
 {
   echo "# GitHub Actions: NOPASSWD على سكربت النشر فقط"
-  echo "${RUNNER_USER} ALL=(root) NOPASSWD: ${DEST}"
+  echo "${RUNNER_USER} ALL=(ALL) NOPASSWD: ${DEST}"
 } >"$f"
 chmod 440 "$f"
 
 if command -v visudo &>/dev/null; then
   visudo -c -f "$f" || { rm -f "$f"; exit 1; }
+  # تحقق من الدمج الكامل — إن فشل، قد يكون #includedir مفقودًا من /etc/sudoers
+  visudo -c 2>/dev/null || echo "تحذير: visudo -c للنظام كامل أبلغ عن خطأ — راجع /etc/sudoers"
+fi
+
+if ! grep -qE '^[[:space:]]*#includedir[[:space:]]+/etc/sudoers[.]d|@[[:space:]]*includedir[[:space:]]+/etc/sudoers[.]d' /etc/sudoers 2>/dev/null; then
+  echo ""
+  echo "تحذير: لم يُعثر على #includedir /etc/sudoers.d في /etc/sudoers — قواعد $f قد لا تُحمَّل."
+  echo "  أضف سطرًا (بـ visudo): #includedir /etc/sudoers.d"
+  echo "  أو تجاهل sudo واستخدم: bash infra/github-runner/grant-runner-repo-access.sh ثم أعد تشغيل خدمة الـ runner"
 fi
 
 echo "تم: $DEST و $f"
