@@ -1,7 +1,8 @@
 # نشر على نفس السيرفر (TrueNAS) عبر self-hosted runner.
-# إذا ظهر Permission denied على cd للريبو، شغّل مرة واحدة على السيرفر كـ root:
-#   bash infra/github-runner/grant-runner-repo-access.sh
-# لتثبيت الـ runner كخدمة دائمة: infra/github-runner/setup-durable-service.sh
+# الخطوة تعمل بـ sudo لأن githubrunner غالبًا لا يملك cd إلى /mnt/... — شغّل مرة واحدة كـ root:
+#   bash infra/github-runner/allow-sudo-deploy.sh
+# (بديل: bash infra/github-runner/grant-runner-repo-access.sh)
+# لتثبيت الـ runner: infra/github-runner/setup-durable-service.sh
 
 name: Deploy server
 
@@ -17,13 +18,11 @@ jobs:
       - name: Deploy (pull + compose)
         shell: bash
         run: |
-          set -euo pipefail
+          sudo -n bash -c 'set -euo pipefail
           cd "/mnt/marichia/files/app-data/lawyer/repo"
           git fetch origin main
           git checkout main
-          # يطابق نسخة GitHub حتى لو في تعديلات محلية على السيرفر (مثل docker-compose)
           git reset --hard origin/main
           cd infra
-          # يمنع أخطاء «No such container» عند إعادة إنشاء الحاويات بعد تغيّر الـ IDs
           docker compose down --remove-orphans || true
-          docker compose up -d --build --remove-orphans
+          docker compose up -d --build --remove-orphans'
