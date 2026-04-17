@@ -1,11 +1,11 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
+import 'package:lawyer_app/data/api/finance_api.dart';
 import 'package:lawyer_app/data/api/office_expenses_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
@@ -16,14 +16,16 @@ class AccountsPage extends StatelessWidget {
   static int _tabIndexFromUri(Uri uri) {
     final v = uri.queryParameters['tab'];
     switch (v) {
-      case 'receive':
+      case 'summary':
         return 0;
-      case 'expenses':
+      case 'receive':
         return 1;
-      case 'custody':
+      case 'expenses':
         return 2;
-      case 'reports':
+      case 'custody':
         return 3;
+      case 'reports':
+        return 4;
       default:
         return 0;
     }
@@ -49,7 +51,7 @@ class AccountsPage extends StatelessWidget {
         const SizedBox(height: 16),
         Expanded(
           child: DefaultTabController(
-            length: 4,
+            length: 5,
             initialIndex: initial,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -57,6 +59,7 @@ class AccountsPage extends StatelessWidget {
                 const TabBar(
                   isScrollable: true,
                   tabs: [
+                    Tab(text: 'ملخص مالي'),
                     Tab(text: 'استلام نقدية'),
                     Tab(text: 'صرف نقدية'),
                     Tab(text: 'العُهد'),
@@ -67,6 +70,7 @@ class AccountsPage extends StatelessWidget {
                 const Expanded(
                   child: TabBarView(
                     children: [
+                      _FinanceOverviewTab(),
                       _ReceiveCashTab(),
                       _OfficeExpensesTab(),
                       CustodyPage(),
@@ -79,6 +83,247 @@ class AccountsPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// المرحلة أ — ملخص موحّد + دفتر حركة (عبر `/finance/*`).
+class _FinanceOverviewTab extends StatefulWidget {
+  const _FinanceOverviewTab();
+
+  @override
+  State<_FinanceOverviewTab> createState() => _FinanceOverviewTabState();
+}
+
+class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
+  final _api = FinanceApi();
+  final _money = NumberFormat('#,##0.00', 'ar');
+  final _df = DateFormat('yyyy-MM-dd');
+
+  DateTime _from = DateTime.now().subtract(const Duration(days: 29));
+  DateTime _to = DateTime.now();
+  int? _caseIdFilter;
+
+  FinancialSummaryDto? _summary;
+  List<FinancialMovementDto> _movements = const [];
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _readUriAndLoad());
+  }
+
+  void _readUriAndLoad() {
+    final uri = GoRouterState.of(context).uri;
+    final raw = uri.queryParameters['case_id'];
+    final id = int.tryParse(raw ?? '');
+    setState(() => _caseIdFilter = id);
+    _load();
+  }
+
+  Future<void> _pickFrom() async {
+    final p = await showDatePicker(
+      context: context,
+      initialDate: _from,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (p != null) setState(() => _from = p);
+  }
+
+  Future<void> _pickTo() async {
+    final p = await showDatePicker(
+      context: context,
+      initialDate: _to,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (p != null) setState(() => _to = p);
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final from = DateTime(_from.year, _from.month, _from.day);
+      final to = DateTime(_to.year, _to.month, _to.day);
+      final sum = await _api.summary(from: from, to: to, caseId: _caseIdFilter);
+      final mov = await _api.movements(from: from, to: to, caseId: _caseIdFilter, limit: 250);
+      if (!mounted) return;
+      setState(() {
+        _summary = sum;
+        _movements = mov;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _exportCsv() async {
+    try {
+      final from = DateTime(_from.year, _from.month, _from.day);
+      final to = DateTime(_to.year, _to.month, _to.day);
+      final csv = await _api.movementsCsv(from: from, to: to, caseId: _caseIdFilter);
+      await Clipboard.setData(ClipboardData(text: csv));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نسخ ملف CSV — الصقه في Excel أو حفظه كملف .csv')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل التصدير: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'ملخص مالي موحّد للفترة (قضايا + مكتب + عهد عند توفر الصلاحية).',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pickFrom,
+                  icon: const Icon(Icons.calendar_today, size: 18),
+                  label: Text('من ${_df.format(_from)}'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _pickTo,
+                  icon: const Icon(Icons.calendar_today, size: 18),
+                  label: Text('إلى ${_df.format(_to)}'),
+                ),
+                if (_caseIdFilter != null)
+                  Chip(
+                    label: Text('قضية #$_caseIdFilter'),
+                    onDeleted: () => setState(() => _caseIdFilter = null),
+                  ),
+                FilledButton.icon(
+                  onPressed: _loading ? null : _load,
+                  icon: _loading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.refresh),
+                  label: const Text('تحديث'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : _exportCsv,
+                  icon: const Icon(Icons.copy),
+                  label: const Text('تصدير CSV (نسخ)'),
+                ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            if (_summary != null) ...[
+              const SizedBox(height: 12),
+              if (!_summary!.includesCustody)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'تنبيه: ليس لديك صلاحية عرض العهد — الملخص يشمل القضايا والمصروفات العامة للمكتب فقط.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.tertiary, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              LayoutBuilder(
+                builder: (context, c) {
+                  final w = c.maxWidth;
+                  final cards = [
+                    _finCard(context, 'إيرادات القضايا', _summary!.totalCaseIncome, const Color(0xFF16A34A)),
+                    _finCard(context, 'مصروفات على القضايا', _summary!.totalCaseExpense, const Color(0xFFDC2626)),
+                    _finCard(context, 'مصروفات المكتب', _summary!.totalOfficeExpense, const Color(0xFFEA580C)),
+                    _finCard(context, 'صافي القضايا', _summary!.netCase, const Color(0xFF1E40AF)),
+                    _finCard(context, 'صافي تشغيلي مبسّط', _summary!.netOperatingSimple, const Color(0xFF7C3AED)),
+                    if (_summary!.includesCustody) ...[
+                      _finCard(context, 'سلف عهد', _summary!.totalCustodyAdvances, const Color(0xFF0D9488)),
+                      _finCard(context, 'مصروف عهد معتمد', _summary!.totalCustodySpendsApproved, const Color(0xFFBE185D)),
+                      _finCard(context, 'مصروف عهد معلّق', _summary!.totalCustodySpendsPending, const Color(0xFFCA8A04)),
+                    ],
+                  ];
+                  if (w >= 900) {
+                    return Wrap(spacing: 10, runSpacing: 10, children: cards.map((e) => SizedBox(width: 200, child: e)).toList());
+                  }
+                  return Column(children: cards.map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: e)).toList());
+                },
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text('آخر الحركات', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _loading && _movements.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : _movements.isEmpty
+                      ? const Center(child: Text('لا توجد حركات في هذه الفترة'))
+                      : Scrollbar(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: DataTable(
+                              columns: const [
+                                DataColumn(label: Text('التاريخ')),
+                                DataColumn(label: Text('النوع')),
+                                DataColumn(label: Text('اتجاه')),
+                                DataColumn(label: Text('مبلغ')),
+                                DataColumn(label: Text('خزينة')),
+                                DataColumn(label: Text('قضية')),
+                                DataColumn(label: Text('بيان')),
+                              ],
+                              rows: _movements
+                                  .map(
+                                    (m) => DataRow(
+                                      cells: [
+                                        DataCell(Text(_df.format(m.occurredAt.toLocal()))),
+                                        DataCell(Text(m.kindLabelAr, style: const TextStyle(fontSize: 12))),
+                                        DataCell(Text(m.direction == 'income' ? 'وارد' : 'صادر')),
+                                        DataCell(Text('${_money.format(m.amount)} ج.م')),
+                                        DataCell(Text(m.affectsOfficeCash ? 'نعم' : 'لا')),
+                                        DataCell(Text(m.caseId != null ? '${m.caseId}' : '—')),
+                                        DataCell(SizedBox(width: 220, child: Text(m.description ?? '—', maxLines: 2, overflow: TextOverflow.ellipsis))),
+                                      ],
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _finCard(BuildContext context, String label, double value, Color color) {
+    return Card(
+      elevation: 0,
+      color: color.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text('${_money.format(value)} ج.م', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+          ],
+        ),
+      ),
     );
   }
 }

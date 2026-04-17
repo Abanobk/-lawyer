@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import func, inspect, select, text
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
 from app.db import Base, engine, get_db
+from app.finance_ledger import FINANCE_KINDS_ALL, finance_movements, finance_summary, movements_to_csv_lines
 from app.models import (
     Case,
     CaseAssignment,
@@ -82,6 +83,8 @@ from app.schemas import (
     ClientAccountReportOut,
     ClientCaseAccountReportItem,
     CustodyReportItem,
+    FinancialMovementOut,
+    FinancialSummaryOut,
     OfficeUserCreate,
     OfficeUserCreateOut,
     PermissionCatalogItem,
@@ -180,6 +183,7 @@ TRACKED_ACTIVITY_PREFIXES: tuple[str, ...] = (
     "/custody",
     "/office-expenses",
     "/reports",
+    "/finance",
 )
 
 
@@ -550,6 +554,12 @@ def require_office_admin(user: User = Depends(require_office_user)) -> User:
 def _user_perm_keys(db: Session, user: User) -> set[str]:
     rows = db.scalars(select(UserPermission.perm_key).where(UserPermission.office_id == user.office_id, UserPermission.user_id == user.id)).all()
     return set(rows)
+
+
+def _finance_include_custody(db: Session, user: User) -> bool:
+    if user.role == UserRole.office_owner:
+        return True
+    return "custody.admin.view" in _user_perm_keys(db, user)
 
 
 def require_perm(perm_key: str):
@@ -1910,6 +1920,68 @@ def report_client_account(client_id: int, db: Session = Depends(get_db), user: U
             )
         )
     return ClientAccountReportOut(client_id=client.id, client_name=client.full_name, cases=items)
+
+
+@app.get("/finance/summary", response_model=FinancialSummaryOut)
+def finance_summary_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    case_id: int | None = None,
+):
+    inc = _finance_include_custody(db, user)
+    data = finance_summary(db, user.office_id, date_from, date_to, case_id, inc)
+    return FinancialSummaryOut(**data)
+
+
+@app.get("/finance/movements", response_model=list[FinancialMovementOut])
+def finance_movements_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    case_id: int | None = None,
+    kinds: str | None = Query(None, description="مفصولة بفواصل، مثل: case_income,office_expense"),
+    limit: int = Query(400, ge=1, le=2500),
+    offset: int = Query(0, ge=0),
+):
+    kind_set: frozenset[str] | None = None
+    if kinds:
+        kind_set = frozenset(k.strip() for k in kinds.split(",") if k.strip())
+        bad = kind_set - FINANCE_KINDS_ALL
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Unknown kinds: {sorted(bad)}")
+    inc = _finance_include_custody(db, user)
+    raw = finance_movements(db, user.office_id, date_from, date_to, case_id, inc, kind_set)
+    page = raw[offset : offset + limit]
+    return [FinancialMovementOut(**r) for r in page]
+
+
+@app.get("/finance/movements/export")
+def finance_movements_export(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    case_id: int | None = None,
+    kinds: str | None = Query(None),
+):
+    kind_set: frozenset[str] | None = None
+    if kinds:
+        kind_set = frozenset(k.strip() for k in kinds.split(",") if k.strip())
+        bad = kind_set - FINANCE_KINDS_ALL
+        if bad:
+            raise HTTPException(status_code=400, detail=f"Unknown kinds: {sorted(bad)}")
+    inc = _finance_include_custody(db, user)
+    raw = finance_movements(db, user.office_id, date_from, date_to, case_id, inc, kind_set)
+    raw = raw[:10000]
+    text = "\ufeff" + "\n".join(movements_to_csv_lines(raw))
+    return Response(
+        content=text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="finance-movements.csv"'},
+    )
 
 
 @app.get("/reports/custody", response_model=list[CustodyReportItem])

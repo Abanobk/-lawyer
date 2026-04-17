@@ -376,6 +376,12 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('العودة للحسابات'),
                   ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go('/o/$officeCode/accounts?tab=summary&case_id=${widget.caseId}'),
+                    icon: const Icon(Icons.dashboard_customize_outlined, size: 20),
+                    label: const Text('الملخص المالي لهذه القضية'),
+                  ),
                   const Spacer(),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(

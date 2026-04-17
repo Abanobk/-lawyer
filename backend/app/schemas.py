@@ -525,3 +525,37 @@ class CustodyReportItem(BaseModel):
     approved_spends_sum: float
     pending_spends_sum: float
 
+
+class FinancialMovementOut(BaseModel):
+    """سطر موحّد في دفتر الحركة المالية."""
+
+    ledger_key: str
+    source_type: str
+    source_id: int
+    kind: str
+    kind_label_ar: str
+    occurred_at: datetime
+    amount: float
+    direction: str  # income | expense
+    affects_office_cash: bool
+    case_id: int | None = None
+    case_title: str | None = None
+    custody_user_id: int | None = None
+    custody_user_email: str | None = None
+    description: str | None = None
+
+
+class FinancialSummaryOut(BaseModel):
+    period_from: date | None = None
+    period_to: date | None = None
+    case_id_filter: int | None = None
+    total_case_income: float
+    total_case_expense: float
+    total_office_expense: float
+    total_custody_advances: float
+    total_custody_spends_approved: float
+    total_custody_spends_pending: float
+    net_case: float
+    net_operating_simple: float
+    includes_custody: bool
+

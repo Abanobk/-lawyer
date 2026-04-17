@@ -45,6 +45,23 @@ class ApiClient {
     return _handleJson(res, decode: decode);
   }
 
+  /// لاستجابات نصية خام (مثل CSV) مع نفس ترويسة التوثيق.
+  Future<String> getUtf8Text(
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    var uri = ApiConfig.uri(path);
+    if (query != null && query.isNotEmpty) {
+      uri = uri.replace(queryParameters: {...uri.queryParameters, ...query});
+    }
+    final res = await _http.get(uri, headers: await _authHeaders());
+    final text = utf8.decode(res.bodyBytes);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw ApiException(_parseErrorDetail(text), statusCode: res.statusCode);
+    }
+    return text;
+  }
+
   Future<T> postJson<T>(
     String path,
     Object body, {
