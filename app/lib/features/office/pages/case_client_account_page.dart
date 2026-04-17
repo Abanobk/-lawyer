@@ -50,12 +50,13 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
 
   Future<void> _addTransaction(double? caseFeeTotal) async {
     final amountCtrl = TextEditingController();
-    final agreedFeeCtrl = TextEditingController();
+    final agreedFeeCtrl = TextEditingController(
+      text: caseFeeTotal != null ? caseFeeTotal.toStringAsFixed(2) : '',
+    );
     final descCtrl = TextEditingController();
     String direction = 'income';
     DateTime occurred = DateTime.now();
     var mode = 'transaction';
-    final showAgreedFeeOption = caseFeeTotal == null;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -68,26 +69,36 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (showAgreedFeeOption) ...[
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'transaction', label: Text('عملية مالية')),
-                        ButtonSegment(value: 'agreed_fee', label: Text('إجمالي الأتعاب المتفق عليها')),
-                      ],
-                      selected: {mode},
-                      onSelectionChanged: (s) => setLocal(() => mode = s.first),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'transaction', label: Text('عملية مالية')),
+                      ButtonSegment(value: 'agreed_fee', label: Text('إجمالي الأتعاب المتفق عليها')),
+                    ],
+                    selected: {mode},
+                    onSelectionChanged: (s) => setLocal(() => mode = s.first),
+                  ),
+                  const SizedBox(height: 12),
+                  if (mode == 'agreed_fee') ...[
+                    Text(
+                      caseFeeTotal == null
+                          ? 'يُحدَّد المبلغ الكلي المتفق عليه للقضية. لن يُضاف سطر تحصيل في الجدول إلا إذا اخترت «عملية مالية».'
+                          : 'أدخل الإجمالي الجديد المطلوب من العميل (يمكن زيادته أو تعديله). لا يُسجَّل تحصيل في الجدول إلا من «عملية مالية».',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
-                    const SizedBox(height: 12),
-                    if (mode == 'agreed_fee')
+                    if (caseFeeTotal != null) ...[
+                      const SizedBox(height: 6),
                       Text(
-                        'يُحدَّد المبلغ الكلي المتفق عليه للقضية. لن يُضاف سطر تحصيل في الجدول إلا إذا اخترت «عملية مالية».',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        'الحالي: ${NumberFormat('#,##0.00', 'ar').format(caseFeeTotal)} ج.م',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                       ),
-                    if (mode == 'agreed_fee') const SizedBox(height: 8),
+                    ],
+                    const SizedBox(height: 8),
                   ],
-                  if (!showAgreedFeeOption || mode == 'transaction') ...[
+                  if (mode == 'transaction') ...[
                     SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'income', label: Text('أتعاب')),
@@ -144,7 +155,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
       return;
     }
 
-    if (showAgreedFeeOption && mode == 'agreed_fee') {
+    if (mode == 'agreed_fee') {
       final rawFee = agreedFeeCtrl.text.trim().replaceAll(',', '.');
       final feeVal = double.tryParse(rawFee);
       amountCtrl.dispose();
