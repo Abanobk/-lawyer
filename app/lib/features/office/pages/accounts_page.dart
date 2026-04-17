@@ -12,10 +12,10 @@ import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 import 'package:lawyer_app/features/office/pages/petty_cash_page.dart';
 
-class AccountsPage extends StatelessWidget {
+class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key});
 
-  static int _tabIndexFromUri(Uri uri) {
+  static int tabIndexFromUri(Uri uri) {
     final v = uri.queryParameters['tab'];
     switch (v) {
       case 'summary':
@@ -35,10 +35,79 @@ class AccountsPage extends StatelessWidget {
     }
   }
 
+  static String tabQueryValueForIndex(int index) {
+    switch (index) {
+      case 0:
+        return 'summary';
+      case 1:
+        return 'receive';
+      case 2:
+        return 'expenses';
+      case 3:
+        return 'petty';
+      case 4:
+        return 'custody';
+      case 5:
+        return 'reports';
+      default:
+        return 'summary';
+    }
+  }
+
+  @override
+  State<AccountsPage> createState() => _AccountsPageState();
+}
+
+class _AccountsPageState extends State<AccountsPage> with SingleTickerProviderStateMixin {
+  TabController? _tabController;
+  bool _controllerReady = false;
+  bool _ignoreTabListener = false;
+
+  @override
+  void dispose() {
+    _tabController?.removeListener(_onTabControllerTick);
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  void _onTabControllerTick() {
+    final c = _tabController;
+    if (c == null || c.indexIsChanging || _ignoreTabListener) return;
+    final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+    if (officeCode.isEmpty) return;
+    final uri = GoRouterState.of(context).uri;
+    final fromUri = AccountsPage.tabIndexFromUri(uri);
+    if (c.index == fromUri) return;
+
+    final q = Map<String, String>.from(uri.queryParameters);
+    q['tab'] = AccountsPage.tabQueryValueForIndex(c.index);
+    context.go(Uri(path: '/o/$officeCode/accounts', queryParameters: q).toString());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final i = AccountsPage.tabIndexFromUri(GoRouterState.of(context).uri);
+    if (!_controllerReady) {
+      _tabController = TabController(length: 6, vsync: this, initialIndex: i);
+      _tabController!.addListener(_onTabControllerTick);
+      _controllerReady = true;
+      return;
+    }
+    final c = _tabController!;
+    if (c.index != i) {
+      _ignoreTabListener = true;
+      c.index = i;
+      _ignoreTabListener = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final uri = GoRouterState.of(context).uri;
-    final initial = _tabIndexFromUri(uri);
+    final c = _tabController;
+    if (c == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -54,38 +123,36 @@ class AccountsPage extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: DefaultTabController(
-            length: 6,
-            initialIndex: initial,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const TabBar(
-                  isScrollable: true,
-                  tabs: [
-                    Tab(text: 'ملخص مالي'),
-                    Tab(text: 'استلام نقدية'),
-                    Tab(text: 'صرف نقدية'),
-                    Tab(text: 'النثرية'),
-                    Tab(text: 'العُهد'),
-                    Tab(text: 'تقارير'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TabBar(
+                controller: c,
+                isScrollable: true,
+                tabs: const [
+                  Tab(text: 'ملخص مالي'),
+                  Tab(text: 'استلام نقدية'),
+                  Tab(text: 'صرف نقدية'),
+                  Tab(text: 'النثرية'),
+                  Tab(text: 'العُهد'),
+                  Tab(text: 'تقارير'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: TabBarView(
+                  controller: c,
+                  children: const [
+                    _FinanceOverviewTab(),
+                    _ReceiveCashTab(),
+                    _OfficeExpensesTab(),
+                    PettyCashPage(),
+                    CustodyPage(),
+                    _ReportsTab(),
                   ],
                 ),
-                const SizedBox(height: 12),
-                const Expanded(
-                  child: TabBarView(
-                    children: [
-                      _FinanceOverviewTab(),
-                      _ReceiveCashTab(),
-                      _OfficeExpensesTab(),
-                      PettyCashPage(),
-                      CustodyPage(),
-                      _ReportsTab(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],

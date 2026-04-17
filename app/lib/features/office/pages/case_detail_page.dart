@@ -10,6 +10,7 @@ import 'package:lawyer_app/data/api/case_files_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/sessions_api.dart';
 import 'package:lawyer_app/data/api/transactions_api.dart';
 import 'package:web/web.dart' as web;
@@ -30,6 +31,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
   final _transactionsApi = TransactionsApi();
   final _filesApi = CaseFilesApi();
   final _meApi = MeApi();
+  final _permApi = PermissionsApi();
 
   late Future<_CaseDetailData> _future = _load();
 
@@ -41,6 +43,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
       _transactionsApi.listForCase(widget.caseId),
       _filesApi.list(caseId: widget.caseId),
       _meApi.me(),
+      _permApi.myPermissions(),
     ]);
     final c = results[0] as CaseDto;
     final clients = results[1] as List<ClientDto>;
@@ -49,6 +52,8 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
     final txs = results[3] as List<CaseTransactionDto>;
     final files = results[4] as List<CaseFileDto>;
     final me = results[5] as MeDto;
+    final perms = results[6] as UserPermissionsDto;
+    final canViewAccounts = perms.permissions.contains('accounts.read');
     ClientDto? client;
     for (final cl in clients) {
       if (cl.id == c.clientId) {
@@ -63,6 +68,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
       transactions: txs,
       files: files,
       me: me,
+      canViewAccounts: canViewAccounts,
     );
   }
 
@@ -622,6 +628,26 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
                                 style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                               ),
                             ],
+                            if (d.canViewAccounts && officeCode.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: () => context.go('/o/$officeCode/accounts/case/${c.id}'),
+                                    icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                                    label: const Text('حساب القضية التفصيلي'),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: () =>
+                                        context.go('/o/$officeCode/accounts?tab=summary&case_id=${c.id}'),
+                                    icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
+                                    label: const Text('الملخص المالي للفترة'),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -908,6 +934,7 @@ class _CaseDetailData {
     required this.transactions,
     required this.files,
     required this.me,
+    required this.canViewAccounts,
   });
 
   final CaseDto caseDto;
@@ -916,6 +943,7 @@ class _CaseDetailData {
   final List<CaseTransactionDto> transactions;
   final List<CaseFileDto> files;
   final MeDto me;
+  final bool canViewAccounts;
 }
 
 class _SummaryCard extends StatelessWidget {
