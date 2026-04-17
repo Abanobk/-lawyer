@@ -1,5 +1,5 @@
 # نشر على نفس السيرفر (TrueNAS) عبر self-hosted runner.
-# النشر: sudo -n /usr/local/sbin/lawyer-gh-deploy.sh — ثبّت مرة واحدة كـ root:
+# النشر: sudo -n /root/bin/lawyer-gh-deploy.sh — ثبّت مرة واحدة كـ root:
 #   bash infra/github-runner/allow-sudo-deploy.sh
 # لتثبيت الـ runner: infra/github-runner/setup-durable-service.sh
 
@@ -16,4 +16,4 @@ jobs:
     steps:
       - name: Deploy (pull + compose)
         shell: bash
-        run: sudo -n /usr/local/sbin/lawyer-gh-deploy.sh
+        run: sudo -n /root/bin/lawyer-gh-deploy.sh

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# يُنسَخ إلى /usr/local/sbin بواسطة allow-sudo-deploy.sh — لا تعتمد على مسار الريبو للسكربت نفسه.
+# يُنسَخ إلى /root/bin (أو LAWYER_DEPLOY_SCRIPT) بواسطة allow-sudo-deploy.sh — لا تعتمد على مسار الريبو للسكربت نفسه.
 set -euo pipefail
 cd "/mnt/marichia/files/app-data/lawyer/repo"
 git fetch origin main

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# ينسخ سكربت النشر إلى /usr/local/sbin ويضيف sudoers لـ githubrunner (NOPASSWD على هذا الملف فقط).
+# ينسخ سكربت النشر إلى مسار قابل للكتابة (افتراضي: /root/bin — TrueNAS يجعل /usr/local أحيانًا read-only).
+# يضيف sudoers لـ githubrunner (NOPASSWD على هذا الملف فقط).
 # شغّل مرة واحدة على TrueNAS كـ root من داخل الريبو:
 #   bash infra/github-runner/allow-sudo-deploy.sh
 #
@@ -8,7 +9,8 @@ set -euo pipefail
 RUNNER_USER="${RUNNER_USER:-githubrunner}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/lawyer-gh-deploy.sh"
-DEST="/usr/local/sbin/lawyer-gh-deploy.sh"
+# TrueNAS: لا تستخدم /usr/local/sbin إن كان RO — عيّن DEST يدويًا إن لزم
+DEST="${LAWYER_DEPLOY_SCRIPT:-/root/bin/lawyer-gh-deploy.sh}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "شغّل كـ root"
@@ -25,6 +27,7 @@ if [[ ! -f "$SRC" ]]; then
   exit 1
 fi
 
+mkdir -p "$(dirname "$DEST")"
 install -m 755 -o root -g root "$SRC" "$DEST"
 
 f="/etc/sudoers.d/gh-runner-lawyer-deploy"
