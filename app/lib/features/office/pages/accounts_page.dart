@@ -170,12 +170,19 @@ class _FinanceOverviewTab extends StatefulWidget {
 
 class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
   final _api = FinanceApi();
+  final _clientsApi = ClientsApi();
+  final _casesApi = CasesApi();
   final _money = NumberFormat('#,##0.00', 'ar');
   final _df = DateFormat('yyyy-MM-dd');
+
+  late final Future<List<ClientDto>> _clientsFuture = _clientsApi.list();
 
   DateTime _from = DateTime.now().subtract(const Duration(days: 29));
   DateTime _to = DateTime.now();
   int? _caseIdFilter;
+  int? _clientId;
+  List<CaseDto> _cases = const [];
+  bool _casesLoading = false;
 
   FinancialSummaryDto? _summary;
   List<FinancialMovementDto> _movements = const [];
@@ -188,11 +195,86 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _readUriAndLoad());
   }
 
+  void _syncCaseFilterToUrl() {
+    final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+    if (officeCode.isEmpty) return;
+    final uri = GoRouterState.of(context).uri;
+    final q = Map<String, String>.from(uri.queryParameters);
+    q['tab'] = AccountsPage.tabQueryValueForIndex(AccountsPage.tabIndexFromUri(uri));
+    if (_caseIdFilter != null) {
+      q['case_id'] = '${_caseIdFilter!}';
+    } else {
+      q.remove('case_id');
+    }
+    context.go(Uri(path: '/o/$officeCode/accounts', queryParameters: q).toString());
+  }
+
   void _readUriAndLoad() {
     final uri = GoRouterState.of(context).uri;
     final raw = uri.queryParameters['case_id'];
     final id = int.tryParse(raw ?? '');
-    setState(() => _caseIdFilter = id);
+    if (id != null) {
+      setState(() => _caseIdFilter = id);
+      _primeClientForCase(id);
+    } else {
+      setState(() {
+        _caseIdFilter = null;
+        _clientId = null;
+        _cases = const [];
+      });
+      _load();
+    }
+  }
+
+  Future<void> _primeClientForCase(int caseId) async {
+    try {
+      final c = await _casesApi.get(caseId);
+      if (!mounted) return;
+      setState(() {
+        _clientId = c.clientId;
+        _casesLoading = true;
+      });
+      final list = await _casesApi.list(clientId: c.clientId);
+      if (!mounted) return;
+      setState(() {
+        _cases = list;
+        _caseIdFilter = caseId;
+        _casesLoading = false;
+      });
+      _load();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _casesLoading = false);
+      _load();
+    }
+  }
+
+  Future<void> _onClientSelected(int clientId) async {
+    setState(() {
+      _clientId = clientId;
+      _casesLoading = true;
+      _caseIdFilter = null;
+      _cases = const [];
+    });
+    final list = await _casesApi.list(clientId: clientId);
+    if (!mounted) return;
+    setState(() {
+      _cases = list;
+      _casesLoading = false;
+    });
+    _syncCaseFilterToUrl();
+    _load();
+  }
+
+  void _onCaseSelected(int caseId) {
+    setState(() => _caseIdFilter = caseId);
+    _syncCaseFilterToUrl();
+    _load();
+  }
+
+  void _clearCaseFilter() {
+    setState(() => _caseIdFilter = null);
+    _syncCaseFilterToUrl();
     _load();
   }
 
@@ -267,7 +349,68 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
               'ملخص مالي موحّد للفترة (قضايا + مكتب + عهد عند توفر الصلاحية).',
               style: TextStyle(color: Colors.grey.shade700),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'فلتر القضية (اختياري): اختر الموكل ثم القضية لعرض الملخص والحركات لتلك القضية فقط. بدون اختيار قضية يظهر ملخص كل المكتب.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+            ),
             const SizedBox(height: 12),
+            FutureBuilder<List<ClientDto>>(
+              future: _clientsFuture,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  );
+                }
+                if (snap.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text('تعذر تحميل الموكلين: ${snap.error}', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  );
+                }
+                final clients = snap.data ?? const <ClientDto>[];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      DropdownMenu<int>(
+                        width: 360,
+                        label: const Text('الموكل'),
+                        initialSelection: _clientId,
+                        enabled: !_casesLoading,
+                        dropdownMenuEntries: clients.map((c) => DropdownMenuEntry<int>(value: c.id, label: c.fullName)).toList(),
+                        onSelected: (v) {
+                          if (v == null) return;
+                          _onClientSelected(v);
+                        },
+                      ),
+                      DropdownMenu<int>(
+                        width: 420,
+                        label: const Text('القضية (فلتر الملخص)'),
+                        initialSelection: _caseIdFilter,
+                        enabled: !_casesLoading && _clientId != null && _cases.isNotEmpty,
+                        dropdownMenuEntries: _cases.map((c) => DropdownMenuEntry<int>(value: c.id, label: c.title)).toList(),
+                        onSelected: (v) {
+                          if (v == null) return;
+                          _onCaseSelected(v);
+                        },
+                      ),
+                      if (_casesLoading)
+                        const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -286,7 +429,7 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
                 if (_caseIdFilter != null)
                   Chip(
                     label: Text('قضية #$_caseIdFilter'),
-                    onDeleted: () => setState(() => _caseIdFilter = null),
+                    onDeleted: _clearCaseFilter,
                   ),
                 FilledButton.icon(
                   onPressed: _loading ? null : _load,
