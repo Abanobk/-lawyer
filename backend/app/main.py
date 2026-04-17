@@ -87,6 +87,7 @@ from app.schemas import (
     PermissionCatalogItem,
     OfficeUserOut,
     OfficeOut,
+    OfficePatch,
     SignupRequest,
     SignupResponse,
     MeProfilePatch,
@@ -237,6 +238,19 @@ def _gen_office_code(length: int = 10) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+def _office_to_out(office: Office) -> OfficeOut:
+    return OfficeOut(
+        id=office.id,
+        code=office.code,
+        name=office.name,
+        status=office.status,
+        created_at=office.created_at,
+        phone=getattr(office, "phone", None),
+        contact_email=getattr(office, "contact_email", None),
+        address=getattr(office, "address", None),
+    )
+
+
 def init_db(max_wait_seconds: int = 30) -> None:
     """
     Ensure DB is reachable before trying to create tables.
@@ -356,6 +370,15 @@ def init_db(max_wait_seconds: int = 30) -> None:
                 else:
                     # create_all should create it, but keep best-effort for older DBs
                     pass
+
+                if "offices" in table_names:
+                    off_cols = {c["name"] for c in insp.get_columns("offices")}
+                    if "phone" not in off_cols:
+                        conn.execute(text("ALTER TABLE offices ADD COLUMN phone VARCHAR(50)"))
+                    if "contact_email" not in off_cols:
+                        conn.execute(text("ALTER TABLE offices ADD COLUMN contact_email VARCHAR(255)"))
+                    if "address" not in off_cols:
+                        conn.execute(text("ALTER TABLE offices ADD COLUMN address TEXT"))
             return
         except OperationalError as e:
             last_err = e
@@ -586,7 +609,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     while db.scalar(select(Office).where(Office.code == code)):
         code = _gen_office_code()
 
-    office = Office(code=code, name=payload.office_name, status=OfficeStatus.active)
+    office = Office(code=code, name=payload.office_name, phone=payload.phone, status=OfficeStatus.active)
     db.add(office)
     db.flush()
 
@@ -686,7 +709,32 @@ def my_office(db: Session = Depends(get_db), user: User = Depends(require_office
     office = db.get(Office, user.office_id)
     if not office:
         raise HTTPException(status_code=404, detail="Office not found")
-    return OfficeOut(id=office.id, code=office.code, name=office.name, status=office.status, created_at=office.created_at)
+    return _office_to_out(office)
+
+
+@app.patch("/office", response_model=OfficeOut)
+def patch_my_office(
+    payload: OfficePatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_office_admin),
+):
+    office = db.get(Office, user.office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        return _office_to_out(office)
+    if "name" in data:
+        office.name = data["name"]
+    if "phone" in data:
+        office.phone = data["phone"]
+    if "contact_email" in data:
+        office.contact_email = data["contact_email"]
+    if "address" in data:
+        office.address = data["address"]
+    db.commit()
+    db.refresh(office)
+    return _office_to_out(office)
 
 
 @app.get("/office/users", response_model=list[OfficeUserOut])
@@ -2065,7 +2113,7 @@ def protected_example(_: User = Depends(require_active_subscription)):
 @app.get("/admin/offices", response_model=list[OfficeOut])
 def admin_list_offices(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
     offices = db.scalars(select(Office).order_by(Office.id.desc())).all()
-    return [OfficeOut(id=o.id, code=o.code, name=o.name, status=o.status, created_at=o.created_at) for o in offices]
+    return [_office_to_out(o) for o in offices]
 
 
 @app.get("/admin/permissions", response_model=list[PermissionCatalogItem])

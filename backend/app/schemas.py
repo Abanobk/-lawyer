@@ -14,8 +14,17 @@ class TokenPair(BaseModel):
 class SignupRequest(BaseModel):
     office_name: str = Field(min_length=2, max_length=200)
     full_name: str = Field(min_length=2, max_length=200, description="اسم صاحب الحساب للترحيب")
+    phone: str = Field(min_length=8, max_length=32, description="جوال المكتب — إلزامي")
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
+
+    @field_validator("phone")
+    @classmethod
+    def _normalize_phone(cls, v: str) -> str:
+        s = v.strip().replace(" ", "")
+        if len(s) < 8:
+            raise ValueError("phone too short")
+        return s
 
 
 class MeProfilePatch(BaseModel):
@@ -50,6 +59,33 @@ class OfficeOut(BaseModel):
     name: str
     status: OfficeStatus
     created_at: datetime
+    phone: str | None = None
+    contact_email: str | None = None
+    address: str | None = None
+
+
+class OfficePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=200)
+    phone: str | None = Field(default=None, max_length=32)
+    contact_email: str | None = Field(default=None, max_length=255)
+    address: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("phone")
+    @classmethod
+    def _phone_optional(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().replace(" ", "")
+        if len(s) < 8:
+            raise ValueError("phone must be at least 8 digits when set")
+        return s
+
+    @field_validator("contact_email")
+    @classmethod
+    def _email_blank(cls, v: str | None) -> str | None:
+        if v is None or not str(v).strip():
+            return None
+        return str(v).strip()
 
 
 class UserOut(BaseModel):

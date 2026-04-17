@@ -20,6 +20,7 @@ class _SignupPageState extends State<SignupPage> {
   final _formKey = GlobalKey<FormState>();
   final _officeCtrl = TextEditingController();
   final _fullNameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _api = AuthApi();
@@ -30,6 +31,8 @@ class _SignupPageState extends State<SignupPage> {
   @override
   void dispose() {
     _officeCtrl.dispose();
+    _fullNameCtrl.dispose();
+    _phoneCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
@@ -43,6 +46,7 @@ class _SignupPageState extends State<SignupPage> {
       final result = await _api.signup(
         officeName: _officeCtrl.text.trim(),
         fullName: _fullNameCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
       );
@@ -190,6 +194,20 @@ class _SignupPageState extends State<SignupPage> {
                         validator: (v) {
                           final t = v?.trim() ?? '';
                           if (t.length < 2) return 'أدخل اسمك الكامل (حرفان على الأقل)';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _phoneCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'رقم الموبايل (إلزامي)',
+                        ),
+                        keyboardType: TextInputType.phone,
+                        textInputAction: TextInputAction.next,
+                        validator: (v) {
+                          final t = v?.trim().replaceAll(' ', '') ?? '';
+                          if (t.length < 8) return 'أدخل رقم موبايل صحيح (8 أرقام على الأقل)';
                           return null;
                         },
                       ),

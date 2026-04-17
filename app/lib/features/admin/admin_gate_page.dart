@@ -2017,6 +2017,11 @@ class _OfficesSubscriptionListPanelState extends State<_OfficesSubscriptionListP
               ),
               const SizedBox(height: 8),
               Text('كود: ${o.code}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
+              if (o.phone != null && o.phone!.trim().isNotEmpty)
+                Text(
+                  'جوال: ${o.phone}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54, fontWeight: FontWeight.w600),
+                ),
               Text('حالة المكتب: ${o.status}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
               const Spacer(),
               if (sub != null) ...[

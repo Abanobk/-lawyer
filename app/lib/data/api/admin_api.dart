@@ -14,6 +14,9 @@ class AdminOfficeDto {
     required this.name,
     required this.status,
     required this.createdAt,
+    this.phone,
+    this.contactEmail,
+    this.address,
   });
 
   final int id;
@@ -21,6 +24,9 @@ class AdminOfficeDto {
   final String name;
   final String status;
   final DateTime createdAt;
+  final String? phone;
+  final String? contactEmail;
+  final String? address;
 
   factory AdminOfficeDto.fromJson(Map<String, dynamic> json) {
     return AdminOfficeDto(
@@ -29,6 +35,9 @@ class AdminOfficeDto {
       name: json['name'] as String,
       status: json['status'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
+      phone: json['phone'] as String?,
+      contactEmail: json['contact_email'] as String?,
+      address: json['address'] as String?,
     );
   }
 }

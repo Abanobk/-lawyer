@@ -37,6 +37,9 @@ class Office(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[OfficeStatus] = mapped_column(Enum(OfficeStatus), default=OfficeStatus.active)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

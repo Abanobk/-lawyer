@@ -1,5 +1,40 @@
 import 'package:lawyer_app/data/api/api_client.dart';
 
+class OfficeDto {
+  OfficeDto({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.status,
+    required this.createdAt,
+    this.phone,
+    this.contactEmail,
+    this.address,
+  });
+
+  final int id;
+  final String code;
+  final String name;
+  final String status;
+  final DateTime createdAt;
+  final String? phone;
+  final String? contactEmail;
+  final String? address;
+
+  factory OfficeDto.fromJson(Map<String, dynamic> json) {
+    return OfficeDto(
+      id: json['id'] as int,
+      code: json['code'] as String,
+      name: json['name'] as String,
+      status: (json['status'] as String?) ?? 'active',
+      createdAt: DateTime.parse(json['created_at'] as String),
+      phone: json['phone'] as String?,
+      contactEmail: json['contact_email'] as String?,
+      address: json['address'] as String?,
+    );
+  }
+}
+
 class OfficeUserDto {
   OfficeUserDto({
     required this.id,
@@ -59,17 +94,18 @@ class OfficeApi {
   OfficeApi({ApiClient? client}) : _client = client ?? ApiClient();
   final ApiClient _client;
 
-  Future<({int id, String code, String name})> myOffice() async {
-    return _client.getJson<({int id, String code, String name})>(
+  Future<OfficeDto> myOffice() async {
+    return _client.getJson<OfficeDto>(
       'office',
-      decode: (json) {
-        final m = json as Map<String, dynamic>;
-        return (
-          id: m['id'] as int,
-          code: m['code'] as String,
-          name: m['name'] as String,
-        );
-      },
+      decode: (json) => OfficeDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<OfficeDto> patchOffice(Map<String, dynamic> body) async {
+    return _client.patchJson<OfficeDto>(
+      'office',
+      body,
+      decode: (json) => OfficeDto.fromJson(json as Map<String, dynamic>),
     );
   }
 
@@ -106,4 +142,3 @@ class OfficeApi {
     );
   }
 }
-

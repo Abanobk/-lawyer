@@ -184,7 +184,7 @@ class _Sidebar extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: FutureBuilder<OfficeInfo?>(
+                child: FutureBuilder<OfficeDto?>(
                   future: () async {
                     try {
                       return await OfficeApi().myOffice();
@@ -386,7 +386,7 @@ class _DesktopOfficeHeader extends StatelessWidget {
                 label: const Text('نسخ رابط المكتب'),
               ),
               const Spacer(),
-              FutureBuilder<(MeDto, OfficeInfo)>(
+              FutureBuilder<(MeDto, OfficeDto)>(
                 future: loadOfficeWelcomeContext(),
                 builder: (context, snap) {
                   if (!snap.hasData) {

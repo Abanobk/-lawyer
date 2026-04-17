@@ -1,10 +1,8 @@
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
 
-typedef OfficeInfo = ({int id, String code, String name});
-
 /// يحمّل المستخدم الحالي وبيانات المكتب لعرض الترحيب (شريط علوي + بانر).
-Future<(MeDto, OfficeInfo)> loadOfficeWelcomeContext() async {
+Future<(MeDto, OfficeDto)> loadOfficeWelcomeContext() async {
   final me = await MeApi().me();
   final o = await OfficeApi().myOffice();
   return (me, o);

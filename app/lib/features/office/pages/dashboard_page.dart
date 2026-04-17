@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
+import 'package:lawyer_app/data/api/office_api.dart';
 import 'package:lawyer_app/features/office/office_welcome_context.dart';
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
@@ -92,7 +93,7 @@ class _HeroBanner extends StatelessWidget {
           colors: [Color(0xFF0F2744), Color(0xFF1E3A8A)],
         ),
       ),
-      child: FutureBuilder<(MeDto, OfficeInfo)>(
+      child: FutureBuilder<(MeDto, OfficeDto)>(
         future: loadOfficeWelcomeContext(),
         builder: (context, snap) {
           final who = snap.hasData ? officeUserDisplayName(snap.data!.$1) : '…';
