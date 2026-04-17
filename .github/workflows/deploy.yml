@@ -1,6 +1,7 @@
 # نشر على نفس السيرفر (TrueNAS) عبر self-hosted runner.
-# لتثبيت الـ runner كخدمة دائمة وتجاوز noexec على /home انظر:
-#   infra/github-runner/setup-durable-service.sh
+# إذا ظهر Permission denied على cd للريبو، شغّل مرة واحدة على السيرفر كـ root:
+#   bash infra/github-runner/grant-runner-repo-access.sh
+# لتثبيت الـ runner كخدمة دائمة: infra/github-runner/setup-durable-service.sh
 
 name: Deploy server
 
