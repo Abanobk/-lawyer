@@ -306,6 +306,93 @@ class OfficeExpenseReceiptFile(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
 
 
+class PettyCashFund(Base):
+    """صندوق نثرية لكل مكتب (يمكن إنشاء أكثر من صندوق لاحقاً)."""
+
+    __tablename__ = "petty_cash_funds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    # إذا كان المبلغ > هذا الرقم يجب إرفاق إيصال عند الصرف (0 = الإيصال اختياري دائماً)
+    receipt_required_above: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    current_balance: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("idx_petty_cash_funds_office_active", PettyCashFund.office_id, PettyCashFund.is_active)
+
+
+class PettyCashTopUp(Base):
+    __tablename__ = "petty_cash_topups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    fund_id: Mapped[int] = mapped_column(ForeignKey("petty_cash_funds.id"), index=True)
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("idx_petty_topups_fund_occurred", PettyCashTopUp.fund_id, PettyCashTopUp.occurred_at)
+
+
+class PettyCashSpend(Base):
+    __tablename__ = "petty_cash_spends"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    fund_id: Mapped[int] = mapped_column(ForeignKey("petty_cash_funds.id"), index=True)
+
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    case_id: Mapped[int | None] = mapped_column(ForeignKey("cases.id"), nullable=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("idx_petty_spends_fund_occurred", PettyCashSpend.fund_id, PettyCashSpend.occurred_at)
+
+
+class PettyCashSettlement(Base):
+    """تسوية جرد: يُضاف المبلغ إلى رصيد الصندوق (سالب إذا عجز)."""
+
+    __tablename__ = "petty_cash_settlements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    fund_id: Mapped[int] = mapped_column(ForeignKey("petty_cash_funds.id"), index=True)
+
+    adjustment_amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("idx_petty_settlements_fund_occurred", PettyCashSettlement.fund_id, PettyCashSettlement.occurred_at)
+
+
+class PettyCashReceiptFile(Base):
+    __tablename__ = "petty_cash_receipt_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    spend_id: Mapped[int] = mapped_column(ForeignKey("petty_cash_spends.id"), index=True)
+
+    original_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    storage_path: Mapped[str] = mapped_column(String(800), unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
 class CustodyAccount(Base):
     __tablename__ = "custody_accounts"
 

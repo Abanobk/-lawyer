@@ -11,6 +11,9 @@ class FinancialSummaryDto {
     required this.totalCustodyAdvances,
     required this.totalCustodySpendsApproved,
     required this.totalCustodySpendsPending,
+    this.totalPettyTopUps = 0,
+    this.totalPettySpends = 0,
+    this.totalPettySettlementNet = 0,
     required this.netCase,
     required this.netOperatingSimple,
     required this.includesCustody,
@@ -25,6 +28,9 @@ class FinancialSummaryDto {
   final double totalCustodyAdvances;
   final double totalCustodySpendsApproved;
   final double totalCustodySpendsPending;
+  final double totalPettyTopUps;
+  final double totalPettySpends;
+  final double totalPettySettlementNet;
   final double netCase;
   final double netOperatingSimple;
   final bool includesCustody;
@@ -40,6 +46,9 @@ class FinancialSummaryDto {
       totalCustodyAdvances: (json['total_custody_advances'] as num).toDouble(),
       totalCustodySpendsApproved: (json['total_custody_spends_approved'] as num).toDouble(),
       totalCustodySpendsPending: (json['total_custody_spends_pending'] as num).toDouble(),
+      totalPettyTopUps: (json['total_petty_top_ups'] as num?)?.toDouble() ?? 0,
+      totalPettySpends: (json['total_petty_spends'] as num?)?.toDouble() ?? 0,
+      totalPettySettlementNet: (json['total_petty_settlement_net'] as num?)?.toDouble() ?? 0,
       netCase: (json['net_case'] as num).toDouble(),
       netOperatingSimple: (json['net_operating_simple'] as num).toDouble(),
       includesCustody: json['includes_custody'] as bool,

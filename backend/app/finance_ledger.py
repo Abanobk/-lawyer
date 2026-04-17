@@ -15,6 +15,10 @@ from app.models import (
     CustodySpendStatus,
     MoneyDirection,
     OfficeExpense,
+    PettyCashFund,
+    PettyCashSettlement,
+    PettyCashSpend,
+    PettyCashTopUp,
     User,
 )
 
@@ -26,6 +30,9 @@ FINANCE_KINDS_ALL = frozenset(
         "custody_advance",
         "custody_spend_approved",
         "custody_spend_pending",
+        "petty_top_up",
+        "petty_spend",
+        "petty_settlement",
     }
 )
 
@@ -36,6 +43,9 @@ _KIND_LABELS_AR: dict[str, str] = {
     "custody_advance": "عهدة — سلفة / تغذية",
     "custody_spend_approved": "عهدة — مصروف معتمد",
     "custody_spend_pending": "عهدة — مصروف قيد المراجعة",
+    "petty_top_up": "نثرية — تغذية الصندوق",
+    "petty_spend": "نثرية — صرف",
+    "petty_settlement": "نثرية — تسوية جرد",
 }
 
 
@@ -133,8 +143,33 @@ def finance_summary(
             qs_pend = qs_pend.where(c)
         total_custody_spends_pending = float(db.scalar(qs_pend) or 0)
 
+    total_petty_top_ups = 0.0
+    total_petty_spends = 0.0
+    total_petty_settlement_net = 0.0
+    if case_id is None:
+        qpt = select(func.coalesce(func.sum(PettyCashTopUp.amount), 0)).where(PettyCashTopUp.office_id == office_id)
+        for c in _custody_time_filter(PettyCashTopUp.occurred_at, start, end):
+            qpt = qpt.where(c)
+        total_petty_top_ups = float(db.scalar(qpt) or 0)
+
+        qps = select(func.coalesce(func.sum(PettyCashSettlement.adjustment_amount), 0)).where(
+            PettyCashSettlement.office_id == office_id
+        )
+        for c in _custody_time_filter(PettyCashSettlement.occurred_at, start, end):
+            qps = qps.where(c)
+        total_petty_settlement_net = float(db.scalar(qps) or 0)
+
+    qpsp = select(func.coalesce(func.sum(PettyCashSpend.amount), 0)).where(PettyCashSpend.office_id == office_id)
+    if case_id is not None:
+        qpsp = qpsp.where(PettyCashSpend.case_id == case_id)
+    for c in _custody_time_filter(PettyCashSpend.occurred_at, start, end):
+        qpsp = qpsp.where(c)
+    total_petty_spends = float(db.scalar(qpsp) or 0)
+
     net_case = total_case_income - total_case_expense
-    net_operating_simple = total_case_income - total_case_expense - total_office_expense
+    net_operating_simple = (
+        total_case_income - total_case_expense - total_office_expense - total_petty_top_ups
+    )
 
     return {
         "period_from": from_d,
@@ -146,6 +181,9 @@ def finance_summary(
         "total_custody_advances": total_custody_advances,
         "total_custody_spends_approved": total_custody_spends_approved,
         "total_custody_spends_pending": total_custody_spends_pending,
+        "total_petty_top_ups": total_petty_top_ups,
+        "total_petty_spends": total_petty_spends,
+        "total_petty_settlement_net": total_petty_settlement_net,
         "net_case": net_case,
         "net_operating_simple": net_operating_simple,
         "includes_custody": include_custody,
@@ -311,12 +349,97 @@ def finance_movements(
                     }
                 )
 
+    funds = db.scalars(select(PettyCashFund).where(PettyCashFund.office_id == office_id)).all()
+    fund_names = {f.id: f.name for f in funds}
+
+    if "petty_top_up" in want and case_id is None:
+        q = select(PettyCashTopUp).where(PettyCashTopUp.office_id == office_id)
+        for c in _custody_time_filter(PettyCashTopUp.occurred_at, start, end):
+            q = q.where(c)
+        q = q.order_by(PettyCashTopUp.occurred_at.desc(), PettyCashTopUp.id.desc())
+        for t in db.scalars(q).all():
+            fname = fund_names.get(t.fund_id, "")
+            rows.append(
+                {
+                    "ledger_key": f"pt:{t.id}",
+                    "source_type": "petty_cash_topup",
+                    "source_id": t.id,
+                    "kind": "petty_top_up",
+                    "kind_label_ar": _KIND_LABELS_AR["petty_top_up"],
+                    "occurred_at": t.occurred_at,
+                    "amount": float(t.amount),
+                    "direction": "expense",
+                    "affects_office_cash": True,
+                    "case_id": None,
+                    "case_title": None,
+                    "custody_user_id": None,
+                    "custody_user_email": None,
+                    "description": f"{fname} — {t.notes}" if t.notes else fname,
+                }
+            )
+
+    if "petty_spend" in want:
+        q = select(PettyCashSpend).where(PettyCashSpend.office_id == office_id)
+        if case_id is not None:
+            q = q.where(PettyCashSpend.case_id == case_id)
+        for c in _custody_time_filter(PettyCashSpend.occurred_at, start, end):
+            q = q.where(c)
+        q = q.order_by(PettyCashSpend.occurred_at.desc(), PettyCashSpend.id.desc())
+        for s in db.scalars(q).all():
+            fname = fund_names.get(s.fund_id, "")
+            desc = s.description or ""
+            rows.append(
+                {
+                    "ledger_key": f"psp:{s.id}",
+                    "source_type": "petty_cash_spend",
+                    "source_id": s.id,
+                    "kind": "petty_spend",
+                    "kind_label_ar": _KIND_LABELS_AR["petty_spend"],
+                    "occurred_at": s.occurred_at,
+                    "amount": float(s.amount),
+                    "direction": "expense",
+                    "affects_office_cash": False,
+                    "case_id": s.case_id,
+                    "case_title": None,
+                    "custody_user_id": None,
+                    "custody_user_email": None,
+                    "description": f"{fname} — {desc}".strip(" —") if desc else fname,
+                }
+            )
+
+    if "petty_settlement" in want and case_id is None:
+        q = select(PettyCashSettlement).where(PettyCashSettlement.office_id == office_id)
+        for c in _custody_time_filter(PettyCashSettlement.occurred_at, start, end):
+            q = q.where(c)
+        q = q.order_by(PettyCashSettlement.occurred_at.desc(), PettyCashSettlement.id.desc())
+        for st in db.scalars(q).all():
+            fname = fund_names.get(st.fund_id, "")
+            adj = float(st.adjustment_amount)
+            rows.append(
+                {
+                    "ledger_key": f"pst:{st.id}",
+                    "source_type": "petty_cash_settlement",
+                    "source_id": st.id,
+                    "kind": "petty_settlement",
+                    "kind_label_ar": _KIND_LABELS_AR["petty_settlement"],
+                    "occurred_at": st.occurred_at,
+                    "amount": abs(adj),
+                    "direction": "income" if adj > 0 else "expense",
+                    "affects_office_cash": False,
+                    "case_id": None,
+                    "case_title": None,
+                    "custody_user_id": None,
+                    "custody_user_email": None,
+                    "description": f"{fname} — {st.notes}" if st.notes else fname,
+                }
+            )
+
     case_ids_spend = {r["case_id"] for r in rows if r.get("case_id")}
     titles_fill = _load_case_titles(db, office_id, case_ids_spend)
     for r in rows:
         cid = r.get("case_id")
         if cid and not r.get("case_title"):
-            r["case_title"] = titles_fill.get(cid) or extra_titles.get(cid)
+            r["case_title"] = titles_fill.get(cid)
 
     rows.sort(key=lambda r: (r["occurred_at"], r["ledger_key"]), reverse=True)
     return rows

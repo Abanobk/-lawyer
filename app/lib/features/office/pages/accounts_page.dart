@@ -9,6 +9,7 @@ import 'package:lawyer_app/data/api/finance_api.dart';
 import 'package:lawyer_app/data/api/office_expenses_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
+import 'package:lawyer_app/features/office/pages/petty_cash_page.dart';
 
 class AccountsPage extends StatelessWidget {
   const AccountsPage({super.key});
@@ -22,10 +23,12 @@ class AccountsPage extends StatelessWidget {
         return 1;
       case 'expenses':
         return 2;
-      case 'custody':
+      case 'petty':
         return 3;
-      case 'reports':
+      case 'custody':
         return 4;
+      case 'reports':
+        return 5;
       default:
         return 0;
     }
@@ -51,7 +54,7 @@ class AccountsPage extends StatelessWidget {
         const SizedBox(height: 16),
         Expanded(
           child: DefaultTabController(
-            length: 5,
+            length: 6,
             initialIndex: initial,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -62,6 +65,7 @@ class AccountsPage extends StatelessWidget {
                     Tab(text: 'ملخص مالي'),
                     Tab(text: 'استلام نقدية'),
                     Tab(text: 'صرف نقدية'),
+                    Tab(text: 'النثرية'),
                     Tab(text: 'العُهد'),
                     Tab(text: 'تقارير'),
                   ],
@@ -73,6 +77,7 @@ class AccountsPage extends StatelessWidget {
                       _FinanceOverviewTab(),
                       _ReceiveCashTab(),
                       _OfficeExpensesTab(),
+                      PettyCashPage(),
                       CustodyPage(),
                       _ReportsTab(),
                     ],
@@ -250,6 +255,9 @@ class _FinanceOverviewTabState extends State<_FinanceOverviewTab> {
                     _finCard(context, 'مصروفات المكتب', _summary!.totalOfficeExpense, const Color(0xFFEA580C)),
                     _finCard(context, 'صافي القضايا', _summary!.netCase, const Color(0xFF1E40AF)),
                     _finCard(context, 'صافي تشغيلي مبسّط', _summary!.netOperatingSimple, const Color(0xFF7C3AED)),
+                    _finCard(context, 'تغذية نثرية', _summary!.totalPettyTopUps, const Color(0xFF0891B2)),
+                    _finCard(context, 'صرف نثرية', _summary!.totalPettySpends, const Color(0xFFC026D3)),
+                    _finCard(context, 'تسويات نثرية (صافي)', _summary!.totalPettySettlementNet, const Color(0xFF4D7C0F)),
                     if (_summary!.includesCustody) ...[
                       _finCard(context, 'سلف عهد', _summary!.totalCustodyAdvances, const Color(0xFF0D9488)),
                       _finCard(context, 'مصروف عهد معتمد', _summary!.totalCustodySpendsApproved, const Color(0xFFBE185D)),

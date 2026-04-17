@@ -555,7 +555,96 @@ class FinancialSummaryOut(BaseModel):
     total_custody_advances: float
     total_custody_spends_approved: float
     total_custody_spends_pending: float
+    total_petty_top_ups: float = 0
+    total_petty_spends: float = 0
+    total_petty_settlement_net: float = 0
     net_case: float
     net_operating_simple: float
     includes_custody: bool
+
+
+class PettyCashFundCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    receipt_required_above: float = Field(default=0, ge=0, description="أعلى من هذا المبلغ يتطلب إيصالاً عند الصرف")
+
+
+class PettyCashFundPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    receipt_required_above: float | None = Field(default=None, ge=0)
+    is_active: bool | None = None
+
+
+class PettyCashFundOut(BaseModel):
+    id: int
+    name: str
+    receipt_required_above: float
+    current_balance: float
+    is_active: bool
+    created_at: datetime
+
+
+class PettyCashTopUpCreate(BaseModel):
+    amount: float = Field(gt=0)
+    notes: str | None = Field(default=None, max_length=500)
+    occurred_at: datetime | None = None
+
+
+class PettyCashTopUpOut(BaseModel):
+    id: int
+    fund_id: int
+    amount: float
+    notes: str | None
+    occurred_at: datetime
+    created_by_user_id: int | None
+    created_at: datetime
+
+
+class PettyCashSpendOut(BaseModel):
+    id: int
+    fund_id: int
+    amount: float
+    description: str | None
+    occurred_at: datetime
+    case_id: int | None
+    created_by_user_id: int | None
+    created_at: datetime
+
+
+class PettyCashSettlementCreate(BaseModel):
+    adjustment_amount: float = Field(description="يُضاف للرصيد (+ فائض، − عجز)")
+    notes: str | None = Field(default=None, max_length=500)
+    occurred_at: datetime | None = None
+
+
+class PettyCashSettlementOut(BaseModel):
+    id: int
+    fund_id: int
+    adjustment_amount: float
+    notes: str | None
+    occurred_at: datetime
+    created_by_user_id: int | None
+    created_at: datetime
+
+
+class PettyCashReceiptOut(BaseModel):
+    id: int
+    spend_id: int
+    original_name: str
+    content_type: str | None
+    size_bytes: int
+    uploaded_at: datetime
+
+
+class PettyCashPeriodReportOut(BaseModel):
+    fund_id: int
+    fund_name: str
+    current_balance: float
+    period_from: date
+    period_to: date
+    sum_top_ups: float
+    sum_spends: float
+    sum_settlements: float
+    net_change: float
+    opening_balance: float
+    closing_balance_implied: float
 

@@ -31,6 +31,11 @@ from app.models import (
     MoneyDirection,
     OfficeExpense,
     OfficeExpenseReceiptFile,
+    PettyCashFund,
+    PettyCashReceiptFile,
+    PettyCashSettlement,
+    PettyCashSpend,
+    PettyCashTopUp,
     Office,
     OfficeActivityDaily,
     OfficeStatus,
@@ -85,6 +90,16 @@ from app.schemas import (
     CustodyReportItem,
     FinancialMovementOut,
     FinancialSummaryOut,
+    PettyCashFundCreate,
+    PettyCashFundOut,
+    PettyCashFundPatch,
+    PettyCashPeriodReportOut,
+    PettyCashReceiptOut,
+    PettyCashSettlementCreate,
+    PettyCashSettlementOut,
+    PettyCashSpendOut,
+    PettyCashTopUpCreate,
+    PettyCashTopUpOut,
     OfficeUserCreate,
     OfficeUserCreateOut,
     PermissionCatalogItem,
@@ -184,6 +199,7 @@ TRACKED_ACTIVITY_PREFIXES: tuple[str, ...] = (
     "/office-expenses",
     "/reports",
     "/finance",
+    "/petty-cash",
 )
 
 
@@ -1920,6 +1936,404 @@ def report_client_account(client_id: int, db: Session = Depends(get_db), user: U
             )
         )
     return ClientAccountReportOut(client_id=client.id, client_name=client.full_name, cases=items)
+
+
+def _petty_fund_out(f: PettyCashFund) -> PettyCashFundOut:
+    return PettyCashFundOut(
+        id=f.id,
+        name=f.name,
+        receipt_required_above=float(f.receipt_required_above),
+        current_balance=float(f.current_balance),
+        is_active=f.is_active,
+        created_at=f.created_at,
+    )
+
+
+def _petty_opening_balance_before(db: Session, fund_id: int, before: datetime) -> float:
+    tu = db.scalar(
+        select(func.coalesce(func.sum(PettyCashTopUp.amount), 0)).where(
+            PettyCashTopUp.fund_id == fund_id,
+            PettyCashTopUp.occurred_at < before,
+        )
+    )
+    sp = db.scalar(
+        select(func.coalesce(func.sum(PettyCashSpend.amount), 0)).where(
+            PettyCashSpend.fund_id == fund_id,
+            PettyCashSpend.occurred_at < before,
+        )
+    )
+    st = db.scalar(
+        select(func.coalesce(func.sum(PettyCashSettlement.adjustment_amount), 0)).where(
+            PettyCashSettlement.fund_id == fund_id,
+            PettyCashSettlement.occurred_at < before,
+        )
+    )
+    return float(tu or 0) - float(sp or 0) + float(st or 0)
+
+
+@app.get("/petty-cash/funds", response_model=list[PettyCashFundOut])
+def petty_list_funds(db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    items = db.scalars(
+        select(PettyCashFund)
+        .where(PettyCashFund.office_id == user.office_id)
+        .order_by(PettyCashFund.id.asc())
+    ).all()
+    return [_petty_fund_out(f) for f in items]
+
+
+@app.post("/petty-cash/funds", response_model=PettyCashFundOut)
+def petty_create_fund(
+    payload: PettyCashFundCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    f = PettyCashFund(
+        office_id=user.office_id,
+        name=payload.name.strip(),
+        receipt_required_above=payload.receipt_required_above,
+        current_balance=0,
+        is_active=True,
+    )
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return _petty_fund_out(f)
+
+
+@app.patch("/petty-cash/funds/{fund_id}", response_model=PettyCashFundOut)
+def petty_patch_fund(
+    fund_id: int,
+    payload: PettyCashFundPatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    f = db.get(PettyCashFund, fund_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data:
+        f.name = data["name"].strip()
+    if "receipt_required_above" in data:
+        f.receipt_required_above = data["receipt_required_above"]
+    if "is_active" in data:
+        f.is_active = data["is_active"]
+    db.commit()
+    db.refresh(f)
+    return _petty_fund_out(f)
+
+
+@app.post("/petty-cash/funds/{fund_id}/top-ups", response_model=PettyCashTopUpOut)
+def petty_add_topup(
+    fund_id: int,
+    payload: PettyCashTopUpCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    f = db.get(PettyCashFund, fund_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    if not f.is_active:
+        raise HTTPException(status_code=400, detail="Fund inactive")
+    t = PettyCashTopUp(
+        office_id=user.office_id,
+        fund_id=fund_id,
+        amount=payload.amount,
+        occurred_at=payload.occurred_at or _now(),
+        notes=payload.notes,
+        created_by_user_id=user.id,
+    )
+    db.add(t)
+    f.current_balance = float(f.current_balance) + float(payload.amount)
+    db.commit()
+    db.refresh(t)
+    return PettyCashTopUpOut(
+        id=t.id,
+        fund_id=t.fund_id,
+        amount=float(t.amount),
+        notes=t.notes,
+        occurred_at=t.occurred_at,
+        created_by_user_id=t.created_by_user_id,
+        created_at=t.created_at,
+    )
+
+
+@app.post("/petty-cash/funds/{fund_id}/settlements", response_model=PettyCashSettlementOut)
+def petty_add_settlement(
+    fund_id: int,
+    payload: PettyCashSettlementCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    f = db.get(PettyCashFund, fund_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    if not f.is_active:
+        raise HTTPException(status_code=400, detail="Fund inactive")
+    adj = float(payload.adjustment_amount)
+    new_bal = float(f.current_balance) + adj
+    if new_bal < 0:
+        raise HTTPException(status_code=400, detail="التسوية تجعل الرصيد سالباً — راجع المبلغ")
+    st = PettyCashSettlement(
+        office_id=user.office_id,
+        fund_id=fund_id,
+        adjustment_amount=adj,
+        notes=payload.notes,
+        occurred_at=payload.occurred_at or _now(),
+        created_by_user_id=user.id,
+    )
+    db.add(st)
+    f.current_balance = new_bal
+    db.commit()
+    db.refresh(st)
+    return PettyCashSettlementOut(
+        id=st.id,
+        fund_id=st.fund_id,
+        adjustment_amount=float(st.adjustment_amount),
+        notes=st.notes,
+        occurred_at=st.occurred_at,
+        created_by_user_id=st.created_by_user_id,
+        created_at=st.created_at,
+    )
+
+
+@app.post("/petty-cash/funds/{fund_id}/spends", response_model=PettyCashSpendOut)
+def petty_create_spend(
+    fund_id: int,
+    amount: float = Form(...),
+    description: str | None = Form(None),
+    case_id: int | None = Form(None),
+    receipt: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    f = db.get(PettyCashFund, fund_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    if not f.is_active:
+        raise HTTPException(status_code=400, detail="Fund inactive")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Invalid amount")
+    if float(f.current_balance) < amount:
+        raise HTTPException(status_code=400, detail="رصيد النثرية غير كافٍ")
+    if case_id is not None:
+        c = db.get(Case, case_id)
+        if not c or c.office_id != user.office_id:
+            raise HTTPException(status_code=404, detail="Case not found")
+    thresh = float(f.receipt_required_above or 0)
+    if thresh > 0 and amount > thresh:
+        if receipt is None or not (receipt.filename and receipt.filename.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail=f"إيصال إلزامي للمبالغ الأعلى من {thresh}",
+            )
+    occurred = _now()
+    s = PettyCashSpend(
+        office_id=user.office_id,
+        fund_id=fund_id,
+        amount=amount,
+        description=description.strip() if description else None,
+        occurred_at=occurred,
+        case_id=case_id,
+        created_by_user_id=user.id,
+    )
+    db.add(s)
+    f.current_balance = float(f.current_balance) - amount
+    db.flush()
+    if receipt is not None and receipt.filename and receipt.filename.strip():
+        _ensure_upload_dir()
+        safe_name = os.path.basename(receipt.filename or "file")
+        ext = Path(safe_name).suffix[:10]
+        file_id = uuid4().hex
+        rel_path = f"petty-cash/{user.office_id}/{s.id}/{file_id}{ext}"
+        full_path = Path(settings.upload_dir) / rel_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        data = receipt.file.read()
+        full_path.write_bytes(data)
+        rec = PettyCashReceiptFile(
+            office_id=user.office_id,
+            spend_id=s.id,
+            original_name=safe_name,
+            content_type=receipt.content_type,
+            storage_path=str(full_path),
+            size_bytes=len(data),
+            uploaded_by_user_id=user.id,
+        )
+        db.add(rec)
+    db.commit()
+    db.refresh(s)
+    return PettyCashSpendOut(
+        id=s.id,
+        fund_id=s.fund_id,
+        amount=float(s.amount),
+        description=s.description,
+        occurred_at=s.occurred_at,
+        case_id=s.case_id,
+        created_by_user_id=s.created_by_user_id,
+        created_at=s.created_at,
+    )
+
+
+@app.get("/petty-cash/funds/{fund_id}/spends", response_model=list[PettyCashSpendOut])
+def petty_list_spends(
+    fund_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+    limit: int = Query(200, ge=1, le=2000),
+):
+    f = db.get(PettyCashFund, fund_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    items = db.scalars(
+        select(PettyCashSpend)
+        .where(PettyCashSpend.fund_id == fund_id, PettyCashSpend.office_id == user.office_id)
+        .order_by(PettyCashSpend.occurred_at.desc(), PettyCashSpend.id.desc())
+        .limit(limit)
+    ).all()
+    return [
+        PettyCashSpendOut(
+            id=x.id,
+            fund_id=x.fund_id,
+            amount=float(x.amount),
+            description=x.description,
+            occurred_at=x.occurred_at,
+            case_id=x.case_id,
+            created_by_user_id=x.created_by_user_id,
+            created_at=x.created_at,
+        )
+        for x in items
+    ]
+
+
+@app.post("/petty-cash/spends/{spend_id}/receipts")
+def petty_upload_spend_receipt(
+    spend_id: int,
+    upload: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    s = db.get(PettyCashSpend, spend_id)
+    if not s or s.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Spend not found")
+    _ensure_upload_dir()
+    safe_name = os.path.basename(upload.filename or "file")
+    ext = Path(safe_name).suffix[:10]
+    file_id = uuid4().hex
+    rel_path = f"petty-cash/{user.office_id}/{spend_id}/{file_id}{ext}"
+    full_path = Path(settings.upload_dir) / rel_path
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    data = upload.file.read()
+    full_path.write_bytes(data)
+    rec = PettyCashReceiptFile(
+        office_id=user.office_id,
+        spend_id=spend_id,
+        original_name=safe_name,
+        content_type=upload.content_type,
+        storage_path=str(full_path),
+        size_bytes=len(data),
+        uploaded_by_user_id=user.id,
+    )
+    db.add(rec)
+    db.commit()
+    return {"ok": True, "id": rec.id, "name": rec.original_name}
+
+
+@app.get("/petty-cash/spends/{spend_id}/receipts", response_model=list[PettyCashReceiptOut])
+def petty_list_spend_receipts(
+    spend_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    s = db.get(PettyCashSpend, spend_id)
+    if not s or s.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Spend not found")
+    items = db.scalars(
+        select(PettyCashReceiptFile)
+        .where(PettyCashReceiptFile.spend_id == spend_id, PettyCashReceiptFile.office_id == user.office_id)
+        .order_by(PettyCashReceiptFile.id.desc())
+    ).all()
+    return [
+        PettyCashReceiptOut(
+            id=r.id,
+            spend_id=r.spend_id,
+            original_name=r.original_name,
+            content_type=r.content_type,
+            size_bytes=r.size_bytes,
+            uploaded_at=r.uploaded_at,
+        )
+        for r in items
+    ]
+
+
+@app.get("/petty-cash/receipts/{file_id}")
+def petty_download_receipt(file_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+    r = db.get(PettyCashReceiptFile, file_id)
+    if not r or r.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    path = Path(r.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type=r.content_type or "application/octet-stream", filename=r.original_name)
+
+
+@app.get("/petty-cash/funds/{fund_id}/period-report", response_model=PettyCashPeriodReportOut)
+def petty_period_report(
+    fund_id: int,
+    date_from: date = Query(..., alias="from"),
+    date_to: date = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    f = db.get(PettyCashFund, fund_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Fund not found")
+    start = datetime.combine(date_from, dt_time.min, tzinfo=timezone.utc)
+    end = datetime.combine(date_to, dt_time.max, tzinfo=timezone.utc)
+    opening = _petty_opening_balance_before(db, fund_id, start)
+    sum_top = float(
+        db.scalar(
+            select(func.coalesce(func.sum(PettyCashTopUp.amount), 0)).where(
+                PettyCashTopUp.fund_id == fund_id,
+                PettyCashTopUp.occurred_at >= start,
+                PettyCashTopUp.occurred_at <= end,
+            )
+        )
+        or 0
+    )
+    sum_sp = float(
+        db.scalar(
+            select(func.coalesce(func.sum(PettyCashSpend.amount), 0)).where(
+                PettyCashSpend.fund_id == fund_id,
+                PettyCashSpend.occurred_at >= start,
+                PettyCashSpend.occurred_at <= end,
+            )
+        )
+        or 0
+    )
+    sum_st = float(
+        db.scalar(
+            select(func.coalesce(func.sum(PettyCashSettlement.adjustment_amount), 0)).where(
+                PettyCashSettlement.fund_id == fund_id,
+                PettyCashSettlement.occurred_at >= start,
+                PettyCashSettlement.occurred_at <= end,
+            )
+        )
+        or 0
+    )
+    net_change = sum_top - sum_sp + sum_st
+    closing_implied = opening + net_change
+    return PettyCashPeriodReportOut(
+        fund_id=f.id,
+        fund_name=f.name,
+        current_balance=float(f.current_balance),
+        period_from=date_from,
+        period_to=date_to,
+        sum_top_ups=sum_top,
+        sum_spends=sum_sp,
+        sum_settlements=sum_st,
+        net_change=net_change,
+        opening_balance=opening,
+        closing_balance_implied=closing_implied,
+    )
 
 
 @app.get("/finance/summary", response_model=FinancialSummaryOut)
