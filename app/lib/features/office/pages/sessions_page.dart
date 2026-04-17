@@ -128,6 +128,9 @@ class _SessionsPageState extends State<SessionsPage> {
                   future: _permsFuture,
                   builder: (context, permSnap) {
                     final canViewAccounts = permSnap.data?.permissions.contains('accounts.read') ?? false;
+                    final canViewSensitiveFinance =
+                        permSnap.data?.permissions.contains('finance.sensitive.read') ?? false;
+                    final canOpenCaseAccount = canViewAccounts;
                     return FutureBuilder<List<SessionDto>>(
                       future: _future,
                       builder: (context, snap) {
@@ -164,11 +167,15 @@ class _SessionsPageState extends State<SessionsPage> {
                                           caseId: s.caseId,
                                           caseTitle: s.caseTitle,
                                           officeCode: officeCode,
-                                          canOpenAccount: canViewAccounts,
+                                          canOpenAccount: canOpenCaseAccount,
                                         ),
                                       ),
                                       DataCell(Text(_numYear(s.sessionNumber, s.sessionYear))),
-                                      DataCell(Text(_feeReminderHint(s), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                                      DataCell(Text(
+                                        _feeReminderHint(s, showAmount: canViewSensitiveFinance),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      )),
                                       DataCell(
                                         isAdmin
                                             ? Wrap(
@@ -206,9 +213,9 @@ class _SessionsPageState extends State<SessionsPage> {
     return '$n/$y';
   }
 
-  String _feeReminderHint(SessionDto s) {
+  String _feeReminderHint(SessionDto s, {required bool showAmount}) {
     final parts = <String>[];
-    if (s.feeReminderAmount != null) {
+    if (showAmount && s.feeReminderAmount != null) {
       parts.add(NumberFormat('#,##0.##', 'ar').format(s.feeReminderAmount));
     }
     if (s.feeReminderDueAt != null) {

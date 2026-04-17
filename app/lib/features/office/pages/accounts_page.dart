@@ -65,6 +65,7 @@ class _AccountsPageState extends State<AccountsPage> with SingleTickerProviderSt
   TabController? _tabController;
   bool _controllerReady = false;
   bool _ignoreTabListener = false;
+  late final Future<UserPermissionsDto> _myPermsFuture = PermissionsApi().myPermissions();
 
   @override
   void dispose() {
@@ -111,54 +112,117 @@ class _AccountsPageState extends State<AccountsPage> with SingleTickerProviderSt
     if (c == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+    return FutureBuilder<UserPermissionsDto>(
+      future: _myPermsFuture,
+      builder: (context, permSnap) {
+        if (permSnap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (permSnap.hasError) {
+          return Center(child: Text('تعذّر تحميل الصلاحيات: ${permSnap.error}'));
+        }
+        final canSensitive = permSnap.data?.permissions.contains('finance.sensitive.read') ?? false;
+        const lockedMsg =
+            'هذا التبويب يعرض ملخصات وأرقامًا مالية شاملة للمكتب والموكلين. يتطلّب صلاحية «البيانات المالية الحساسة» التي يمنحها مالك المكتب فقط لمن يثق به. يمكنك متابعة استلام وصرف النقدية والنثرية والعُهد من التبويبات المجاورة.';
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(Icons.account_balance_wallet_outlined, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              'الإدارة المالية',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                Icon(Icons.account_balance_wallet_outlined, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  'الإدارة المالية',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TabBar(
-                controller: c,
-                isScrollable: true,
-                tabs: const [
-                  Tab(text: 'ملخص مالي'),
-                  Tab(text: 'استلام نقدية'),
-                  Tab(text: 'صرف نقدية'),
-                  Tab(text: 'النثرية'),
-                  Tab(text: 'العُهد'),
-                  Tab(text: 'تقارير'),
+            const SizedBox(height: AppSpacing.lg),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TabBar(
+                    controller: c,
+                    isScrollable: true,
+                    tabs: const [
+                      Tab(text: 'ملخص مالي'),
+                      Tab(text: 'استلام نقدية'),
+                      Tab(text: 'صرف نقدية'),
+                      Tab(text: 'النثرية'),
+                      Tab(text: 'العُهد'),
+                      Tab(text: 'تقارير'),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Expanded(
+                    child: TabBarView(
+                      controller: c,
+                      children: [
+                        canSensitive ? const _FinanceOverviewTab() : const _LockedSensitiveFinancePane(message: lockedMsg),
+                        const _ReceiveCashTab(),
+                        const _OfficeExpensesTab(),
+                        const PettyCashPage(),
+                        const CustodyPage(),
+                        canSensitive ? const _ReportsTab() : const _LockedSensitiveFinancePane(message: lockedMsg),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.md),
-              Expanded(
-                child: TabBarView(
-                  controller: c,
-                  children: const [
-                    _FinanceOverviewTab(),
-                    _ReceiveCashTab(),
-                    _OfficeExpensesTab(),
-                    PettyCashPage(),
-                    CustodyPage(),
-                    _ReportsTab(),
-                  ],
-                ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _LockedSensitiveFinancePane extends StatelessWidget {
+  const _LockedSensitiveFinancePane({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: scheme.outlineVariant),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_person_outlined, size: 52, color: scheme.primary),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'محتوى مقيّد',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.45,
+                        ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-      ],
+      ),
     );
   }
 }

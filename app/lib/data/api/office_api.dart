@@ -141,4 +141,12 @@ class OfficeApi {
       decode: (json) => json as Map<String, dynamic>,
     );
   }
+
+  Future<OfficeUserDto> patchUserFullName({required int userId, required String fullName}) async {
+    return _client.patchJson<OfficeUserDto>(
+      'office/users/$userId',
+      {'full_name': fullName},
+      decode: (json) => OfficeUserDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
 }

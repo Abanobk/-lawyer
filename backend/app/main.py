@@ -108,6 +108,7 @@ from app.schemas import (
     PettyCashTopUpOut,
     OfficeUserCreate,
     OfficeUserCreateOut,
+    OfficeUserPatch,
     PermissionCatalogItem,
     OfficeUserOut,
     OfficeOut,
@@ -152,6 +153,7 @@ PERMISSIONS: dict[str, str] = {
     "cases.upload": "رفع مرفقات للقضية",
     "sessions.update": "ترحيل/تعديل مواعيد الجلسات",
     "accounts.read": "عرض الحسابات",
+    "finance.sensitive.read": "البيانات المالية الحساسة (أتعاب العملاء، ملخصات وأرباح المكتب)",
     "finance.audit.read": "عرض سجل التدقيق المالي",
     "employees.read": "عرض الموظفين",
     "employees.manage": "إدارة الموظفين والصلاحيات",
@@ -173,6 +175,8 @@ PLAN_SIDEBAR_MODULE_PERM_KEYS: tuple[str, ...] = (
     "accounts.read",
     "employees.read",
     "settings.view",
+    # يُمنح عادة للمالك أو من يثق به؛ بدونها يقتصر الموظف على العمليات النقدية دون رؤية أتعاب العملاء والملخصات.
+    "finance.sensitive.read",
 )
 
 
@@ -439,10 +443,30 @@ def _ensure_upload_dir() -> None:
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 
 
+def _ensure_finance_sensitive_perm_on_plans() -> None:
+    """تضمين مفتاح finance.sensitive.read في باقات موجودة حتى يمكن للمالك منحه للموثوقين."""
+    try:
+        with Session(engine) as db:
+            changed = False
+            for p in db.scalars(select(Plan)).all():
+                raw = getattr(p, "allowed_perm_keys_csv", None) or ""
+                keys = [k.strip() for k in raw.split(",") if k.strip() and k.strip() in PERMISSIONS]
+                if not keys or "finance.sensitive.read" in keys:
+                    continue
+                keys.append("finance.sensitive.read")
+                p.allowed_perm_keys_csv = ",".join(sorted(set(keys)))
+                changed = True
+            if changed:
+                db.commit()
+    except Exception:
+        pass
+
+
 @app.on_event("startup")
 def _startup():
     init_db()
     _tighten_plan_permissions_to_sidebar_modules()
+    _ensure_finance_sensitive_perm_on_plans()
     _ensure_upload_dir()
     # Ensure super admin exists
     with Session(engine) as db:
@@ -598,6 +622,13 @@ def require_office_admin(user: User = Depends(require_office_user)) -> User:
 def _user_perm_keys(db: Session, user: User) -> set[str]:
     rows = db.scalars(select(UserPermission.perm_key).where(UserPermission.office_id == user.office_id, UserPermission.user_id == user.id)).all()
     return set(rows)
+
+
+def _has_finance_sensitive_read(db: Session, user: User) -> bool:
+    """أتعاب العملاء، ملخصات مالية، تقارير أرباح — لا تُعرض بدون هذه الصلاحية (المالك يتجاوز دائمًا)."""
+    if user.role == UserRole.office_owner:
+        return True
+    return "finance.sensitive.read" in _user_perm_keys(db, user)
 
 
 def _finance_include_custody(db: Session, user: User) -> bool:
@@ -880,8 +911,10 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
 
     db.flush()
 
-    # Auto-assign the plan modules permissions for the new staff.
+    # Auto-assign صلاحيات الباقة للموظف الجديد — دون «البيانات المالية الحساسة» (يمنحها المالك يدويًا إن لزم).
     for key in allowed_perm_keys:
+        if key == "finance.sensitive.read":
+            continue
         db.add(UserPermission(office_id=u.office_id, user_id=u.id, perm_key=key))
 
     db.commit()
@@ -892,6 +925,35 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
         full_name=getattr(u, "full_name", None),
         is_active=getattr(u, "is_active", True),
         role=u.role,
+    )
+
+
+@app.patch("/office/users/{user_id}", response_model=OfficeUserOut)
+def office_patch_user(
+    user_id: int,
+    payload: OfficeUserPatch,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_office_admin),
+):
+    target = db.get(User, user_id)
+    if not target or target.office_id != admin.office_id:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.role == UserRole.office_owner:
+        raise HTTPException(status_code=400, detail="Use profile settings for office owner name")
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "full_name" in data and data["full_name"] is not None:
+        target.full_name = str(data["full_name"]).strip()
+    db.commit()
+    db.refresh(target)
+    return OfficeUserOut(
+        id=target.id,
+        email=target.email,
+        full_name=getattr(target, "full_name", None),
+        is_active=getattr(target, "is_active", True),
+        role=target.role,
+        created_at=target.created_at,
     )
 
 
@@ -1034,6 +1096,13 @@ def _case_to_out(case: Case, client: Client, primary: User | None) -> CaseOut:
     )
 
 
+def _case_out_for_user(db: Session, user: User, case: Case, client: Client, primary: User | None) -> CaseOut:
+    o = _case_to_out(case, client, primary)
+    if not _has_finance_sensitive_read(db, user):
+        return o.model_copy(update={"fee_total": None})
+    return o
+
+
 @app.get("/cases", response_model=list[CaseOut])
 def list_cases(
     client_id: int | None = Query(default=None),
@@ -1060,7 +1129,7 @@ def list_cases(
     out: list[CaseOut] = []
     for case, client in rows:
         u = assigns.get(case.id)
-        out.append(_case_to_out(case, client, u))
+        out.append(_case_out_for_user(db, user, case, client, u))
     return out
 
 
@@ -1087,7 +1156,7 @@ def get_case(
             CaseAssignment.is_primary == True,  # noqa: E712
         )
     )
-    return _case_to_out(case, client, primary)
+    return _case_out_for_user(db, user, case, client, primary)
 
 
 @app.post("/cases", response_model=CaseOut)
@@ -1095,6 +1164,11 @@ def create_case(payload: CaseCreate, db: Session = Depends(get_db), user: User =
     client = db.get(Client, payload.client_id)
     if not client or client.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Client not found")
+    if payload.fee_total is not None and not _has_finance_sensitive_read(db, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="تحديد أتعاب القضية يتطلب صلاحية «البيانات المالية الحساسة» (finance.sensitive.read)",
+        )
 
     case = Case(
         office_id=user.office_id,
@@ -1139,22 +1213,7 @@ def create_case(payload: CaseCreate, db: Session = Depends(get_db), user: User =
 
     db.commit()
     db.refresh(case)
-    return CaseOut(
-        id=case.id,
-        client_id=case.client_id,
-        client_name=client.full_name,
-        title=case.title,
-        kind=case.kind,
-        court=case.court,
-        case_number=case.case_number,
-        case_year=case.case_year,
-        first_hearing_at=case.first_hearing_at,
-        fee_total=float(case.fee_total) if case.fee_total is not None else None,
-        is_active=case.is_active,
-        primary_lawyer_user_id=primary_user.id if primary_user else None,
-        primary_lawyer_email=primary_user.email if primary_user else None,
-        created_at=case.created_at,
-    )
+    return _case_out_for_user(db, user, case, client, primary_user)
 
 
 @app.patch("/cases/{case_id}", response_model=CaseOut)
@@ -1162,7 +1221,7 @@ def patch_case(
     case_id: int,
     payload: CasePatch,
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("cases.read")),
 ):
     row = db.execute(
         select(Case, Client)
@@ -1176,7 +1235,16 @@ def patch_case(
     if not data:
         raise HTTPException(status_code=400, detail="No fields to update")
     if "fee_total" in data:
+        if not _has_finance_sensitive_read(db, user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="تعديل أتعاب القضية يتطلب صلاحية «البيانات المالية الحساسة»",
+            )
         case.fee_total = data["fee_total"]
+    if "is_active" in data:
+        if user.role != UserRole.office_owner:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="فقط مالك المكتب يغيّر حالة فتح/إغلاق القضية")
+        case.is_active = bool(data["is_active"])
     db.commit()
     db.refresh(case)
     primary = db.scalar(
@@ -1188,7 +1256,7 @@ def patch_case(
             CaseAssignment.is_primary == True,  # noqa: E712
         )
     )
-    return _case_to_out(case, client, primary)
+    return _case_out_for_user(db, user, case, client, primary)
 
 
 @app.post("/cases/{case_id}/files")
@@ -2056,7 +2124,7 @@ def download_office_expense_receipt(file_id: int, db: Session = Depends(get_db),
 
 
 @app.get("/reports/client/{client_id}", response_model=ClientAccountReportOut)
-def report_client_account(client_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("accounts.read"))):
+def report_client_account(client_id: int, db: Session = Depends(get_db), user: User = Depends(require_perm("finance.sensitive.read"))):
     client = db.get(Client, client_id)
     if not client or client.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -2504,7 +2572,7 @@ def petty_period_report(
 @app.get("/finance/summary", response_model=FinancialSummaryOut)
 def finance_summary_endpoint(
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
     case_id: int | None = None,
@@ -2517,7 +2585,7 @@ def finance_summary_endpoint(
 @app.get("/finance/movements", response_model=list[FinancialMovementOut])
 def finance_movements_endpoint(
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
     case_id: int | None = None,
@@ -2540,7 +2608,7 @@ def finance_movements_endpoint(
 @app.get("/finance/movements/export")
 def finance_movements_export(
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
     case_id: int | None = None,
@@ -2568,7 +2636,7 @@ def finance_income_statement_endpoint(
     date_from: date = Query(..., alias="from"),
     date_to: date = Query(..., alias="to"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
 ):
     if date_from > date_to:
         raise HTTPException(status_code=400, detail="from must be <= to")
@@ -2582,7 +2650,7 @@ def finance_cash_flow_daily_endpoint(
     date_from: date = Query(..., alias="from"),
     date_to: date = Query(..., alias="to"),
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
 ):
     if date_from > date_to:
         raise HTTPException(status_code=400, detail="from must be <= to")
@@ -2594,7 +2662,7 @@ def finance_cash_flow_daily_endpoint(
 def finance_case_summary_endpoint(
     case_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
 ):
     data = build_case_financial_summary(db, user.office_id, case_id)
     if data is None:
@@ -2606,7 +2674,7 @@ def finance_case_summary_endpoint(
 def finance_case_documents_endpoint(
     case_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_perm("finance.sensitive.read")),
 ):
     case = db.get(Case, case_id)
     if not case or case.office_id != user.office_id:

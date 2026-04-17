@@ -10,6 +10,7 @@ import 'package:lawyer_app/data/api/case_files_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 
 class CasesPage extends StatefulWidget {
   const CasesPage({super.key});
@@ -34,11 +35,14 @@ class _CasesPageState extends State<CasesPage> {
       _casesApi.list(),
       _clientsApi.list(),
       _officeApi.users(),
+      PermissionsApi().myPermissions(),
     ]);
+    final perms = results[3] as UserPermissionsDto;
     return _CasesData(
       cases: results[0] as List<CaseDto>,
       clients: results[1] as List<ClientDto>,
       users: results[2] as List<OfficeUserDto>,
+      canViewSensitiveFinance: perms.permissions.contains('finance.sensitive.read'),
     );
   }
 
@@ -49,7 +53,11 @@ class _CasesPageState extends State<CasesPage> {
   Future<void> _openCreateDialog(_CasesData data) async {
     final res = await showDialog<_CreateCaseResult>(
       context: context,
-      builder: (context) => _CreateCaseDialog(clients: data.clients, users: data.users),
+      builder: (context) => _CreateCaseDialog(
+        clients: data.clients,
+        users: data.users,
+        canViewSensitiveFinance: data.canViewSensitiveFinance,
+      ),
     );
     if (res == null) return;
 
@@ -187,19 +195,21 @@ class _CasesPageState extends State<CasesPage> {
                   );
                 }
 
+                final snapData = snap.data!;
+                final showFees = snapData.canViewSensitiveFinance;
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(12),
                   child: DataTable(
                     showCheckboxColumn: false,
-                    columns: const [
-                      DataColumn(label: Text('الموكل')),
-                      DataColumn(label: Text('نوع القضية')),
-                      DataColumn(label: Text('المحكمة')),
-                      DataColumn(label: Text('رقم/سنة')),
-                      DataColumn(label: Text('أول جلسة')),
-                      DataColumn(label: Text('المحامي')),
-                      DataColumn(label: Text('الأتعاب')),
-                      DataColumn(label: Text('مرفقات')),
+                    columns: [
+                      const DataColumn(label: Text('الموكل')),
+                      const DataColumn(label: Text('نوع القضية')),
+                      const DataColumn(label: Text('المحكمة')),
+                      const DataColumn(label: Text('رقم/سنة')),
+                      const DataColumn(label: Text('أول جلسة')),
+                      const DataColumn(label: Text('المحامي')),
+                      if (showFees) const DataColumn(label: Text('الأتعاب')),
+                      const DataColumn(label: Text('مرفقات')),
                     ],
                     rows: cases
                         .map(
@@ -216,7 +226,7 @@ class _CasesPageState extends State<CasesPage> {
                               DataCell(Text(_numYear(c.caseNumber, c.caseYear))),
                               DataCell(Text(c.firstHearingAt == null ? '—' : df.format(c.firstHearingAt!.toLocal()))),
                               DataCell(Text(c.primaryLawyerEmail ?? '—')),
-                              DataCell(Text(c.feeTotal == null ? '—' : c.feeTotal!.toStringAsFixed(2))),
+                              if (showFees) DataCell(Text(c.feeTotal == null ? '—' : c.feeTotal!.toStringAsFixed(2))),
                               DataCell(
                                 Row(
                                   children: [
@@ -398,10 +408,16 @@ class _CaseFilesDialogState extends State<_CaseFilesDialog> {
 }
 
 class _CasesData {
-  const _CasesData({required this.cases, required this.clients, required this.users});
+  const _CasesData({
+    required this.cases,
+    required this.clients,
+    required this.users,
+    required this.canViewSensitiveFinance,
+  });
   final List<CaseDto> cases;
   final List<ClientDto> clients;
   final List<OfficeUserDto> users;
+  final bool canViewSensitiveFinance;
 }
 
 class _CreateCaseResult {
@@ -435,10 +451,15 @@ class _CreateCaseResult {
 }
 
 class _CreateCaseDialog extends StatefulWidget {
-  const _CreateCaseDialog({required this.clients, required this.users});
+  const _CreateCaseDialog({
+    required this.clients,
+    required this.users,
+    required this.canViewSensitiveFinance,
+  });
 
   final List<ClientDto> clients;
   final List<OfficeUserDto> users;
+  final bool canViewSensitiveFinance;
 
   @override
   State<_CreateCaseDialog> createState() => _CreateCaseDialogState();
@@ -556,15 +577,17 @@ class _CreateCaseDialogState extends State<_CreateCaseDialog> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 180,
-                    child: TextField(
-                      controller: _fee,
-                      decoration: const InputDecoration(labelText: 'الأتعاب'),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  if (widget.canViewSensitiveFinance) ...[
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 180,
+                      child: TextField(
+                        controller: _fee,
+                        decoration: const InputDecoration(labelText: 'الأتعاب'),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
               const SizedBox(height: 12),
@@ -649,7 +672,7 @@ class _CreateCaseDialogState extends State<_CreateCaseDialog> {
               return;
             }
             final year = int.tryParse(_caseYear.text.trim());
-            final fee = double.tryParse(_fee.text.trim());
+            final fee = widget.canViewSensitiveFinance ? double.tryParse(_fee.text.trim()) : null;
             final sYear = int.tryParse(_firstSessionYear.text.trim());
 
             Navigator.of(context).pop(

@@ -55,6 +55,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
     final me = results[5] as MeDto;
     final perms = results[6] as UserPermissionsDto;
     final canViewAccounts = perms.permissions.contains('accounts.read');
+    final canViewSensitiveFinance = perms.permissions.contains('finance.sensitive.read');
     ClientDto? client;
     for (final cl in clients) {
       if (cl.id == c.clientId) {
@@ -70,6 +71,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
       files: files,
       me: me,
       canViewAccounts: canViewAccounts,
+      canViewSensitiveFinance: canViewSensitiveFinance,
     );
   }
 
@@ -674,63 +676,86 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
                           ],
                         ),
                       ),
-                      _SummaryCard(
-                        accent: const Color(0xFF16A34A),
-                        title: 'الوضع المالي',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (remaining != null)
-                              Text(
-                                'المتبقي: ${money.format(remaining)}',
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-                              )
-                            else
-                              const Text('لم يُحدد إجمالي الأتعاب'),
-                            if (fee != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                'المدفوع: ${money.format(netPaid)} من ${money.format(fee)}',
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                      if (d.canViewSensitiveFinance)
+                        _SummaryCard(
+                          accent: const Color(0xFF16A34A),
+                          title: 'الوضع المالي',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (remaining != null)
+                                Text(
+                                  'المتبقي: ${money.format(remaining)}',
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                                )
+                              else
+                                const Text('لم يُحدد إجمالي الأتعاب'),
+                              if (fee != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'المدفوع: ${money.format(netPaid)} من ${money.format(fee)}',
+                                  style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                onPressed: () => _copyClientFinancialSummary(
+                                  c: c,
+                                  client: d.client,
+                                  fee: fee,
+                                  netPaid: netPaid,
+                                  remaining: remaining,
+                                  money: money,
+                                  df: df,
+                                ),
+                                icon: const Icon(Icons.copy_all_outlined, size: 18),
+                                label: const Text('نسخ ملخص للموكل (نص)'),
                               ),
+                              if (d.canViewAccounts && officeCode.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    OutlinedButton.icon(
+                                      onPressed: () => context.go('/o/$officeCode/accounts/case/${c.id}'),
+                                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                                      label: const Text('حساب القضية التفصيلي'),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: () =>
+                                          context.go('/o/$officeCode/accounts?tab=summary&case_id=${c.id}'),
+                                      icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
+                                      label: const Text('الملخص المالي للفترة'),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
-                            const SizedBox(height: 10),
-                            OutlinedButton.icon(
-                              onPressed: () => _copyClientFinancialSummary(
-                                c: c,
-                                client: d.client,
-                                fee: fee,
-                                netPaid: netPaid,
-                                remaining: remaining,
-                                money: money,
-                                df: df,
+                          ),
+                        )
+                      else
+                        _SummaryCard(
+                          accent: Colors.grey,
+                          title: 'الوضع المالي',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'أتعاب الموكل والملخصات المالية والأرباح مخصّصة لصلاحية «البيانات المالية الحساسة». إن مُنحت صلاحية الصندوق يمكنك فتح صفحة صندوق القضية لتسجيل تحصيل أو مصروف دون عرض ملخص الأتعاب.',
+                                style: TextStyle(color: Colors.grey.shade800, height: 1.35),
                               ),
-                              icon: const Icon(Icons.copy_all_outlined, size: 18),
-                              label: const Text('نسخ ملخص للموكل (نص)'),
-                            ),
-                            if (d.canViewAccounts && officeCode.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () => context.go('/o/$officeCode/accounts/case/${c.id}'),
-                                    icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                                    label: const Text('حساب القضية التفصيلي'),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: () =>
-                                        context.go('/o/$officeCode/accounts?tab=summary&case_id=${c.id}'),
-                                    icon: const Icon(Icons.dashboard_customize_outlined, size: 18),
-                                    label: const Text('الملخص المالي للفترة'),
-                                  ),
-                                ],
-                              ),
+                              if (d.canViewAccounts && officeCode.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                OutlinedButton.icon(
+                                  onPressed: () => context.go('/o/$officeCode/accounts/case/${c.id}'),
+                                  icon: const Icon(Icons.receipt_long_outlined),
+                                  label: const Text('صندوق القضية (تسجيل عمليات)'),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
                       _SummaryCard(
                         accent: const Color(0xFFEAB308),
                         title: 'الحالة',
@@ -865,6 +890,44 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
   }
 
   Widget _paymentsSection(_CaseDetailData d, DateFormat df, NumberFormat money) {
+    final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+    if (!d.canViewSensitiveFinance) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.payments_outlined, color: Colors.green.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'سجل المدفوعات والمبالغ',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'تفاصيل المبالغ والأتعاب تظهر لمن لديه صلاحية البيانات المالية الحساسة. لتسجيل تحصيل أو مصروف استخدم صندوق القضية.',
+                style: TextStyle(color: Colors.grey.shade800, height: 1.35),
+              ),
+              if (d.canViewAccounts && officeCode.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: () => context.go('/o/$officeCode/accounts/case/${d.caseDto.id}'),
+                  icon: const Icon(Icons.account_balance_wallet_outlined),
+                  label: const Text('فتح صندوق القضية'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1078,6 +1141,7 @@ class _CaseDetailData {
     required this.files,
     required this.me,
     required this.canViewAccounts,
+    required this.canViewSensitiveFinance,
   });
 
   final CaseDto caseDto;
@@ -1087,6 +1151,7 @@ class _CaseDetailData {
   final List<CaseFileDto> files;
   final MeDto me;
   final bool canViewAccounts;
+  final bool canViewSensitiveFinance;
 }
 
 class _SummaryCard extends StatelessWidget {

@@ -280,6 +280,12 @@ class OfficeUserCreateOut(BaseModel):
     role: UserRole
 
 
+class OfficeUserPatch(BaseModel):
+    """تحديث بيانات موظف (الاسم الظاهر)."""
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=200)
+
+
 class PermissionCatalogItem(BaseModel):
     key: str
     label: str
@@ -327,9 +333,10 @@ class CaseCreate(BaseModel):
 
 
 class CasePatch(BaseModel):
-    """تحديث جزئي للقضية (مثلاً إجمالي الأتعاب المتفق عليها من صفحة الحساب)."""
+    """تحديث جزئي للقضية (أتعاب / حالة النشاط)."""
 
     fee_total: float | None = None
+    is_active: bool | None = None
 
     @field_validator("fee_total")
     @classmethod

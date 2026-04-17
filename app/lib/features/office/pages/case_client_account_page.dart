@@ -6,6 +6,7 @@ import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/finance_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/transactions_api.dart';
 
 /// حساب موكل لقضية محددة — تخطيط وألوان قريبة من «الإدارة المالية» مع بطاقات ملخص وجدول عمليات.
@@ -25,29 +26,32 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
   final _meApi = MeApi();
 
   late Future<_CaseAccountData> _future = _load();
-  late Future<List<CaseFinancialReceiptDto>> _docsFuture = _loadDocs();
 
   String _filter = 'all'; // all | income | expense
 
   Future<_CaseAccountData> _load() async {
+    final perms = await PermissionsApi().myPermissions();
+    final canSensitive = perms.permissions.contains('finance.sensitive.read');
     final c = await _casesApi.get(widget.caseId);
     final txs = await _txApi.listForCase(widget.caseId);
     final me = await _meApi.me();
-    return _CaseAccountData(caseDto: c, transactions: txs, me: me);
-  }
-
-  Future<List<CaseFinancialReceiptDto>> _loadDocs() async {
-    try {
-      final d = await _financeApi.caseFinancialDocuments(widget.caseId);
-      return d.receipts;
-    } catch (_) {
-      return const [];
+    var receipts = const <CaseFinancialReceiptDto>[];
+    if (canSensitive) {
+      try {
+        receipts = (await _financeApi.caseFinancialDocuments(widget.caseId)).receipts;
+      } catch (_) {}
     }
+    return _CaseAccountData(
+      caseDto: c,
+      transactions: txs,
+      me: me,
+      canViewSensitiveFinance: canSensitive,
+      linkedReceipts: receipts,
+    );
   }
 
   void _reload() => setState(() {
         _future = _load();
-        _docsFuture = _loadDocs();
       });
 
   String _caseRef(CaseDto c) {
@@ -66,7 +70,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
     }
   }
 
-  Future<void> _addTransaction(double? caseFeeTotal) async {
+  Future<void> _addTransaction(double? caseFeeTotal, {required bool canEditAgreedFee}) async {
     final amountCtrl = TextEditingController();
     final agreedFeeCtrl = TextEditingController(
       text: caseFeeTotal != null ? caseFeeTotal.toStringAsFixed(2) : '',
@@ -87,15 +91,16 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'transaction', label: Text('عملية مالية')),
-                      ButtonSegment(value: 'agreed_fee', label: Text('إجمالي الأتعاب المتفق عليها')),
-                    ],
-                    selected: {mode},
-                    onSelectionChanged: (s) => setLocal(() => mode = s.first),
-                  ),
-                  const SizedBox(height: 12),
+                  if (canEditAgreedFee)
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'transaction', label: Text('عملية مالية')),
+                        ButtonSegment(value: 'agreed_fee', label: Text('إجمالي الأتعاب المتفق عليها')),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (s) => setLocal(() => mode = s.first),
+                    ),
+                  if (canEditAgreedFee) const SizedBox(height: 12),
                   if (mode == 'agreed_fee') ...[
                     Text(
                       caseFeeTotal == null
@@ -374,6 +379,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
         }
         final data = snap.data!;
         final c = data.caseDto;
+        final canSensitive = data.canViewSensitiveFinance;
         final canDeleteTx = data.me.role == 'office_owner';
         final allTx = data.transactions;
         final collections = allTx.where((t) => t.direction == 'income').fold<double>(0, (a, t) => a + t.amount);
@@ -396,18 +402,19 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                     label: const Text('العودة للحسابات'),
                   ),
                   const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => context.go('/o/$officeCode/accounts?tab=summary&case_id=${widget.caseId}'),
-                    icon: const Icon(Icons.dashboard_customize_outlined, size: 20),
-                    label: const Text('الملخص المالي لهذه القضية'),
-                  ),
+                  if (canSensitive)
+                    OutlinedButton.icon(
+                      onPressed: () => context.go('/o/$officeCode/accounts?tab=summary&case_id=${widget.caseId}'),
+                      icon: const Icon(Icons.dashboard_customize_outlined, size: 20),
+                      label: const Text('الملخص المالي لهذه القضية'),
+                    ),
                   const Spacer(),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF16A34A),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: () => _addTransaction(c.feeTotal),
+                    onPressed: () => _addTransaction(c.feeTotal, canEditAgreedFee: canSensitive),
                     icon: const Icon(Icons.add),
                     label: const Text('إضافة عملية مالية'),
                   ),
@@ -427,126 +434,141 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                   IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
                 ],
               ),
-              const SizedBox(height: 20),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final w = constraints.maxWidth;
-                  final cards = <Widget>[
-                    _FinSummaryCard(
-                      color: const Color(0xFF1E40AF),
-                      label: 'إجمالي الأتعاب المتفق عليها',
-                      value: fee == null ? '—' : '${money.format(fee)} ج.م',
-                    ),
-                    _FinSummaryCard(
-                      color: const Color(0xFF16A34A),
-                      label: 'إجمالي التحصيلات',
-                      value: '${money.format(collections)} ج.م',
-                    ),
-                    _FinSummaryCard(
-                      color: const Color(0xFFDC2626),
-                      label: 'إجمالي المصروفات',
-                      value: '${money.format(expenses)} ج.م',
-                    ),
-                    _FinSummaryCard(
-                      color: const Color(0xFFD97706),
-                      label: 'إجمالي المتبقي',
-                      value: remainingFromFee == null ? '—' : '${money.format(remainingFromFee)} ج.م',
-                      subtitle: fee == null ? null : 'المتفق عليه ناقص التحصيلات',
-                    ),
-                  ];
-                  Widget rowPair(int a, int b) {
-                    return Row(
+              const SizedBox(height: 16),
+              if (!canSensitive)
+                Card(
+                  elevation: 0,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.65),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(child: cards[a]),
-                        const SizedBox(width: 10),
-                        Expanded(child: cards[b]),
+                        Icon(Icons.info_outline, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'أنت تعمل في وضع صندوق الموظف: يمكن تسجيل التحصيلات والمصروفات دون عرض أتعاب الموكل أو الملخصات المالية التفصيلية. الأرقام الحساسة وملخص المكتب يظهران فقط لمن لديه صلاحية «البيانات المالية الحساسة».',
+                            style: TextStyle(color: Colors.grey.shade800, height: 1.4),
+                          ),
+                        ),
                       ],
-                    );
-                  }
-
-                  if (w >= 1000) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (var i = 0; i < 4; i++) ...[
-                          if (i > 0) const SizedBox(width: 10),
-                          Expanded(child: cards[i]),
+                    ),
+                  ),
+                ),
+              if (!canSensitive) const SizedBox(height: 16),
+              if (canSensitive)
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    final cards = <Widget>[
+                      _FinSummaryCard(
+                        color: const Color(0xFF1E40AF),
+                        label: 'إجمالي الأتعاب المتفق عليها',
+                        value: fee == null ? '—' : '${money.format(fee)} ج.م',
+                      ),
+                      _FinSummaryCard(
+                        color: const Color(0xFF16A34A),
+                        label: 'إجمالي التحصيلات',
+                        value: '${money.format(collections)} ج.م',
+                      ),
+                      _FinSummaryCard(
+                        color: const Color(0xFFDC2626),
+                        label: 'إجمالي المصروفات',
+                        value: '${money.format(expenses)} ج.م',
+                      ),
+                      _FinSummaryCard(
+                        color: const Color(0xFFD97706),
+                        label: 'إجمالي المتبقي',
+                        value: remainingFromFee == null ? '—' : '${money.format(remainingFromFee)} ج.م',
+                        subtitle: fee == null ? null : 'المتفق عليه ناقص التحصيلات',
+                      ),
+                    ];
+                    Widget rowPair(int a, int b) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: cards[a]),
+                          const SizedBox(width: 10),
+                          Expanded(child: cards[b]),
                         ],
-                      ],
-                    );
-                  }
-                  if (w >= 520) {
+                      );
+                    }
+
+                    if (w >= 1000) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var i = 0; i < 4; i++) ...[
+                            if (i > 0) const SizedBox(width: 10),
+                            Expanded(child: cards[i]),
+                          ],
+                        ],
+                      );
+                    }
+                    if (w >= 520) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          rowPair(0, 1),
+                          const SizedBox(height: 10),
+                          rowPair(2, 3),
+                        ],
+                      );
+                    }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        rowPair(0, 1),
-                        const SizedBox(height: 10),
-                        rowPair(2, 3),
+                        for (var i = 0; i < cards.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 10),
+                          cards[i],
+                        ],
                       ],
                     );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < cards.length; i++) ...[
-                        if (i > 0) const SizedBox(height: 10),
-                        cards[i],
-                      ],
-                    ],
-                  );
-                },
-              ),
+                  },
+                ),
               const SizedBox(height: 20),
-              FutureBuilder<List<CaseFinancialReceiptDto>>(
-                future: _docsFuture,
-                builder: (context, docSnap) {
-                  final receipts = docSnap.data ?? const <CaseFinancialReceiptDto>[];
-                  if (receipts.isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'إيصالات مرتبطة بالقضية (نثرية / عهد)',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              if (data.linkedReceipts.isNotEmpty)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'إيصالات مرتبطة بالقضية (نثرية / عهد)',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade200),
                       ),
-                      const SizedBox(height: 8),
-                      Card(
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(color: Colors.grey.shade200),
-                        ),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: receipts.length,
-                          separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade200),
-                          itemBuilder: (context, i) {
-                            final r = receipts[i];
-                            final src = r.source == 'petty' ? 'نثرية' : 'عهد';
-                            return ListTile(
-                              title: Text(r.originalName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(
-                                '$src · ${money.format(r.amount)} · ${df.format(r.uploadedAt.toLocal())}'
-                                '${r.custodyStatus != null ? ' · ${r.custodyStatus}' : ''}',
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                              ),
-                              trailing: TextButton(
-                                onPressed: () => _previewCaseReceipt(context, r),
-                                child: const Text('عرض'),
-                              ),
-                            );
-                          },
-                        ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: data.linkedReceipts.length,
+                        separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade200),
+                        itemBuilder: (context, i) {
+                          final r = data.linkedReceipts[i];
+                          final src = r.source == 'petty' ? 'نثرية' : 'عهد';
+                          return ListTile(
+                            title: Text(r.originalName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              '$src · ${money.format(r.amount)} · ${df.format(r.uploadedAt.toLocal())}'
+                              '${r.custodyStatus != null ? ' · ${r.custodyStatus}' : ''}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                            trailing: TextButton(
+                              onPressed: () => _previewCaseReceipt(context, r),
+                              child: const Text('عرض'),
+                            ),
+                          );
+                        },
                       ),
-                      const SizedBox(height: 20),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -769,10 +791,18 @@ class _TransactionsList extends StatelessWidget {
 }
 
 class _CaseAccountData {
-  const _CaseAccountData({required this.caseDto, required this.transactions, required this.me});
+  const _CaseAccountData({
+    required this.caseDto,
+    required this.transactions,
+    required this.me,
+    required this.canViewSensitiveFinance,
+    required this.linkedReceipts,
+  });
   final CaseDto caseDto;
   final List<CaseTransactionDto> transactions;
   final MeDto me;
+  final bool canViewSensitiveFinance;
+  final List<CaseFinancialReceiptDto> linkedReceipts;
 }
 
 class _FinSummaryCard extends StatelessWidget {

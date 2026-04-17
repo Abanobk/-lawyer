@@ -6,6 +6,7 @@ import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/data/api/sessions_api.dart';
 import 'package:lawyer_app/features/office/office_welcome_context.dart';
@@ -23,12 +24,14 @@ class _DashboardData {
     required this.cases,
     required this.sessions,
     required this.custodyPendingSpends,
+    required this.canViewSensitiveFinance,
   });
 
   final List<ClientDto> clients;
   final List<CaseDto> cases;
   final List<SessionDto> sessions;
   final double custodyPendingSpends;
+  final bool canViewSensitiveFinance;
 }
 
 class _DashboardPageState extends State<DashboardPage> {
@@ -46,20 +49,26 @@ class _DashboardPageState extends State<DashboardPage> {
     final clientsF = ClientsApi().list();
     final casesF = CasesApi().list();
     final sessionsF = SessionsApi().list();
+    final permsF = PermissionsApi().myPermissions();
+    final results = await Future.wait([clientsF, casesF, sessionsF, permsF]);
+    final canSensitive =
+        (results[3] as UserPermissionsDto).permissions.contains('finance.sensitive.read');
     var custodyPending = 0.0;
-    try {
-      final rep = await ReportsApi().custody();
-      for (final r in rep) {
-        custodyPending += r.pendingSpendsSum;
-      }
-    } catch (_) {}
+    if (canSensitive) {
+      try {
+        final rep = await ReportsApi().custody();
+        for (final r in rep) {
+          custodyPending += r.pendingSpendsSum;
+        }
+      } catch (_) {}
+    }
 
-    final results = await Future.wait([clientsF, casesF, sessionsF]);
     return _DashboardData(
       clients: results[0] as List<ClientDto>,
       cases: results[1] as List<CaseDto>,
       sessions: results[2] as List<SessionDto>,
       custodyPendingSpends: custodyPending,
+      canViewSensitiveFinance: canSensitive,
     );
   }
 
@@ -152,6 +161,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 upcomingSessions: upcomingSessions,
                 openCases: openCases,
                 custodyPending: data.custodyPendingSpends,
+                canViewSensitiveFinance: data.canViewSensitiveFinance,
               ),
               const SizedBox(height: 24),
               LayoutBuilder(
@@ -200,7 +210,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         label: 'الموكلين',
                         onTap: officeCode.isEmpty ? null : () => context.go('/o/$officeCode/clients'),
                       ),
-                      if (data.custodyPendingSpends > 0.009)
+                      if (data.canViewSensitiveFinance && data.custodyPendingSpends > 0.009)
                         _KpiCard(
                           width: w,
                           color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.25),
@@ -246,6 +256,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         custodyPending: data.custodyPendingSpends,
                         officeCode: officeCode,
                         df: df,
+                        canViewSensitiveFinance: data.canViewSensitiveFinance,
                       ),
                     ),
                   ],
@@ -265,6 +276,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   custodyPending: data.custodyPendingSpends,
                   officeCode: officeCode,
                   df: df,
+                  canViewSensitiveFinance: data.canViewSensitiveFinance,
                 ),
               ],
             ],
@@ -280,11 +292,13 @@ class _HeroBanner extends StatelessWidget {
     required this.upcomingSessions,
     required this.openCases,
     required this.custodyPending,
+    required this.canViewSensitiveFinance,
   });
 
   final int upcomingSessions;
   final int openCases;
   final double custodyPending;
+  final bool canViewSensitiveFinance;
 
   @override
   Widget build(BuildContext context) {
@@ -301,7 +315,7 @@ class _HeroBanner extends StatelessWidget {
         builder: (context, snap) {
           final who = snap.hasData ? officeUserDisplayName(snap.data!.$1) : '…';
           final officeName = snap.hasData ? snap.data!.$2.name : '…';
-          final sub = custodyPending > 0.009
+          final sub = canViewSensitiveFinance && custodyPending > 0.009
               ? 'لديك $upcomingSessions جلسة قادمة، و$openCases قضية مفتوحة، ومصروفات عهدة بانتظار الاعتماد.'
               : 'لديك $upcomingSessions جلسة قادمة من اليوم، و$openCases قضية مفتوحة — اختصر المتابعة من البطاقات أدناه.';
           return Row(
@@ -528,6 +542,7 @@ class _SessionAlertsCard extends StatelessWidget {
     required this.custodyPending,
     required this.officeCode,
     required this.df,
+    required this.canViewSensitiveFinance,
   });
 
   final List<SessionDto> todaySessions;
@@ -535,6 +550,7 @@ class _SessionAlertsCard extends StatelessWidget {
   final double custodyPending;
   final String officeCode;
   final DateFormat df;
+  final bool canViewSensitiveFinance;
 
   @override
   Widget build(BuildContext context) {
@@ -564,7 +580,7 @@ class _SessionAlertsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            if (custodyPending > 0.009) ...[
+            if (canViewSensitiveFinance && custodyPending > 0.009) ...[
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.warning_amber_rounded, color: Theme.of(context).colorScheme.error),
@@ -621,8 +637,10 @@ class _SessionAlertsCard extends StatelessWidget {
                   leading: Icon(Icons.payments_outlined, color: Theme.of(context).colorScheme.tertiary),
                   title: Text(s.caseTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text(
-                    '${s.clientName} · استحقاق: ${s.feeReminderDueAt != null ? df.format(s.feeReminderDueAt!.toLocal()) : '—'}'
-                    '${s.feeReminderAmount != null ? ' · ${money.format(s.feeReminderAmount!)}' : ''}',
+                    canViewSensitiveFinance
+                        ? '${s.clientName} · استحقاق: ${s.feeReminderDueAt != null ? df.format(s.feeReminderDueAt!.toLocal()) : '—'}'
+                            '${s.feeReminderAmount != null ? ' · ${money.format(s.feeReminderAmount!)}' : ''}'
+                        : '${s.clientName} · استحقاق: ${s.feeReminderDueAt != null ? df.format(s.feeReminderDueAt!.toLocal()) : '—'}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
