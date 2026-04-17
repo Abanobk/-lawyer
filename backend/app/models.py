@@ -236,6 +236,10 @@ class CaseSession(Base):
     session_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     session_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # تذكير مالي اختياري بعد الجلسة (المرحلة د — ربط الجلسات بالحسابات)
+    fee_reminder_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    fee_reminder_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    fee_reminder_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     case: Mapped["Case"] = relationship(back_populates="sessions")
@@ -452,3 +456,22 @@ class CustodyReceiptFile(Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+class OfficeAuditLog(Base):
+    """سجل تدقيق لعمليات مالية حساسة (المرحلة د)."""
+
+    __tablename__ = "office_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    action_key: Mapped[str] = mapped_column(String(96), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), index=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    case_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    detail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("ix_office_audit_logs_office_created", OfficeAuditLog.office_id, OfficeAuditLog.created_at)

@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -398,6 +399,9 @@ class SessionOut(BaseModel):
     session_year: int | None
     session_date: datetime
     notes: str | None
+    fee_reminder_amount: float | None = None
+    fee_reminder_due_at: datetime | None = None
+    fee_reminder_note: str | None = None
     created_at: datetime
 
 
@@ -406,6 +410,9 @@ class SessionUpdate(BaseModel):
     session_number: str | None = Field(default=None, max_length=50)
     session_year: int | None = None
     notes: str | None = None
+    fee_reminder_amount: float | None = None
+    fee_reminder_due_at: datetime | None = None
+    fee_reminder_note: str | None = Field(default=None, max_length=500)
 
 
 class SessionCreate(BaseModel):
@@ -414,6 +421,36 @@ class SessionCreate(BaseModel):
     session_number: str | None = Field(default=None, max_length=50)
     session_year: int | None = None
     notes: str | None = None
+    fee_reminder_amount: float | None = None
+    fee_reminder_due_at: datetime | None = None
+    fee_reminder_note: str | None = Field(default=None, max_length=500)
+
+
+class CaseFinancialReceiptOut(BaseModel):
+    source: Literal["petty", "custody"]
+    file_id: int
+    spend_id: int
+    original_name: str
+    uploaded_at: datetime
+    amount: float
+    description: str | None = None
+    custody_status: str | None = None
+
+
+class CaseFinancialDocumentsOut(BaseModel):
+    case_id: int
+    receipts: list[CaseFinancialReceiptOut]
+
+
+class FinanceAuditLogOut(BaseModel):
+    id: int
+    user_id: int | None
+    action_key: str
+    entity_type: str
+    entity_id: int | None
+    case_id: int | None
+    detail: dict[str, Any] | None
+    created_at: datetime
 
 
 class CustodyAccountOut(BaseModel):

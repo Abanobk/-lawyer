@@ -133,34 +133,64 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
     if (data.me.role != 'office_owner') return;
     DateTime sessionDate = DateTime.now();
     final notesCtrl = TextEditingController();
+    final feeAmountCtrl = TextEditingController();
+    final feeNoteCtrl = TextEditingController();
+    DateTime? feeDue;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setLocal) {
           return AlertDialog(
             title: const Text('إضافة جلسة'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  title: Text(DateFormat('yyyy-MM-dd').format(sessionDate.toLocal())),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: sessionDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) setLocal(() => sessionDate = picked);
-                  },
-                ),
-                TextField(
-                  controller: notesCtrl,
-                  decoration: const InputDecoration(labelText: 'ملاحظات'),
-                  maxLines: 3,
-                ),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: Text(DateFormat('yyyy-MM-dd').format(sessionDate.toLocal())),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: sessionDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setLocal(() => sessionDate = picked);
+                    },
+                  ),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'ملاحظات'),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  Text('تذكير مالي (اختياري)', style: Theme.of(context).textTheme.titleSmall),
+                  TextField(
+                    controller: feeAmountCtrl,
+                    decoration: const InputDecoration(labelText: 'مبلغ متوقع / مستحق'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  ListTile(
+                    title: Text(feeDue == null ? 'موعد متابعة —' : DateFormat('yyyy-MM-dd').format(feeDue!)),
+                    trailing: const Icon(Icons.event),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: feeDue ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setLocal(() => feeDue = DateTime(picked.year, picked.month, picked.day));
+                    },
+                  ),
+                  TextField(
+                    controller: feeNoteCtrl,
+                    decoration: const InputDecoration(labelText: 'ملاحظة مالية'),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
@@ -172,6 +202,19 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
     );
     if (ok != true) {
       notesCtrl.dispose();
+      feeAmountCtrl.dispose();
+      feeNoteCtrl.dispose();
+      return;
+    }
+    final rawFee = feeAmountCtrl.text.trim().replaceAll(',', '.');
+    final feeVal = rawFee.isEmpty ? null : double.tryParse(rawFee);
+    final feeNote = feeNoteCtrl.text.trim().isEmpty ? null : feeNoteCtrl.text.trim();
+    feeAmountCtrl.dispose();
+    feeNoteCtrl.dispose();
+    if (rawFee.isNotEmpty && feeVal == null) {
+      notesCtrl.dispose();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مبلغ التذكير غير صالح')));
       return;
     }
     try {
@@ -179,6 +222,9 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
         caseId: widget.caseId,
         sessionDate: sessionDate,
         notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+        feeReminderAmount: feeVal,
+        feeReminderDueAt: feeDue,
+        feeReminderNote: feeNote,
       );
       notesCtrl.dispose();
       if (!mounted) return;
@@ -194,34 +240,85 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
   Future<void> _editSession(SessionDto s) async {
     var sessionDate = s.sessionDate.toLocal();
     final notesCtrl = TextEditingController(text: s.notes ?? '');
+    final feeAmountCtrl = TextEditingController(
+      text: s.feeReminderAmount != null ? s.feeReminderAmount!.toString() : '',
+    );
+    final feeNoteCtrl = TextEditingController(text: s.feeReminderNote ?? '');
+    DateTime? feeDue = s.feeReminderDueAt?.toLocal();
+    var feeDueTouched = false;
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setLocal) {
           return AlertDialog(
             title: const Text('تعديل الجلسة'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  title: Text(DateFormat('yyyy-MM-dd').format(sessionDate)),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: sessionDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) setLocal(() => sessionDate = picked);
-                  },
-                ),
-                TextField(
-                  controller: notesCtrl,
-                  decoration: const InputDecoration(labelText: 'ملاحظات'),
-                  maxLines: 3,
-                ),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: Text(DateFormat('yyyy-MM-dd').format(sessionDate)),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: sessionDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setLocal(() => sessionDate = picked);
+                    },
+                  ),
+                  TextField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'ملاحظات'),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  Text('تذكير مالي (اختياري)', style: Theme.of(context).textTheme.titleSmall),
+                  TextField(
+                    controller: feeAmountCtrl,
+                    decoration: const InputDecoration(labelText: 'مبلغ متوقع / مستحق'),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ListTile(
+                          title: Text(feeDue == null ? 'موعد متابعة —' : DateFormat('yyyy-MM-dd').format(feeDue!)),
+                          trailing: const Icon(Icons.event),
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: feeDue ?? DateTime.now(),
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) {
+                              setLocal(() {
+                                feeDue = DateTime(picked.year, picked.month, picked.day);
+                                feeDueTouched = true;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => setLocal(() {
+                          feeDue = null;
+                          feeDueTouched = true;
+                        }),
+                        child: const Text('مسح الموعد'),
+                      ),
+                    ],
+                  ),
+                  TextField(
+                    controller: feeNoteCtrl,
+                    decoration: const InputDecoration(labelText: 'ملاحظة مالية'),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
@@ -233,6 +330,19 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
     );
     if (ok != true) {
       notesCtrl.dispose();
+      feeAmountCtrl.dispose();
+      feeNoteCtrl.dispose();
+      return;
+    }
+    final rawFee = feeAmountCtrl.text.trim().replaceAll(',', '.');
+    final feeVal = rawFee.isEmpty ? null : double.tryParse(rawFee);
+    final feeNote = feeNoteCtrl.text.trim().isEmpty ? null : feeNoteCtrl.text.trim();
+    feeAmountCtrl.dispose();
+    feeNoteCtrl.dispose();
+    if (rawFee.isNotEmpty && feeVal == null) {
+      notesCtrl.dispose();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مبلغ التذكير غير صالح')));
       return;
     }
     try {
@@ -240,6 +350,11 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
         sessionId: s.id,
         sessionDate: sessionDate,
         notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+        patchFeeReminder: true,
+        feeReminderAmount: feeVal,
+        feeReminderDueAt: feeDueTouched && feeDue != null ? feeDue : null,
+        feeReminderNote: feeNote,
+        feeReminderDueCleared: feeDueTouched && feeDue == null,
       );
       notesCtrl.dispose();
       if (!mounted) return;

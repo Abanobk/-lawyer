@@ -7,6 +7,7 @@ import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/finance_api.dart';
 import 'package:lawyer_app/data/api/office_expenses_api.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 import 'package:lawyer_app/features/office/pages/petty_cash_page.dart';
@@ -1101,6 +1102,8 @@ class _ReportsViewState extends State<_ReportsView> {
                           ),
                         ),
                 ),
+                const SizedBox(height: 16),
+                const _FinanceAuditLogSection(),
               ],
             ),
           ),
@@ -1126,6 +1129,110 @@ class _ReportsViewState extends State<_ReportsView> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FinanceAuditLogSection extends StatefulWidget {
+  const _FinanceAuditLogSection();
+
+  @override
+  State<_FinanceAuditLogSection> createState() => _FinanceAuditLogSectionState();
+}
+
+class _FinanceAuditLogSectionState extends State<_FinanceAuditLogSection> {
+  final _permApi = PermissionsApi();
+  final _financeApi = FinanceApi();
+  late final Future<UserPermissionsDto> _permFuture = _permApi.myPermissions();
+  List<FinanceAuditLogDto>? _logs;
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await _financeApi.financeAuditLog(limit: 150);
+      if (!mounted) return;
+      setState(() => _logs = rows);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final df = DateFormat('yyyy-MM-dd HH:mm');
+    return FutureBuilder<UserPermissionsDto>(
+      future: _permFuture,
+      builder: (context, snap) {
+        final perms = snap.data?.permissions ?? const [];
+        if (!perms.contains('finance.audit.read')) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Divider(color: Theme.of(context).colorScheme.outlineVariant),
+            const SizedBox(height: 12),
+            Text(
+              'سجل التدقيق المالي',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'آخر العمليات المسجّلة: معاملات قضايا، مصروفات مكتب، صرف نثرية، اعتماد/رفض عهد.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                FilledButton.tonal(
+                  onPressed: _loading ? null : _load,
+                  child: _loading
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('تحديث السجل'),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13))),
+                ],
+              ],
+            ),
+            if (_logs != null && _logs!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 240,
+                child: ListView.separated(
+                  itemCount: _logs!.length,
+                  separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (context, i) {
+                    final r = _logs![i];
+                    return ListTile(
+                      dense: true,
+                      title: Text(r.actionKey, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      subtitle: Text(
+                        '${df.format(r.createdAt.toLocal())} · ${r.entityType}${r.entityId != null ? ' #${r.entityId}' : ''}'
+                        '${r.caseId != null ? ' · قضية ${r.caseId}' : ''}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ] else if (_logs != null && _logs!.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text('لا توجد سجلات بعد.'),
+              ),
+          ],
+        );
+      },
     );
   }
 }

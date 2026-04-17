@@ -10,6 +10,9 @@ class SessionDto {
     this.sessionYear,
     required this.sessionDate,
     this.notes,
+    this.feeReminderAmount,
+    this.feeReminderDueAt,
+    this.feeReminderNote,
     required this.createdAt,
   });
 
@@ -21,6 +24,9 @@ class SessionDto {
   final int? sessionYear;
   final DateTime sessionDate;
   final String? notes;
+  final double? feeReminderAmount;
+  final DateTime? feeReminderDueAt;
+  final String? feeReminderNote;
   final DateTime createdAt;
 
   factory SessionDto.fromJson(Map<String, dynamic> json) {
@@ -33,6 +39,11 @@ class SessionDto {
       sessionYear: json['session_year'] as int?,
       sessionDate: DateTime.parse(json['session_date'] as String),
       notes: json['notes'] as String?,
+      feeReminderAmount: (json['fee_reminder_amount'] as num?)?.toDouble(),
+      feeReminderDueAt: json['fee_reminder_due_at'] == null
+          ? null
+          : DateTime.parse(json['fee_reminder_due_at'] as String),
+      feeReminderNote: json['fee_reminder_note'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -58,6 +69,9 @@ class SessionsApi {
     String? sessionNumber,
     int? sessionYear,
     String? notes,
+    double? feeReminderAmount,
+    DateTime? feeReminderDueAt,
+    String? feeReminderNote,
   }) async {
     return _client.postJson<SessionDto>(
       'sessions',
@@ -67,6 +81,9 @@ class SessionsApi {
         'session_number': sessionNumber,
         'session_year': sessionYear,
         'notes': notes,
+        'fee_reminder_amount': feeReminderAmount,
+        'fee_reminder_due_at': feeReminderDueAt?.toUtc().toIso8601String(),
+        'fee_reminder_note': feeReminderNote,
       },
       decode: (json) => SessionDto.fromJson(json as Map<String, dynamic>),
     );
@@ -97,15 +114,30 @@ class SessionsApi {
     String? sessionNumber,
     int? sessionYear,
     String? notes,
+    bool patchFeeReminder = false,
+    double? feeReminderAmount,
+    DateTime? feeReminderDueAt,
+    String? feeReminderNote,
+    bool feeReminderDueCleared = false,
   }) async {
+    final body = <String, dynamic>{
+      'session_date': sessionDate?.toUtc().toIso8601String(),
+      'session_number': sessionNumber,
+      'session_year': sessionYear,
+      'notes': notes,
+    };
+    if (patchFeeReminder) {
+      body['fee_reminder_note'] = feeReminderNote;
+      body['fee_reminder_amount'] = feeReminderAmount;
+      if (feeReminderDueCleared) {
+        body['fee_reminder_due_at'] = null;
+      } else if (feeReminderDueAt != null) {
+        body['fee_reminder_due_at'] = feeReminderDueAt.toUtc().toIso8601String();
+      }
+    }
     return _client.putJson<SessionDto>(
       'sessions/$sessionId',
-      {
-        'session_date': sessionDate?.toUtc().toIso8601String(),
-        'session_number': sessionNumber,
-        'session_year': sessionYear,
-        'notes': notes,
-      },
+      body,
       decode: (json) => SessionDto.fromJson(json as Map<String, dynamic>),
     );
   }

@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 import string
@@ -39,6 +40,7 @@ from app.models import (
     PettyCashTopUp,
     Office,
     OfficeActivityDaily,
+    OfficeAuditLog,
     OfficeStatus,
     Plan,
     PaymentProof,
@@ -122,6 +124,9 @@ from app.schemas import (
     SessionCreate,
     SessionOut,
     SessionUpdate,
+    CaseFinancialDocumentsOut,
+    CaseFinancialReceiptOut,
+    FinanceAuditLogOut,
     PaymentProofOut,
 )
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
@@ -147,6 +152,7 @@ PERMISSIONS: dict[str, str] = {
     "cases.upload": "رفع مرفقات للقضية",
     "sessions.update": "ترحيل/تعديل مواعيد الجلسات",
     "accounts.read": "عرض الحسابات",
+    "finance.audit.read": "عرض سجل التدقيق المالي",
     "employees.read": "عرض الموظفين",
     "employees.manage": "إدارة الموظفين والصلاحيات",
     "custody.me": "عرض عهدي (موظف)",
@@ -403,6 +409,24 @@ def init_db(max_wait_seconds: int = 30) -> None:
                         conn.execute(text("ALTER TABLE offices ADD COLUMN contact_email VARCHAR(255)"))
                     if "address" not in off_cols:
                         conn.execute(text("ALTER TABLE offices ADD COLUMN address TEXT"))
+
+                if "case_sessions" in table_names:
+                    cs_cols = {c["name"] for c in insp.get_columns("case_sessions")}
+                    if "fee_reminder_amount" not in cs_cols:
+                        conn.execute(text("ALTER TABLE case_sessions ADD COLUMN fee_reminder_amount NUMERIC(12,2)"))
+                    if "fee_reminder_due_at" not in cs_cols:
+                        conn.execute(text("ALTER TABLE case_sessions ADD COLUMN fee_reminder_due_at TIMESTAMPTZ"))
+                        try:
+                            conn.execute(
+                                text(
+                                    "CREATE INDEX IF NOT EXISTS ix_case_sessions_fee_reminder_due_at "
+                                    "ON case_sessions (fee_reminder_due_at)"
+                                )
+                            )
+                        except Exception:
+                            pass
+                    if "fee_reminder_note" not in cs_cols:
+                        conn.execute(text("ALTER TABLE case_sessions ADD COLUMN fee_reminder_note VARCHAR(500)"))
             return
         except OperationalError as e:
             last_err = e
@@ -580,6 +604,30 @@ def _finance_include_custody(db: Session, user: User) -> bool:
     if user.role == UserRole.office_owner:
         return True
     return "custody.admin.view" in _user_perm_keys(db, user)
+
+
+def _append_finance_audit(
+    db: Session,
+    *,
+    office_id: int,
+    user_id: int | None,
+    action_key: str,
+    entity_type: str,
+    entity_id: int | None = None,
+    case_id: int | None = None,
+    detail: dict | None = None,
+) -> None:
+    db.add(
+        OfficeAuditLog(
+            office_id=office_id,
+            user_id=user_id,
+            action_key=action_key,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            case_id=case_id,
+            detail_json=json.dumps(detail, ensure_ascii=False, default=str) if detail else None,
+        )
+    )
 
 
 def require_perm(perm_key: str):
@@ -1276,6 +1324,9 @@ def list_sessions(db: Session = Depends(get_db), user: User = Depends(require_pe
             session_year=s.session_year,
             session_date=s.session_date,
             notes=s.notes,
+            fee_reminder_amount=float(s.fee_reminder_amount) if s.fee_reminder_amount is not None else None,
+            fee_reminder_due_at=s.fee_reminder_due_at,
+            fee_reminder_note=s.fee_reminder_note,
             created_at=s.created_at,
         )
         for s, c, cl in rows
@@ -1291,6 +1342,8 @@ def create_session(
     case = db.get(Case, payload.case_id)
     if not case or case.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Case not found")
+    if payload.fee_reminder_amount is not None and payload.fee_reminder_amount <= 0:
+        raise HTTPException(status_code=400, detail="fee_reminder_amount must be positive")
     s = CaseSession(
         office_id=user.office_id,
         case_id=payload.case_id,
@@ -1298,6 +1351,9 @@ def create_session(
         session_year=payload.session_year,
         session_date=payload.session_date,
         notes=payload.notes,
+        fee_reminder_amount=payload.fee_reminder_amount,
+        fee_reminder_due_at=payload.fee_reminder_due_at,
+        fee_reminder_note=payload.fee_reminder_note,
     )
     db.add(s)
     db.commit()
@@ -1315,6 +1371,9 @@ def create_session(
         session_year=s.session_year,
         session_date=s.session_date,
         notes=s.notes,
+        fee_reminder_amount=float(s.fee_reminder_amount) if s.fee_reminder_amount is not None else None,
+        fee_reminder_due_at=s.fee_reminder_due_at,
+        fee_reminder_note=s.fee_reminder_note,
         created_at=s.created_at,
     )
 
@@ -1329,6 +1388,11 @@ def update_session(
     s = db.get(CaseSession, session_id)
     if not s or s.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Session not found")
+    fee_patch = payload.model_dump(exclude_unset=True)
+    if "fee_reminder_amount" in fee_patch:
+        v = fee_patch["fee_reminder_amount"]
+        if v is not None and v <= 0:
+            raise HTTPException(status_code=400, detail="fee_reminder_amount must be positive")
     if payload.session_date is not None:
         s.session_date = payload.session_date
     if payload.session_number is not None:
@@ -1337,6 +1401,13 @@ def update_session(
         s.session_year = payload.session_year
     if payload.notes is not None:
         s.notes = payload.notes
+    if "fee_reminder_amount" in fee_patch:
+        s.fee_reminder_amount = fee_patch["fee_reminder_amount"]
+    if "fee_reminder_due_at" in fee_patch:
+        s.fee_reminder_due_at = fee_patch["fee_reminder_due_at"]
+    if "fee_reminder_note" in fee_patch:
+        raw_note = fee_patch["fee_reminder_note"]
+        s.fee_reminder_note = (raw_note.strip() if isinstance(raw_note, str) else None) or None
     db.commit()
     db.refresh(s)
 
@@ -1353,6 +1424,9 @@ def update_session(
         session_year=s.session_year,
         session_date=s.session_date,
         notes=s.notes,
+        fee_reminder_amount=float(s.fee_reminder_amount) if s.fee_reminder_amount is not None else None,
+        fee_reminder_due_at=s.fee_reminder_due_at,
+        fee_reminder_note=s.fee_reminder_note,
         created_at=s.created_at,
     )
 
@@ -1386,6 +1460,17 @@ def create_transaction(payload: CaseTransactionCreate, db: Session = Depends(get
         created_by_user_id=user.id,
     )
     db.add(t)
+    db.flush()
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.case_transaction.create",
+        entity_type="case_transaction",
+        entity_id=t.id,
+        case_id=t.case_id,
+        detail={"direction": str(t.direction), "amount": float(t.amount), "description": t.description},
+    )
     db.commit()
     db.refresh(t)
     return CaseTransactionOut(
@@ -1416,6 +1501,12 @@ def update_transaction(
     t = db.get(CaseTransaction, transaction_id)
     if not t or t.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    before = {
+        "direction": str(t.direction),
+        "amount": float(t.amount),
+        "description": t.description,
+        "occurred_at": t.occurred_at.isoformat(),
+    }
     if payload.direction is not None:
         t.direction = payload.direction
     if payload.amount is not None:
@@ -1424,6 +1515,22 @@ def update_transaction(
         t.description = payload.description
     if payload.occurred_at is not None:
         t.occurred_at = payload.occurred_at
+    after = {
+        "direction": str(t.direction),
+        "amount": float(t.amount),
+        "description": t.description,
+        "occurred_at": t.occurred_at.isoformat(),
+    }
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.case_transaction.update",
+        entity_type="case_transaction",
+        entity_id=t.id,
+        case_id=t.case_id,
+        detail={"before": before, "after": after},
+    )
     db.commit()
     db.refresh(t)
     return CaseTransactionOut(
@@ -1441,12 +1548,25 @@ def update_transaction(
 def delete_transaction(
     transaction_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_perm("accounts.read")),
+    user: User = Depends(require_office_admin),
 ):
     t = db.get(CaseTransaction, transaction_id)
     if not t or t.office_id != user.office_id:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    snap = {"direction": str(t.direction), "amount": float(t.amount), "description": t.description}
+    tid = t.id
+    cid = t.case_id
     db.delete(t)
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.case_transaction.delete",
+        entity_type="case_transaction",
+        entity_id=tid,
+        case_id=cid,
+        detail=snap,
+    )
     db.commit()
     return {"ok": True}
 
@@ -1668,6 +1788,16 @@ def custody_approve_spend(spend_id: int, db: Session = Depends(get_db), user: Us
     spend.status = CustodySpendStatus.approved
     spend.reviewed_by_user_id = user.id
     spend.reviewed_at = _now()
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.custody_spend.approve",
+        entity_type="custody_spend",
+        entity_id=spend.id,
+        case_id=spend.case_id,
+        detail={"amount": float(spend.amount), "account_user_id": acc.user_id},
+    )
     db.commit()
     db.refresh(spend)
     return CustodySpendOut(
@@ -1702,6 +1832,16 @@ def custody_reject_spend(
     spend.reject_reason = payload.reject_reason
     spend.reviewed_by_user_id = user.id
     spend.reviewed_at = _now()
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.custody_spend.reject",
+        entity_type="custody_spend",
+        entity_id=spend.id,
+        case_id=spend.case_id,
+        detail={"amount": float(spend.amount), "reject_reason": payload.reject_reason},
+    )
     db.commit()
     db.refresh(spend)
     return CustodySpendOut(
@@ -1803,6 +1943,16 @@ def create_office_expense(payload: OfficeExpenseCreate, db: Session = Depends(ge
         created_by_user_id=user.id,
     )
     db.add(exp)
+    db.flush()
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.office_expense.create",
+        entity_type="office_expense",
+        entity_id=exp.id,
+        detail={"amount": float(exp.amount), "description": exp.description},
+    )
     db.commit()
     db.refresh(exp)
     return OfficeExpenseOut(
@@ -2163,6 +2313,17 @@ def petty_create_spend(
             uploaded_by_user_id=user.id,
         )
         db.add(rec)
+    db.flush()
+    _append_finance_audit(
+        db,
+        office_id=user.office_id,
+        user_id=user.id,
+        action_key="finance.petty_cash.spend.create",
+        entity_type="petty_cash_spend",
+        entity_id=s.id,
+        case_id=s.case_id,
+        detail={"amount": float(s.amount), "fund_id": fund_id, "description": s.description},
+    )
     db.commit()
     db.refresh(s)
     return PettyCashSpendOut(
@@ -2439,6 +2600,120 @@ def finance_case_summary_endpoint(
     if data is None:
         raise HTTPException(status_code=404, detail="Case not found")
     return CaseFinancialSummaryOut(**data)
+
+
+@app.get("/finance/cases/{case_id}/documents", response_model=CaseFinancialDocumentsOut)
+def finance_case_documents_endpoint(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    case = db.get(Case, case_id)
+    if not case or case.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    receipts: list[CaseFinancialReceiptOut] = []
+
+    petty_rows = db.execute(
+        select(PettyCashReceiptFile, PettyCashSpend)
+        .join(PettyCashSpend, PettyCashSpend.id == PettyCashReceiptFile.spend_id)
+        .where(
+            PettyCashReceiptFile.office_id == user.office_id,
+            PettyCashSpend.case_id == case_id,
+        )
+        .order_by(PettyCashReceiptFile.uploaded_at.desc())
+    ).all()
+    for f, sp in petty_rows:
+        receipts.append(
+            CaseFinancialReceiptOut(
+                source="petty",
+                file_id=f.id,
+                spend_id=sp.id,
+                original_name=f.original_name,
+                uploaded_at=f.uploaded_at,
+                amount=float(sp.amount),
+                description=sp.description,
+                custody_status=None,
+            )
+        )
+
+    custody_rows = db.execute(
+        select(CustodyReceiptFile, CustodySpend)
+        .join(CustodySpend, CustodySpend.id == CustodyReceiptFile.spend_id)
+        .where(
+            CustodyReceiptFile.office_id == user.office_id,
+            CustodySpend.case_id == case_id,
+        )
+        .order_by(CustodyReceiptFile.uploaded_at.desc())
+    ).all()
+    for f, sp in custody_rows:
+        receipts.append(
+            CaseFinancialReceiptOut(
+                source="custody",
+                file_id=f.id,
+                spend_id=sp.id,
+                original_name=f.original_name,
+                uploaded_at=f.uploaded_at,
+                amount=float(sp.amount),
+                description=sp.description,
+                custody_status=sp.status.value,
+            )
+        )
+
+    return CaseFinancialDocumentsOut(case_id=case_id, receipts=receipts)
+
+
+@app.get("/finance/custody-receipts/{file_id}")
+def finance_download_custody_receipt_for_case(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    """تنزيل إيصال عهدة مرتبط بقضية — لمن لديه حسابات دون صلاحية عهد أدمن."""
+    f = db.get(CustodyReceiptFile, file_id)
+    if not f or f.office_id != user.office_id:
+        raise HTTPException(status_code=404, detail="File not found")
+    spend = db.get(CustodySpend, f.spend_id)
+    if not spend or spend.case_id is None:
+        raise HTTPException(status_code=404, detail="Receipt not linked to a case")
+    path = Path(f.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type=f.content_type or "application/octet-stream", filename=f.original_name)
+
+
+@app.get("/finance/audit-log", response_model=list[FinanceAuditLogOut])
+def finance_audit_log_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("finance.audit.read")),
+    limit: int = Query(200, ge=1, le=500),
+):
+    rows = db.scalars(
+        select(OfficeAuditLog)
+        .where(OfficeAuditLog.office_id == user.office_id)
+        .order_by(OfficeAuditLog.created_at.desc(), OfficeAuditLog.id.desc())
+        .limit(limit)
+    ).all()
+    out: list[FinanceAuditLogOut] = []
+    for r in rows:
+        detail_parsed: dict | None = None
+        if r.detail_json:
+            try:
+                detail_parsed = json.loads(r.detail_json)
+            except json.JSONDecodeError:
+                detail_parsed = None
+        out.append(
+            FinanceAuditLogOut(
+                id=r.id,
+                user_id=r.user_id,
+                action_key=r.action_key,
+                entity_type=r.entity_type,
+                entity_id=r.entity_id,
+                case_id=r.case_id,
+                detail=detail_parsed,
+                created_at=r.created_at,
+            )
+        )
+    return out
 
 
 @app.get("/reports/custody", response_model=list[CustodyReportItem])

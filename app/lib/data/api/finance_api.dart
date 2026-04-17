@@ -1,4 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
+import 'package:lawyer_app/data/auth_token_storage.dart';
 
 class FinancialSummaryDto {
   FinancialSummaryDto({
@@ -217,9 +223,99 @@ class CaseFinancialSummaryDto {
   }
 }
 
+class CaseFinancialReceiptDto {
+  CaseFinancialReceiptDto({
+    required this.source,
+    required this.fileId,
+    required this.spendId,
+    required this.originalName,
+    required this.uploadedAt,
+    required this.amount,
+    this.description,
+    this.custodyStatus,
+  });
+
+  final String source;
+  final int fileId;
+  final int spendId;
+  final String originalName;
+  final DateTime uploadedAt;
+  final double amount;
+  final String? description;
+  final String? custodyStatus;
+
+  factory CaseFinancialReceiptDto.fromJson(Map<String, dynamic> json) {
+    return CaseFinancialReceiptDto(
+      source: json['source'] as String,
+      fileId: json['file_id'] as int,
+      spendId: json['spend_id'] as int,
+      originalName: json['original_name'] as String,
+      uploadedAt: DateTime.parse(json['uploaded_at'] as String),
+      amount: (json['amount'] as num).toDouble(),
+      description: json['description'] as String?,
+      custodyStatus: json['custody_status'] as String?,
+    );
+  }
+}
+
+class CaseFinancialDocumentsDto {
+  CaseFinancialDocumentsDto({required this.caseId, required this.receipts});
+
+  final int caseId;
+  final List<CaseFinancialReceiptDto> receipts;
+
+  factory CaseFinancialDocumentsDto.fromJson(Map<String, dynamic> json) {
+    final list = (json['receipts'] as List).cast<Map<String, dynamic>>();
+    return CaseFinancialDocumentsDto(
+      caseId: json['case_id'] as int,
+      receipts: list.map(CaseFinancialReceiptDto.fromJson).toList(),
+    );
+  }
+}
+
+class FinanceAuditLogDto {
+  FinanceAuditLogDto({
+    required this.id,
+    this.userId,
+    required this.actionKey,
+    required this.entityType,
+    this.entityId,
+    this.caseId,
+    this.detail,
+    required this.createdAt,
+  });
+
+  final int id;
+  final int? userId;
+  final String actionKey;
+  final String entityType;
+  final int? entityId;
+  final int? caseId;
+  final Map<String, dynamic>? detail;
+  final DateTime createdAt;
+
+  factory FinanceAuditLogDto.fromJson(Map<String, dynamic> json) {
+    return FinanceAuditLogDto(
+      id: json['id'] as int,
+      userId: json['user_id'] as int?,
+      actionKey: json['action_key'] as String,
+      entityType: json['entity_type'] as String,
+      entityId: json['entity_id'] as int?,
+      caseId: json['case_id'] as int?,
+      detail: json['detail'] == null ? null : Map<String, dynamic>.from(json['detail'] as Map),
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+}
+
 class FinanceApi {
-  FinanceApi({ApiClient? client}) : _client = client ?? ApiClient();
+  FinanceApi({ApiClient? client, http.Client? httpClient, AuthTokenStorage? tokens})
+      : _client = client ?? ApiClient(),
+        _http = httpClient ?? http.Client(),
+        _tokens = tokens ?? AuthTokenStorage();
   final ApiClient _client;
+  final http.Client _http;
+  final AuthTokenStorage _tokens;
 
   Map<String, String> _rangeQuery(DateTime from, DateTime to, {int? caseId}) {
     String d(DateTime x) =>
@@ -296,5 +392,62 @@ class FinanceApi {
       'finance/cases/$caseId/summary',
       decode: (json) => CaseFinancialSummaryDto.fromJson(json as Map<String, dynamic>),
     );
+  }
+
+  Future<CaseFinancialDocumentsDto> caseFinancialDocuments(int caseId) async {
+    return _client.getJson<CaseFinancialDocumentsDto>(
+      'finance/cases/$caseId/documents',
+      decode: (json) => CaseFinancialDocumentsDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<List<FinanceAuditLogDto>> financeAuditLog({int limit = 200}) async {
+    return _client.getJson<List<FinanceAuditLogDto>>(
+      'finance/audit-log',
+      query: {'limit': '$limit'},
+      decode: (json) {
+        final list = (json as List).cast<Map<String, dynamic>>();
+        return list.map(FinanceAuditLogDto.fromJson).toList();
+      },
+    );
+  }
+
+  Future<(Uint8List bytes, String contentType)> downloadPettyReceipt(int fileId) async {
+    final token = await _tokens.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('سجّل الدخول أولاً');
+    }
+    final uri = ApiConfig.uri('petty-cash/receipts/$fileId');
+    final res = await _http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StateError(_parseFinanceErr(res.bodyBytes));
+    }
+    final ct = res.headers['content-type'] ?? 'application/octet-stream';
+    return (res.bodyBytes, ct);
+  }
+
+  Future<(Uint8List bytes, String contentType)> downloadCustodyReceiptForCase(int fileId) async {
+    final token = await _tokens.getAccessToken();
+    if (token == null || token.isEmpty) {
+      throw StateError('سجّل الدخول أولاً');
+    }
+    final uri = ApiConfig.uri('finance/custody-receipts/$fileId');
+    final res = await _http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StateError(_parseFinanceErr(res.bodyBytes));
+    }
+    final ct = res.headers['content-type'] ?? 'application/octet-stream';
+    return (res.bodyBytes, ct);
+  }
+
+  String _parseFinanceErr(Uint8List body) {
+    try {
+      final t = utf8.decode(body);
+      final map = jsonDecode(t);
+      if (map is Map<String, dynamic> && map['detail'] is String) return map['detail'] as String;
+      return t.isEmpty ? 'فشل الطلب' : t;
+    } catch (_) {
+      return 'فشل الطلب';
+    }
   }
 }

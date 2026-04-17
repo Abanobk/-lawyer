@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
+import 'package:lawyer_app/data/api/finance_api.dart';
+import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/transactions_api.dart';
 
 /// حساب موكل لقضية محددة — تخطيط وألوان قريبة من «الإدارة المالية» مع بطاقات ملخص وجدول عمليات.
@@ -19,18 +21,34 @@ class CaseClientAccountPage extends StatefulWidget {
 class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
   final _casesApi = CasesApi();
   final _txApi = TransactionsApi();
+  final _financeApi = FinanceApi();
+  final _meApi = MeApi();
 
   late Future<_CaseAccountData> _future = _load();
+  late Future<List<CaseFinancialReceiptDto>> _docsFuture = _loadDocs();
 
   String _filter = 'all'; // all | income | expense
 
   Future<_CaseAccountData> _load() async {
     final c = await _casesApi.get(widget.caseId);
     final txs = await _txApi.listForCase(widget.caseId);
-    return _CaseAccountData(caseDto: c, transactions: txs);
+    final me = await _meApi.me();
+    return _CaseAccountData(caseDto: c, transactions: txs, me: me);
   }
 
-  void _reload() => setState(() => _future = _load());
+  Future<List<CaseFinancialReceiptDto>> _loadDocs() async {
+    try {
+      final d = await _financeApi.caseFinancialDocuments(widget.caseId);
+      return d.receipts;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void _reload() => setState(() {
+        _future = _load();
+        _docsFuture = _loadDocs();
+      });
 
   String _caseRef(CaseDto c) {
     if (c.caseNumber != null && c.caseNumber!.isNotEmpty) return c.caseNumber!;
@@ -356,6 +374,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
         }
         final data = snap.data!;
         final c = data.caseDto;
+        final canDeleteTx = data.me.role == 'office_owner';
         final allTx = data.transactions;
         final collections = allTx.where((t) => t.direction == 'income').fold<double>(0, (a, t) => a + t.amount);
         final expenses = allTx.where((t) => t.direction == 'expense').fold<double>(0, (a, t) => a + t.amount);
@@ -479,6 +498,55 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                 },
               ),
               const SizedBox(height: 20),
+              FutureBuilder<List<CaseFinancialReceiptDto>>(
+                future: _docsFuture,
+                builder: (context, docSnap) {
+                  final receipts = docSnap.data ?? const <CaseFinancialReceiptDto>[];
+                  if (receipts.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'إيصالات مرتبطة بالقضية (نثرية / عهد)',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: receipts.length,
+                          separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade200),
+                          itemBuilder: (context, i) {
+                            final r = receipts[i];
+                            final src = r.source == 'petty' ? 'نثرية' : 'عهد';
+                            return ListTile(
+                              title: Text(r.originalName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                '$src · ${money.format(r.amount)} · ${df.format(r.uploadedAt.toLocal())}'
+                                '${r.custodyStatus != null ? ' · ${r.custodyStatus}' : ''}',
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                              ),
+                              trailing: TextButton(
+                                onPressed: () => _previewCaseReceipt(context, r),
+                                child: const Text('عرض'),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  );
+                },
+              ),
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -519,6 +587,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                           df: df,
                           onEdit: _editTransaction,
                           onDelete: _deleteTransaction,
+                          canDelete: canDeleteTx,
                           caseRef: _caseRef(c),
                           goToCase: () => context.go('/o/$officeCode/cases/${c.id}'),
                         ),
@@ -533,6 +602,31 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
     );
   }
 
+  Future<void> _previewCaseReceipt(BuildContext context, CaseFinancialReceiptDto r) async {
+    try {
+      final (bytes, ct) = r.source == 'petty'
+          ? await _financeApi.downloadPettyReceipt(r.fileId)
+          : await _financeApi.downloadCustodyReceiptForCase(r.fileId);
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(r.originalName, maxLines: 2, overflow: TextOverflow.ellipsis),
+          content: SizedBox(
+            width: 480,
+            child: (ct.startsWith('image/'))
+                ? Image.memory(bytes, fit: BoxFit.contain)
+                : const Text('معاينة غير متاحة لهذا النوع من الملفات.'),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق'))],
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر فتح الإيصال: $e')));
+    }
+  }
+
 }
 
 class _TransactionsList extends StatelessWidget {
@@ -543,6 +637,7 @@ class _TransactionsList extends StatelessWidget {
     required this.df,
     required this.onEdit,
     required this.onDelete,
+    required this.canDelete,
     required this.caseRef,
     required this.goToCase,
   });
@@ -553,6 +648,7 @@ class _TransactionsList extends StatelessWidget {
   final DateFormat df;
   final void Function(CaseTransactionDto) onEdit;
   final void Function(CaseTransactionDto) onDelete;
+  final bool canDelete;
   final String caseRef;
   final VoidCallback goToCase;
 
@@ -651,13 +747,15 @@ class _TransactionsList extends StatelessWidget {
                         icon: Icons.edit_outlined,
                         onPressed: () => onEdit(t),
                       ),
-                      const SizedBox(width: 8),
-                      _SquareIconButton(
-                        color: Colors.red.shade100,
-                        iconColor: Colors.red.shade800,
-                        icon: Icons.delete_outline,
-                        onPressed: () => onDelete(t),
-                      ),
+                      if (canDelete) ...[
+                        const SizedBox(width: 8),
+                        _SquareIconButton(
+                          color: Colors.red.shade100,
+                          iconColor: Colors.red.shade800,
+                          icon: Icons.delete_outline,
+                          onPressed: () => onDelete(t),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -671,9 +769,10 @@ class _TransactionsList extends StatelessWidget {
 }
 
 class _CaseAccountData {
-  const _CaseAccountData({required this.caseDto, required this.transactions});
+  const _CaseAccountData({required this.caseDto, required this.transactions, required this.me});
   final CaseDto caseDto;
   final List<CaseTransactionDto> transactions;
+  final MeDto me;
 }
 
 class _FinSummaryCard extends StatelessWidget {
