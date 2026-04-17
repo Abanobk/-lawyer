@@ -635,6 +635,42 @@ class PettyCashReceiptOut(BaseModel):
     uploaded_at: datetime
 
 
+class IncomeStatementOut(BaseModel):
+    """قائمة دخل مبسطة للفترة (خزينة المكتب الرئيسية + هامش القضايا)."""
+
+    period_from: date
+    period_to: date
+    revenue_case_income: float
+    costs_case_expenses: float
+    gross_margin_cases: float
+    expense_office: float
+    expense_petty_top_ups: float
+    expense_custody_advances: float
+    total_main_cash_operating_out: float
+    net_after_operating_main_cash: float
+    includes_custody: bool
+    note_ar: str
+
+
+class CashFlowDayOut(BaseModel):
+    day: date
+    inflow: float
+    outflow: float
+    net: float
+
+
+class CaseFinancialSummaryOut(BaseModel):
+    case_id: int
+    case_title: str
+    fee_total: float | None = None
+    sum_income: float
+    sum_expense: float
+    net_cash_case: float
+    remaining_from_fee: float | None = None
+    custody_spends_approved: float
+    custody_spends_pending: float
+
+
 class PettyCashPeriodReportOut(BaseModel):
     fund_id: int
     fund_name: str

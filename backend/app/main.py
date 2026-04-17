@@ -16,6 +16,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.db import Base, engine, get_db
 from app.finance_ledger import FINANCE_KINDS_ALL, finance_movements, finance_summary, movements_to_csv_lines
+from app.finance_reports import build_case_financial_summary, build_cash_flow_daily, build_income_statement
 from app.models import (
     Case,
     CaseAssignment,
@@ -90,6 +91,9 @@ from app.schemas import (
     CustodyReportItem,
     FinancialMovementOut,
     FinancialSummaryOut,
+    IncomeStatementOut,
+    CashFlowDayOut,
+    CaseFinancialSummaryOut,
     PettyCashFundCreate,
     PettyCashFundOut,
     PettyCashFundPatch,
@@ -2396,6 +2400,45 @@ def finance_movements_export(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="finance-movements.csv"'},
     )
+
+
+@app.get("/finance/income-statement", response_model=IncomeStatementOut)
+def finance_income_statement_endpoint(
+    date_from: date = Query(..., alias="from"),
+    date_to: date = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="from must be <= to")
+    inc = _finance_include_custody(db, user)
+    data = build_income_statement(db, user.office_id, date_from, date_to, inc)
+    return IncomeStatementOut(**data)
+
+
+@app.get("/finance/cash-flow-daily", response_model=list[CashFlowDayOut])
+def finance_cash_flow_daily_endpoint(
+    date_from: date = Query(..., alias="from"),
+    date_to: date = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    if date_from > date_to:
+        raise HTTPException(status_code=400, detail="from must be <= to")
+    rows = build_cash_flow_daily(db, user.office_id, date_from, date_to)
+    return [CashFlowDayOut(**r) for r in rows]
+
+
+@app.get("/finance/cases/{case_id}/summary", response_model=CaseFinancialSummaryOut)
+def finance_case_summary_endpoint(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    data = build_case_financial_summary(db, user.office_id, case_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return CaseFinancialSummaryOut(**data)
 
 
 @app.get("/reports/custody", response_model=list[CustodyReportItem])
