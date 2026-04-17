@@ -11,6 +11,7 @@ import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
 import 'package:lawyer_app/core/theme/app_spacing.dart';
 import 'package:lawyer_app/core/widgets/adaptive_data_table.dart';
+import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
 import 'package:lawyer_app/core/widgets/app_states.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 import 'package:lawyer_app/features/office/pages/petty_cash_page.dart';
@@ -925,8 +926,9 @@ class _OfficeExpensesViewState extends State<_OfficeExpensesView> {
                   if (items.isEmpty) {
                     return const Center(child: Text('لا يوجد مصروفات بعد'));
                   }
-                  return SingleChildScrollView(
-                    child: DataTable(
+                  return ScrollableDataTableShell(
+                    padding: EdgeInsets.zero,
+                    table: DataTable(
                       columns: const [
                         DataColumn(label: Text('التاريخ')),
                         DataColumn(label: Text('المبلغ')),

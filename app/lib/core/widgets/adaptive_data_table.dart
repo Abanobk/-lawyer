@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lawyer_app/core/responsive/layout_mode.dart';
 
 /// جدول على الشاشات العريضة، وبطاقات على الضيقة (نقطة ٣).
 class AdaptiveDataTable extends StatelessWidget {
@@ -46,6 +47,7 @@ class AdaptiveDataTable extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
+        final labelColW = AppLayout.isVeryNarrow(context) ? 88.0 : 112.0;
         return Column(
           children: [
             for (final r in rows)
@@ -63,7 +65,7 @@ class AdaptiveDataTable extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               SizedBox(
-                                width: 112,
+                                width: labelColW,
                                 child: Text(
                                   headers[i],
                                   style: Theme.of(context).textTheme.labelMedium?.copyWith(

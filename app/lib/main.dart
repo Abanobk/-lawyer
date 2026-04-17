@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,17 @@ import 'package:lawyer_app/router/app_router.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const LawyerApp());
+}
+
+/// يسمح بتمرير الجداول الأفقية باللمس على الويب والموبايل (بدونها يصعب السحب على بعض المتصفحات).
+class _AppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      };
 }
 
 class LawyerApp extends StatefulWidget {
@@ -36,6 +48,7 @@ class _LawyerAppState extends State<LawyerApp> {
         builder: (context, _) {
           return MaterialApp.router(
             title: 'مكتب المحاماة الحديث',
+            scrollBehavior: _AppScrollBehavior(),
             debugShowCheckedModeBanner: false,
             theme: buildAppTheme(),
             darkTheme: buildAppDarkTheme(),

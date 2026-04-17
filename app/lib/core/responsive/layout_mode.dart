@@ -6,15 +6,26 @@ import 'package:flutter/material.dart';
 class AppLayout {
   AppLayout._();
 
-  /// ويب + عرض كافٍ: شريط جانبي ثابت ومساحة محتوى واسعة.
+  static Size _size(BuildContext context) => MediaQuery.sizeOf(context);
+
+  /// ويب بعرض هاتف/عرض ضيق — مساحات أصغر وبطاقات بدل الجداول العريضة حيث يُستخدم [AdaptiveDataTable].
+  static bool isWebCompact(BuildContext context) => kIsWeb && _size(context).width < 900;
+
+  /// هاتف عمودي أو عرض ضيق جداً (بروز أسطر، تقليل الهوامش).
+  static bool isVeryNarrow(BuildContext context) => _size(context).width < 400;
+
+  /// ويب + عرض كافٍ **و** أقل بعد للشاشة كافٍ: يتجنّب وضع «الشريط الجانبي» على هاتف بالعرض فقط
+  /// (مثلاً ~900×400) حيث يبقى المحتوى مضغوطاً.
   static bool isWebDesktop(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
-    return kIsWeb && w >= 900;
+    if (!kIsWeb) return false;
+    final sz = _size(context);
+    final shortest = sz.shortestSide;
+    return sz.width >= 900 && shortest >= 480;
   }
 
   /// ويب عريض جداً: نحدّ المحتوى بعرض أقصى ونوسّطه لقراءة أوضح.
   static bool useCenteredContentCanvas(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
+    final w = _size(context).width;
     return kIsWeb && w >= 1100;
   }
 
@@ -27,6 +38,9 @@ class AppLayout {
     if (isWebDesktop(context)) {
       return const EdgeInsets.fromLTRB(32, 18, 32, 24);
     }
-    return const EdgeInsets.symmetric(horizontal: 16, vertical: 20);
+    if (isVeryNarrow(context)) {
+      return const EdgeInsets.symmetric(horizontal: 10, vertical: 12);
+    }
+    return const EdgeInsets.symmetric(horizontal: 14, vertical: 16);
   }
 }

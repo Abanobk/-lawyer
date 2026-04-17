@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/sessions_api.dart';
@@ -145,9 +146,8 @@ class _SessionsPageState extends State<SessionsPage> {
                           return const Center(child: Text('لا يوجد جلسات بعد'));
                         }
                         final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.all(12),
-                          child: DataTable(
+                        return ScrollableDataTableShell(
+                          table: DataTable(
                             columns: const [
                               DataColumn(label: Text('التاريخ')),
                               DataColumn(label: Text('الموكل')),

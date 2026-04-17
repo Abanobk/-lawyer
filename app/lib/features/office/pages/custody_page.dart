@@ -381,27 +381,30 @@ class _CustodyEmployeeViewState extends State<_CustodyEmployeeView> {
                       if (ledger.isEmpty)
                         const Text('لا توجد حركة بعد')
                       else
-                        DataTable(
-                          columns: const [
-                            DataColumn(label: Text('التاريخ')),
-                            DataColumn(label: Text('النوع')),
-                            DataColumn(label: Text('المبلغ')),
-                            DataColumn(label: Text('وصف')),
-                            DataColumn(label: Text('الحالة')),
-                          ],
-                          rows: ledger.map((e) {
-                            final kindLabel = e.kind == 'advance' ? 'سلفة/إضافة' : 'مصروف';
-                            final statusLabel = e.kind == 'spend' ? _spendStatusLabel(e.status) : '—';
-                            return DataRow(
-                              cells: [
-                                DataCell(Text(df.format(e.occurredAt.toLocal()))),
-                                DataCell(Text(kindLabel)),
-                                DataCell(Text(e.amount.toStringAsFixed(2))),
-                                DataCell(Text(e.description ?? '—')),
-                                DataCell(Text(statusLabel)),
-                              ],
-                            );
-                          }).toList(),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('التاريخ')),
+                              DataColumn(label: Text('النوع')),
+                              DataColumn(label: Text('المبلغ')),
+                              DataColumn(label: Text('وصف')),
+                              DataColumn(label: Text('الحالة')),
+                            ],
+                            rows: ledger.map((e) {
+                              final kindLabel = e.kind == 'advance' ? 'سلفة/إضافة' : 'مصروف';
+                              final statusLabel = e.kind == 'spend' ? _spendStatusLabel(e.status) : '—';
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(df.format(e.occurredAt.toLocal()))),
+                                  DataCell(Text(kindLabel)),
+                                  DataCell(Text(e.amount.toStringAsFixed(2))),
+                                  DataCell(Text(e.description ?? '—')),
+                                  DataCell(Text(statusLabel)),
+                                ],
+                              );
+                            }).toList(),
+                          ),
                         ),
                     ],
                   ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
+import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 
 class ClientsPage extends StatefulWidget {
@@ -88,9 +89,8 @@ class _ClientsPageState extends State<ClientsPage> {
                   return const Center(child: Text('لا يوجد موكلين بعد'));
                 }
 
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: DataTable(
+                return ScrollableDataTableShell(
+                  table: DataTable(
                     columns: const [
                       DataColumn(label: Text('الاسم')),
                       DataColumn(label: Text('الهاتف')),

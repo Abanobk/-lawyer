@@ -10,6 +10,7 @@ import 'package:lawyer_app/data/api/case_files_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
+import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 
 class CasesPage extends StatefulWidget {
@@ -197,9 +198,8 @@ class _CasesPageState extends State<CasesPage> {
 
                 final snapData = snap.data!;
                 final showFees = snapData.canViewSensitiveFinance;
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: DataTable(
+                return ScrollableDataTableShell(
+                  table: DataTable(
                     showCheckboxColumn: false,
                     columns: [
                       const DataColumn(label: Text('الموكل')),
