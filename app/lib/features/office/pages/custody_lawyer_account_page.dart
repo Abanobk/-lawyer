@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/custody_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
 
-/// تفاصيل عهدة محامٍ (أدمن) — نفس أسلوب صفحة الحسابات مع بطاقات ملونة وجدول مصروفات.
+/// تفاصيل عهدة موظف — نفس منطق وتنسيق صفحة حساب القضية (بطاقات + جدول بعرض كامل).
 class CustodyLawyerAccountPage extends StatefulWidget {
   const CustodyLawyerAccountPage({super.key, required this.userId});
 
@@ -25,6 +26,9 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
 
   late Future<_CustodyLawyerData> _future = _load();
 
+  /// all | pending | approved | rejected
+  String _filter = 'all';
+
   Future<_CustodyLawyerData> _load() async {
     final results = await Future.wait([
       _officeApi.users(),
@@ -39,7 +43,7 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
     final report = reportList.isEmpty ? null : reportList.first;
     final spends = spendsAll.where((s) => s.userId == widget.userId).toList()
       ..sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
-    final caseTitles = {for (final c in cases) c.id: c.title};
+    final caseById = {for (final c in cases) c.id: c};
     OfficeUserDto? user;
     for (final u in users) {
       if (u.id == widget.userId) {
@@ -51,11 +55,24 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
       user: user,
       report: report,
       spends: spends,
-      caseTitles: caseTitles,
+      caseById: caseById,
     );
   }
 
   void _reload() => setState(() => _future = _load());
+
+  List<CustodySpendDto> _filtered(List<CustodySpendDto> all) {
+    switch (_filter) {
+      case 'pending':
+        return all.where((s) => s.status == 'pending').toList();
+      case 'approved':
+        return all.where((s) => s.status == 'approved').toList();
+      case 'rejected':
+        return all.where((s) => s.status == 'rejected').toList();
+      default:
+        return List.of(all);
+    }
+  }
 
   Future<void> _addAdvance() async {
     final amountCtrl = TextEditingController();
@@ -63,7 +80,7 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('إضافة سلفة / تعزيز عهدة'),
+        title: const Text('إضافة عملية مالية'),
         content: SizedBox(
           width: 400,
           child: Column(
@@ -113,7 +130,7 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
         notes: notes.isEmpty ? null : notes,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل السلفة')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تسجيل العملية')));
       _reload();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -186,38 +203,10 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
     }
   }
 
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'approved':
-        return 'معتمد';
-      case 'rejected':
-        return 'مرفوض';
-      default:
-        return 'معلق';
-    }
-  }
-
-  Widget _statusChip(String status) {
-    Color bg;
-    Color fg;
-    switch (status) {
-      case 'approved':
-        bg = const Color(0xFFDCFCE7);
-        fg = const Color(0xFF166534);
-        break;
-      case 'rejected':
-        bg = const Color(0xFFFEE2E2);
-        fg = const Color(0xFF991B1B);
-        break;
-      default:
-        bg = const Color(0xFFFEF3C7);
-        fg = const Color(0xFF92400E);
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(_statusLabel(status), style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 12)),
-    );
+  static String _caseRef(CaseDto? c) {
+    if (c == null) return '—';
+    if (c.caseNumber != null && c.caseNumber!.isNotEmpty) return c.caseNumber!;
+    return '${c.id}';
   }
 
   @override
@@ -248,11 +237,12 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
           );
         }
         final data = snap.data!;
-        final name = data.user?.fullName ?? data.user?.email ?? 'محامٍ #${widget.userId}';
+        final name = data.user?.fullName ?? data.user?.email ?? 'موظف #${widget.userId}';
         final rep = data.report;
         final advances = rep?.advancesSum ?? 0;
         final spentApproved = rep?.approvedSpendsSum ?? 0;
         final balance = rep?.currentBalance ?? 0;
+        final spendRows = _filtered(data.spends);
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -285,7 +275,7 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'عهدة المحامي — $name',
+                      'العُهد — $name',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -295,43 +285,60 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
               const SizedBox(height: 20),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 720;
-                  final cards = [
-                    _CustodySummaryCard(
-                      color: const Color(0xFF2563EB),
+                  final w = constraints.maxWidth;
+                  final cards = <Widget>[
+                    _CustodyTintedSummaryCard(
+                      color: const Color(0xFF1E40AF),
                       label: 'إجمالي العهدة',
                       value: '${money.format(advances)} ج.م',
                       subtitle: 'مجموع السلف والتعزيزات',
                     ),
-                    _CustodySummaryCard(
+                    _CustodyTintedSummaryCard(
                       color: const Color(0xFFDC2626),
-                      label: 'إجمالي المصروف',
+                      label: 'إجمالي المصروفات',
                       value: '${money.format(spentApproved)} ج.م',
                       subtitle: 'المصروفات المعتمدة',
                     ),
-                    _CustodySummaryCard(
+                    _CustodyTintedSummaryCard(
                       color: const Color(0xFF16A34A),
-                      label: 'المتبقي',
+                      label: 'إجمالي المتبقي',
                       value: '${money.format(balance)} ج.م',
                       subtitle: 'الرصيد الحالي',
                     ),
                   ];
-                  if (wide) {
+                  if (w >= 900) {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (var i = 0; i < cards.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 12),
+                        for (var i = 0; i < 3; i++) ...[
+                          if (i > 0) const SizedBox(width: 10),
                           Expanded(child: cards[i]),
                         ],
+                      ],
+                    );
+                  }
+                  if (w >= 520) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: cards[0]),
+                            const SizedBox(width: 10),
+                            Expanded(child: cards[1]),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        cards[2],
                       ],
                     );
                   }
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (var i = 0; i < cards.length; i++) ...[
-                        if (i > 0) const SizedBox(height: 12),
+                      for (var i = 0; i < 3; i++) ...[
+                        if (i > 0) const SizedBox(height: 10),
                         cards[i],
                       ],
                     ],
@@ -342,7 +349,7 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
                 Padding(
                   padding: const EdgeInsets.only(top: 16),
                   child: Text(
-                    'لا يوجد حساب عهدة مفعّل لهذا المحامي. أنشئ عهدة من تبويب العُهد.',
+                    'لا يوجد حساب عهدة مفعّل لهذا الموظف. أنشئ عهدة من تبويب العُهد.',
                     style: TextStyle(color: Colors.grey.shade700),
                   ),
                 ),
@@ -358,93 +365,39 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('حركة العهدة', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 12),
-                      if (data.spends.isEmpty)
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: DropdownButton<String>(
+                          value: _filter,
+                          items: const [
+                            DropdownMenuItem(value: 'all', child: Text('جميع العمليات')),
+                            DropdownMenuItem(value: 'pending', child: Text('معلق')),
+                            DropdownMenuItem(value: 'approved', child: Text('معتمد')),
+                            DropdownMenuItem(value: 'rejected', child: Text('مرفوض')),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setState(() => _filter = v);
+                          },
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      if (spendRows.isEmpty)
                         const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(child: Text('لا توجد مصروفات مسجّلة')),
+                          padding: EdgeInsets.symmetric(vertical: 32),
+                          child: Center(child: Text('لا توجد عمليات')),
                         )
                       else
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              minWidth: (MediaQuery.sizeOf(context).width - 40).clamp(600, 1400),
-                            ),
-                            child: Table(
-                              columnWidths: const {
-                                0: FixedColumnWidth(110),
-                                1: FlexColumnWidth(2),
-                                2: FlexColumnWidth(1.6),
-                                3: FixedColumnWidth(100),
-                                4: FixedColumnWidth(110),
-                                5: FixedColumnWidth(140),
-                              },
-                              border: TableBorder(horizontalInside: BorderSide(color: Colors.grey.shade200)),
-                              children: [
-                                TableRow(
-                                  decoration: BoxDecoration(color: Colors.grey.shade50),
-                                  children: const [
-                                    _Th('التاريخ'),
-                                    _Th('البيان'),
-                                    _Th('القضية'),
-                                    _Th('المبلغ'),
-                                    _Th('النوع'),
-                                    _Th('الأوامر'),
-                                  ],
-                                ),
-                                ...data.spends.map((s) {
-                                  final caseLabel = s.caseId == null
-                                      ? '—'
-                                      : (data.caseTitles[s.caseId!] ?? '#${s.caseId}');
-                                  return TableRow(
-                                    children: [
-                                      _Td(Text(df.format(s.occurredAt.toLocal()))),
-                                      _Td(Text(s.description ?? '—')),
-                                      _Td(Text(caseLabel)),
-                                      _Td(
-                                        Text(
-                                          money.format(s.amount),
-                                          style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFFDC2626)),
-                                        ),
-                                      ),
-                                      _Td(Align(alignment: AlignmentDirectional.centerStart, child: _statusChip(s.status))),
-                                      _Td(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            _SquareAct(
-                                              color: Colors.cyan.shade100,
-                                              iconColor: Colors.cyan.shade800,
-                                              icon: Icons.receipt_long_outlined,
-                                              onPressed: () => _viewReceipts(s.id),
-                                            ),
-                                            if (s.status == 'pending') ...[
-                                              const SizedBox(width: 6),
-                                              _SquareAct(
-                                                color: Colors.green.shade100,
-                                                iconColor: Colors.green.shade800,
-                                                icon: Icons.check,
-                                                onPressed: () => _approve(s.id),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              _SquareAct(
-                                                color: Colors.red.shade100,
-                                                iconColor: Colors.red.shade800,
-                                                icon: Icons.close,
-                                                onPressed: () => _reject(s.id),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }),
-                              ],
-                            ),
-                          ),
+                        _CustodySpendsRows(
+                          spends: spendRows,
+                          caseById: data.caseById,
+                          money: money,
+                          df: df,
+                          caseRef: _caseRef,
+                          onOpenCase: (caseId) => context.go('/o/$officeCode/cases/$caseId'),
+                          onReceipts: _viewReceipts,
+                          onApprove: _approve,
+                          onReject: _reject,
                         ),
                     ],
                   ),
@@ -458,34 +411,196 @@ class _CustodyLawyerAccountPageState extends State<CustodyLawyerAccountPage> {
   }
 }
 
-class _Th extends StatelessWidget {
-  const _Th(this.text);
-  final String text;
+class _CustodySpendsRows extends StatelessWidget {
+  const _CustodySpendsRows({
+    required this.spends,
+    required this.caseById,
+    required this.money,
+    required this.df,
+    required this.caseRef,
+    required this.onOpenCase,
+    required this.onReceipts,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final List<CustodySpendDto> spends;
+  final Map<int, CaseDto> caseById;
+  final NumberFormat money;
+  final DateFormat df;
+  final String Function(CaseDto?) caseRef;
+  final void Function(int caseId) onOpenCase;
+  final Future<void> Function(int spendId) onReceipts;
+  final Future<void> Function(int spendId) onApprove;
+  final Future<void> Function(int spendId) onReject;
+
+  static const _hStyle = TextStyle(fontWeight: FontWeight.w600, fontSize: 13);
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 102, child: Text('التاريخ', style: _hStyle)),
+              Expanded(flex: 26, child: Text('البيان', style: _hStyle)),
+              Expanded(flex: 24, child: Text('القضية / الموكل', style: _hStyle)),
+              SizedBox(width: 92, child: Text('المبلغ', style: _hStyle)),
+              SizedBox(width: 104, child: Text('النوع', style: _hStyle)),
+              SizedBox(width: 118, child: Text('الأوامر', style: _hStyle)),
+            ],
+          ),
+        ),
+        for (final s in spends) ...[
+          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 102, child: Text(df.format(s.occurredAt.toLocal()), style: const TextStyle(fontSize: 13))),
+                Expanded(
+                  flex: 26,
+                  child: Text(
+                    s.description ?? '—',
+                    softWrap: true,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                Expanded(
+                  flex: 24,
+                  child: _caseClientCell(s),
+                ),
+                SizedBox(
+                  width: 92,
+                  child: Text(
+                    money.format(s.amount),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 104,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _CustodyStatusChip(status: s.status),
+                  ),
+                ),
+                SizedBox(
+                  width: 118,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _CustodySquareIconButton(
+                        color: Colors.cyan.shade100,
+                        iconColor: Colors.cyan.shade800,
+                        icon: Icons.receipt_long_outlined,
+                        onPressed: () => onReceipts(s.id),
+                      ),
+                      if (s.status == 'pending') ...[
+                        const SizedBox(width: 6),
+                        _CustodySquareIconButton(
+                          color: Colors.green.shade100,
+                          iconColor: Colors.green.shade800,
+                          icon: Icons.check,
+                          onPressed: () => onApprove(s.id),
+                        ),
+                        const SizedBox(width: 6),
+                        _CustodySquareIconButton(
+                          color: Colors.red.shade100,
+                          iconColor: Colors.red.shade800,
+                          icon: Icons.close,
+                          onPressed: () => onReject(s.id),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _caseClientCell(CustodySpendDto s) {
+    final cid = s.caseId;
+    final c = cid == null ? null : caseById[cid];
+    if (c == null) {
+      return Text(cid == null ? '—' : 'قضية #$cid', style: TextStyle(color: Colors.grey.shade800, fontSize: 13));
+    }
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        InkWell(
+          onTap: () => onOpenCase(c.id),
+          child: Text(
+            caseRef(c),
+            style: const TextStyle(
+              color: AppColors.primaryBlue,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        Text(c.clientName, style: TextStyle(color: Colors.grey.shade800, fontSize: 13)),
+      ],
     );
   }
 }
 
-class _Td extends StatelessWidget {
-  const _Td(this.child);
-  final Widget child;
+class _CustodyStatusChip extends StatelessWidget {
+  const _CustodyStatusChip({required this.status});
+  final String status;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: child,
+    Color bg;
+    Color fg;
+    String label;
+    switch (status) {
+      case 'approved':
+        bg = const Color(0xFFDCFCE7);
+        fg = const Color(0xFF166534);
+        label = 'معتمد';
+        break;
+      case 'rejected':
+        bg = const Color(0xFFFEE2E2);
+        fg = const Color(0xFF991B1B);
+        label = 'مرفوض';
+        break;
+      default:
+        bg = const Color(0xFFFEF3C7);
+        fg = const Color(0xFF92400E);
+        label = 'معلق';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 12)),
     );
   }
 }
 
-class _SquareAct extends StatelessWidget {
-  const _SquareAct({
+class _CustodySquareIconButton extends StatelessWidget {
+  const _CustodySquareIconButton({
     required this.color,
     required this.iconColor,
     required this.icon,
@@ -519,17 +634,18 @@ class _CustodyLawyerData {
     required this.user,
     required this.report,
     required this.spends,
-    required this.caseTitles,
+    required this.caseById,
   });
 
   final OfficeUserDto? user;
   final CustodyReportItemDto? report;
   final List<CustodySpendDto> spends;
-  final Map<int, String> caseTitles;
+  final Map<int, CaseDto> caseById;
 }
 
-class _CustodySummaryCard extends StatelessWidget {
-  const _CustodySummaryCard({
+/// نفس أسلوب `_FinSummaryCard` في صفحة حساب القضية.
+class _CustodyTintedSummaryCard extends StatelessWidget {
+  const _CustodyTintedSummaryCard({
     required this.color,
     required this.label,
     required this.value,
@@ -543,41 +659,52 @@ class _CustodySummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 4,
-                height: 40,
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+    final fill = Color.alphaBlend(color.withValues(alpha: 0.14), Colors.white);
+    final borderTint = Color.alphaBlend(color.withValues(alpha: 0.35), Colors.grey.shade300);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 132),
+      child: SizedBox(
+        width: double.infinity,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderTint),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-              const SizedBox(width: 12),
-              Expanded(child: Text(label, style: TextStyle(color: Colors.grey.shade700, fontSize: 14))),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color)),
-          if (subtitle != null) ...[
-            const SizedBox(height: 6),
-            Text(subtitle!, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-          ],
-        ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 40,
+                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(label, style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(subtitle!, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

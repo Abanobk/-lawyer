@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
@@ -99,6 +101,15 @@ class _LoginPageState extends State<LoginPage> {
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'الخادم (تصحيح): ${ApiConfig.baseUrl}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     TextField(
                       controller: _email,

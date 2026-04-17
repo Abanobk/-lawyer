@@ -79,7 +79,6 @@ class _CustodyAdminView extends StatefulWidget {
 class _CustodyAdminViewState extends State<_CustodyAdminView> {
   final _officeApi = OfficeApi();
   final _custodyApi = CustodyApi();
-  final _filesApi = CustodyFilesApi();
 
   late Future<_AdminData> _future = _load();
 
@@ -87,12 +86,10 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
     final results = await Future.wait([
       _officeApi.users(),
       _custodyApi.listAccounts(),
-      _custodyApi.listSpendsAdmin(),
     ]);
     return _AdminData(
       users: results[0] as List<OfficeUserDto>,
       accounts: results[1] as List<CustodyAccountDto>,
-      spends: results[2] as List<CustodySpendDto>,
     );
   }
 
@@ -136,56 +133,14 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
     }
   }
 
-  Future<void> _approve(int spendId) async {
-    try {
-      await _custodyApi.approveSpend(spendId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم الاعتماد')));
-      _reload();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  Future<void> _reject(int spendId) async {
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => const _RejectDialog(),
-    );
-    if (reason == null) return;
-    try {
-      await _custodyApi.rejectSpend(spendId, reason: reason.isEmpty ? null : reason);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم الرفض')));
-      _reload();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  Future<void> _viewReceipts(int spendId) async {
-    try {
-      final receipts = await _custodyApi.listReceipts(spendId);
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => _ReceiptsDialog(
-          spendId: spendId,
-          receipts: receipts,
-          filesApi: _filesApi,
-        ),
-      );
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
+  void _openCustodyDetail(int userId) {
+    final code = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+    if (code.isEmpty) return;
+    context.go('/o/$code/accounts/custody/$userId');
   }
 
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat('yyyy-MM-dd');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -228,84 +183,70 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
               }
               if (snap.hasError) return Center(child: Text('تعذر تحميل البيانات: ${snap.error}'));
               final data = snap.data!;
-              return Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Card(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(12),
-                        child: DataTable(
-                          showCheckboxColumn: false,
-                          columns: const [
-                            DataColumn(label: Text('الموظف')),
-                            DataColumn(label: Text('الرصيد')),
-                          ],
-                          rows: data.accounts
-                              .map(
-                                (a) => DataRow(
-                                  onSelectChanged: (_) {
-                                    final code = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
-                                    if (code.isEmpty) return;
-                                    context.go('/o/$code/accounts/custody/${a.userId}');
-                                  },
-                                  cells: [
-                                    DataCell(Text(_nameForUserEmail(data, a.userEmail))),
-                                    DataCell(Text(a.currentBalance.toStringAsFixed(2))),
-                                  ],
-                                ),
-                              )
-                              .toList(),
+              return SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'اختر الموظف لفتح صفحة عهدته (ملخص وجدول العمليات) كما في حساب القضية.',
+                          style: TextStyle(color: Colors.grey.shade700),
                         ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 3,
-                    child: Card(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(12),
-                        child: DataTable(
-                          columns: const [
-                            DataColumn(label: Text('الموظف')),
-                            DataColumn(label: Text('المبلغ')),
-                            DataColumn(label: Text('التاريخ')),
-                            DataColumn(label: Text('الحالة')),
-                            DataColumn(label: Text('إيصالات')),
-                            DataColumn(label: Text('إجراء')),
-                          ],
-                          rows: data.spends.map((s) {
-                            return DataRow(
-                              cells: [
-                                DataCell(Text(_nameForUserId(data, s.userId))),
-                                DataCell(Text(s.amount.toStringAsFixed(2))),
-                                DataCell(Text(df.format(s.occurredAt.toLocal()))),
-                                DataCell(Text(_statusLabel(s.status))),
-                                DataCell(
-                                  TextButton(
-                                    onPressed: () => _viewReceipts(s.id),
-                                    child: const Text('عرض'),
+                        const SizedBox(height: 16),
+                        if (data.accounts.isEmpty)
+                          Text(
+                            'لا توجد حسابات عهدة بعد. أنشئ عهدة لموظف أولاً.',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          )
+                        else
+                          DropdownMenu<int>(
+                            width: 420,
+                            label: const Text('الموظف'),
+                            dropdownMenuEntries: data.accounts
+                                .map(
+                                  (a) => DropdownMenuEntry<int>(
+                                    value: a.userId,
+                                    label: '${_nameForUserEmail(data, a.userEmail)} — رصيد ${a.currentBalance.toStringAsFixed(2)}',
                                   ),
-                                ),
-                                DataCell(
-                                  s.status == 'pending'
-                                      ? Row(
-                                          children: [
-                                            TextButton(onPressed: () => _approve(s.id), child: const Text('اعتماد')),
-                                            TextButton(onPressed: () => _reject(s.id), child: const Text('رفض')),
-                                          ],
-                                        )
-                                      : const Text('—'),
-                                ),
-                              ],
-                            );
-                          }).toList(),
+                                )
+                                .toList(),
+                            onSelected: (v) {
+                              if (v == null) return;
+                              _openCustodyDetail(v);
+                            },
+                          ),
+                        const SizedBox(height: 20),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: () async {
+                                final d = await _future;
+                                if (!mounted) return;
+                                await _createAccount(d);
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('إنشاء عهدة لموظف'),
+                            ),
+                            FilledButton.icon(
+                              onPressed: () async {
+                                final d = await _future;
+                                if (!mounted) return;
+                                await _addAdvance(d);
+                              },
+                              icon: const Icon(Icons.add_card),
+                              label: const Text('إضافة سلفة'),
+                            ),
+                          ],
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               );
             },
           ),
@@ -314,35 +255,18 @@ class _CustodyAdminViewState extends State<_CustodyAdminView> {
     );
   }
 
-  String _nameForUserId(_AdminData data, int userId) {
-    final u = data.users.where((x) => x.id == userId).toList();
-    if (u.isEmpty) return '#$userId';
-    return u.first.fullName ?? u.first.email;
-  }
-
   String _nameForUserEmail(_AdminData data, String email) {
     final u = data.users.where((x) => x.email == email).toList();
     if (u.isEmpty) return email;
     return u.first.fullName ?? u.first.email;
   }
 
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'approved':
-        return 'معتمد';
-      case 'rejected':
-        return 'مرفوض';
-      default:
-        return 'معلق';
-    }
-  }
 }
 
 class _AdminData {
-  const _AdminData({required this.users, required this.accounts, required this.spends});
+  const _AdminData({required this.users, required this.accounts});
   final List<OfficeUserDto> users;
   final List<CustodyAccountDto> accounts;
-  final List<CustodySpendDto> spends;
 }
 
 class _CustodyEmployeeView extends StatefulWidget {

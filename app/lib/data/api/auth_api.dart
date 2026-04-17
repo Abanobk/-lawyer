@@ -39,6 +39,8 @@ class AuthApiException implements Exception {
   String toString() => message;
 }
 
+enum _AuthErrorKind { signup, login }
+
 class AuthApi {
   AuthApi({http.Client? client}) : _client = client ?? http.Client();
 
@@ -65,7 +67,10 @@ class AuthApi {
       return SignupResult.fromJson(map);
     }
 
-    throw AuthApiException(_parseErrorDetail(res.body), statusCode: res.statusCode);
+    throw AuthApiException(
+      _parseErrorDetail(res.body, statusCode: res.statusCode, kind: _AuthErrorKind.signup),
+      statusCode: res.statusCode,
+    );
   }
 
   Future<({String accessToken, String refreshToken})> login({
@@ -90,13 +95,16 @@ class AuthApi {
       );
     }
 
-    throw AuthApiException(_parseErrorDetail(res.body), statusCode: res.statusCode);
+    throw AuthApiException(
+      _parseErrorDetail(res.body, statusCode: res.statusCode, kind: _AuthErrorKind.login),
+      statusCode: res.statusCode,
+    );
   }
 
-  String _parseErrorDetail(String body) {
+  String _parseErrorDetail(String body, {required int? statusCode, required _AuthErrorKind kind}) {
     try {
       final map = jsonDecode(body);
-      if (map is! Map<String, dynamic>) return 'فشل الطلب';
+      if (map is! Map<String, dynamic>) return _fallbackErrorMessage(statusCode, kind);
       final detail = map['detail'];
       if (detail is String) return _mapDetailToAr(detail);
       if (detail is List && detail.isNotEmpty) {
@@ -105,8 +113,29 @@ class AuthApi {
           return first['msg'].toString();
         }
       }
+      final message = map['message'];
+      if (message is String && message.isNotEmpty) return message;
+      final error = map['error'];
+      if (error is String && error.isNotEmpty) return error;
     } catch (_) {}
-    return 'تعذّر إنشاء الحساب. تحقق من الاتصال أو البيانات.';
+    return _fallbackErrorMessage(statusCode, kind);
+  }
+
+  String _fallbackErrorMessage(int? statusCode, _AuthErrorKind kind) {
+    final action = kind == _AuthErrorKind.signup ? 'إنشاء الحساب' : 'تسجيل الدخول';
+    if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
+      return 'الخادم غير متاح مؤقتًا (رمز $statusCode). حاول لاحقًا أو تحقق من عمل الخدمة على السيرفر.';
+    }
+    if (statusCode == 404) {
+      return 'مسار الـ API غير موجود (404). تحقق من إعداد النشر وعنوان الواجهة (/api).';
+    }
+    if (statusCode != null && statusCode >= 500) {
+      return 'خطأ من الخادم (رمز $statusCode) أثناء $action. تحقق من السجلات أو اتصل بالدعم.';
+    }
+    if (statusCode != null && statusCode >= 400) {
+      return 'تعذّر $action. رد الخادم غير متوقع (رمز $statusCode). تحقق من البيانات أو الاتصال.';
+    }
+    return 'تعذّر $action. تحقق من الاتصال أو أن الموقع يصل إلى الخادم (قد يكون الرد ليس JSON).';
   }
 
   String _mapDetailToAr(String detail) {
