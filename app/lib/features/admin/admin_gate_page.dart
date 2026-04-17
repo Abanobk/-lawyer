@@ -14,6 +14,7 @@ import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
+import 'package:intl/intl.dart';
 
 /// مدخل السوبر أدمن (FAB من الشاشة الرئيسية). الحماية الفعلية من الـ API.
 class AdminGatePage extends StatefulWidget {
@@ -428,7 +429,11 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                     ],
                     const SizedBox(height: 12),
                     // Full details card (kept for deep inspection)
-                    _TrialCard(future: _trialAnalyticsFuture),
+                    _TrialCard(
+                      future: _trialAnalyticsFuture,
+                      adminApi: _adminApi,
+                      onTrialEdited: () => setState(() => _trialAnalyticsFuture = _adminApi.trialAnalytics(days: 30)),
+                    ),
                   ],
                 ),
               );
@@ -445,7 +450,11 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
             children: [
               Text('التجربة', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 12),
-              _TrialCard(future: _trialAnalyticsFuture),
+              _TrialCard(
+                future: _trialAnalyticsFuture,
+                adminApi: _adminApi,
+                onTrialEdited: () => setState(() => _trialAnalyticsFuture = _adminApi.trialAnalytics(days: 30)),
+              ),
             ],
           ),
         );
@@ -1823,7 +1832,11 @@ class _OfficesTabState extends State<_OfficesTab> {
         children: [
           Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
-          _TrialCard(future: _trialAnalyticsFuture),
+          _TrialCard(
+            future: _trialAnalyticsFuture,
+            adminApi: widget.adminApi,
+            onTrialEdited: () => setState(() => _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30)),
+          ),
           const SizedBox(height: 12),
           _ActiveSubsCard(future: _subsAnalyticsFuture),
           const SizedBox(height: 12),
@@ -1941,10 +1954,42 @@ class _OfficesTabState extends State<_OfficesTab> {
                                         : Column(
                                             crossAxisAlignment: CrossAxisAlignment.stretch,
                                             children: [
-                                              Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
+                                                  ),
+                                                  if (_sub!.status == 'trial' || _sub!.status == 'active')
+                                                    FilledButton.tonalIcon(
+                                                      onPressed: () async {
+                                                        final id = _selectedOfficeId;
+                                                        if (id == null) return;
+                                                        await _openAdminEditOfficeSubscriptionDialog(
+                                                          context: context,
+                                                          adminApi: widget.adminApi,
+                                                          officeId: id,
+                                                          officeName: () {
+                                                            for (final o in offices) {
+                                                              if (o.id == id) return o.name;
+                                                            }
+                                                            return null;
+                                                          }(),
+                                                          onSaved: () {
+                                                            _refreshAll();
+                                                            _loadSub(id);
+                                                          },
+                                                        );
+                                                      },
+                                                      icon: const Icon(Icons.edit_outlined),
+                                                      label: const Text('تعديل'),
+                                                    ),
+                                                ],
+                                              ),
                                               const SizedBox(height: 8),
                                               Text('بداية: ${_sub!.startAt.toLocal()}'),
                                               Text('نهاية: ${_sub!.endAt.toLocal()}'),
+                                              Text('حد المستخدمين الفعلي: ${_sub!.maxUsersEffective}'),
+                                              if (_sub!.maxUsersOverride != null) Text('تجاوز يدوي: ${_sub!.maxUsersOverride}'),
                                               if ((_sub!.notes ?? '').isNotEmpty) ...[
                                                 const SizedBox(height: 8),
                                                 Text('ملاحظات: ${_sub!.notes}'),
@@ -1999,9 +2044,172 @@ class _OfficesTabState extends State<_OfficesTab> {
   }
 }
 
+bool _sameInstantUtc(DateTime a, DateTime b) =>
+    (a.toUtc().millisecondsSinceEpoch - b.toUtc().millisecondsSinceEpoch).abs() < 2000;
+
+Future<void> _openAdminEditOfficeSubscriptionDialog({
+  required BuildContext context,
+  required AdminApi adminApi,
+  required int officeId,
+  String? officeName,
+  required VoidCallback onSaved,
+}) async {
+  AdminSubscriptionDto? sub;
+  try {
+    sub = await adminApi.getSubscription(officeId);
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تحميل الاشتراك: $e')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => _AdminEditSubscriptionDialog(
+      adminApi: adminApi,
+      officeId: officeId,
+      officeName: officeName,
+      initial: sub!,
+      onSaved: onSaved,
+    ),
+  );
+}
+
+class _AdminEditSubscriptionDialog extends StatefulWidget {
+  const _AdminEditSubscriptionDialog({
+    required this.adminApi,
+    required this.officeId,
+    required this.initial,
+    this.officeName,
+    required this.onSaved,
+  });
+
+  final AdminApi adminApi;
+  final int officeId;
+  final AdminSubscriptionDto initial;
+  final String? officeName;
+  final VoidCallback onSaved;
+
+  @override
+  State<_AdminEditSubscriptionDialog> createState() => _AdminEditSubscriptionDialogState();
+}
+
+class _AdminEditSubscriptionDialogState extends State<_AdminEditSubscriptionDialog> {
+  late DateTime _endLocal;
+  late final TextEditingController _maxUsers;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _endLocal = widget.initial.endAt.toLocal();
+    _maxUsers = TextEditingController(text: widget.initial.maxUsersOverride?.toString() ?? '');
+  }
+
+  @override
+  void dispose() {
+    _maxUsers.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickEnd() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: DateTime(_endLocal.year, _endLocal.month, _endLocal.day),
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 8)),
+    );
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_endLocal));
+    if (t == null || !mounted) return;
+    setState(() {
+      _endLocal = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    });
+  }
+
+  Future<void> _save() async {
+    final initial = widget.initial;
+    final body = <String, dynamic>{};
+    if (!_sameInstantUtc(_endLocal, initial.endAt)) {
+      body['trial_end_at'] = _endLocal.toUtc().toIso8601String();
+    }
+    final t = _maxUsers.text.trim();
+    final io = initial.maxUsersOverride;
+    if (t.isEmpty) {
+      if (io != null) body['max_users_override'] = null;
+    } else {
+      final v = int.tryParse(t);
+      if (v == null || v < 1) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('أدخل عدد مستخدمين صحيح (رقم موجب)')));
+        return;
+      }
+      if (v != io) body['max_users_override'] = v;
+    }
+    if (body.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.adminApi.patchOfficeSubscription(widget.officeId, body);
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onSaved();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ التعديلات')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل الحفظ: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.officeName ?? 'مكتب #${widget.officeId}';
+    final df = DateFormat.yMMMd().add_Hm();
+    return AlertDialog(
+      title: Text('تعديل اشتراك / تجربة — $title'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('الحالة: ${widget.initial.status}', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text('الحد الفعلي للمستخدمين الآن: ${widget.initial.maxUsersEffective}'),
+            const SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('تاريخ ووقت الانتهاء'),
+              subtitle: Text(df.format(_endLocal)),
+              trailing: IconButton(icon: const Icon(Icons.event_outlined), onPressed: _saving ? null : _pickEnd),
+            ),
+            TextField(
+              controller: _maxUsers,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'حد المستخدمين (اختياري)',
+                hintText: 'فارغ = افتراضي الباقة أو ٣ في التجربة',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('إلغاء')),
+        FilledButton(onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('حفظ')),
+      ],
+    );
+  }
+}
+
 class _TrialCard extends StatelessWidget {
-  const _TrialCard({required this.future});
+  const _TrialCard({required this.future, this.adminApi, this.onTrialEdited});
   final Future<AdminTrialAnalyticsDto> future;
+  final AdminApi? adminApi;
+  final VoidCallback? onTrialEdited;
 
   @override
   Widget build(BuildContext context) {
@@ -2019,6 +2227,7 @@ class _TrialCard extends StatelessWidget {
             if (data == null || data.offices.isEmpty) return const Text('لا توجد مكاتب تجريبية خلال آخر 30 يوم');
 
             final maxUsers = data.offices.map((o) => o.activeUsersCount).fold<int>(1, (a, b) => a > b ? a : b);
+            final api = adminApi;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2030,25 +2239,47 @@ class _TrialCard extends StatelessWidget {
                   final pct = (o.activeUsersCount / maxUsers).clamp(0.0, 1.0);
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(o.officeName, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: LinearProgressIndicator(value: pct, minHeight: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(o.officeName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: LinearProgressIndicator(value: pct, minHeight: 10),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text('${o.activeUsersCount} مستخدم'),
+                                ],
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text('${o.activeUsersCount} مستخدم'),
-                          ],
+                              const SizedBox(height: 2),
+                              Text(
+                                'أيام نشاط: ${o.activeDaysCount} — ينتهي: ${o.trialEndAt.toLocal()}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text('أيام نشاط: ${o.activeDaysCount} — ينتهي: ${o.trialEndAt.toLocal()}', style: Theme.of(context).textTheme.bodySmall),
+                        if (api != null)
+                          IconButton(
+                            tooltip: 'تعديل مدة التجربة أو حد المستخدمين',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => _openAdminEditOfficeSubscriptionDialog(
+                              context: context,
+                              adminApi: api,
+                              officeId: o.officeId,
+                              officeName: o.officeName,
+                              onSaved: onTrialEdited ?? () {},
+                            ),
+                          ),
                       ],
                     ),
                   );

@@ -43,6 +43,8 @@ class AdminSubscriptionDto {
     this.planNameSnapshot,
     this.priceSnapshotCents,
     this.notes,
+    required this.maxUsersEffective,
+    this.maxUsersOverride,
   });
 
   final int id;
@@ -53,6 +55,8 @@ class AdminSubscriptionDto {
   final String? planNameSnapshot;
   final int? priceSnapshotCents;
   final String? notes;
+  final int maxUsersEffective;
+  final int? maxUsersOverride;
 
   factory AdminSubscriptionDto.fromJson(Map<String, dynamic> json) {
     return AdminSubscriptionDto(
@@ -64,6 +68,8 @@ class AdminSubscriptionDto {
       planNameSnapshot: json['plan_name_snapshot'] as String?,
       priceSnapshotCents: json['price_snapshot_cents'] as int?,
       notes: json['notes'] as String?,
+      maxUsersEffective: (json['max_users_effective'] as num?)?.toInt() ?? 3,
+      maxUsersOverride: (json['max_users_override'] as num?)?.toInt(),
     );
   }
 }
@@ -357,6 +363,14 @@ class AdminApi {
   Future<AdminSubscriptionDto> getSubscription(int officeId) async {
     return _client.getJson<AdminSubscriptionDto>(
       'admin/offices/$officeId/subscription',
+      decode: (json) => AdminSubscriptionDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
+
+  Future<AdminSubscriptionDto> patchOfficeSubscription(int officeId, Map<String, dynamic> body) async {
+    return _client.patchJson<AdminSubscriptionDto>(
+      'admin/offices/$officeId/subscription',
+      body,
       decode: (json) => AdminSubscriptionDto.fromJson(json as Map<String, dynamic>),
     );
   }

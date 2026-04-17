@@ -96,11 +96,27 @@ class SubscriptionOut(BaseModel):
     plan_id: int | None = None
     price_snapshot_cents: int | None
     notes: str | None
+    max_users_override: int | None = None
+    max_users_effective: int
 
 
 class AdminUpdateTrialRequest(BaseModel):
     trial_end_at: datetime
     notes: str | None = None
+
+
+class AdminPatchSubscriptionRequest(BaseModel):
+    """Partial update; only fields present in the JSON body are applied."""
+
+    trial_end_at: datetime | None = None
+    max_users_override: int | None = None
+
+    @field_validator("max_users_override")
+    @classmethod
+    def _max_users_positive(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("max_users_override must be positive when set")
+        return v
 
 
 class AdminSuperAdminCreate(BaseModel):

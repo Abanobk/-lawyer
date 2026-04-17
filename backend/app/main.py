@@ -90,6 +90,7 @@ from app.schemas import (
     SignupRequest,
     SignupResponse,
     SubscriptionOut,
+    AdminPatchSubscriptionRequest,
     TokenPair,
     UserOut,
     UserPermissionsOut,
@@ -292,6 +293,8 @@ def init_db(max_wait_seconds: int = 30) -> None:
                             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscriptions_plan_id ON subscriptions (plan_id)"))
                         except Exception:
                             pass
+                    if "max_users_override" not in sub_cols:
+                        conn.execute(text("ALTER TABLE subscriptions ADD COLUMN max_users_override INTEGER"))
 
                 # Payment proofs: link to plan + review fields + snapshots
                 if "payment_proofs" in table_names:
@@ -426,6 +429,39 @@ def require_super_admin(user: User = Depends(current_user)) -> User:
     return user
 
 
+def _effective_max_users(db: Session, sub: Subscription) -> int:
+    ov = getattr(sub, "max_users_override", None)
+    if ov is not None and int(ov) > 0:
+        return int(ov)
+    if sub.status == SubscriptionStatus.trial:
+        return 3
+    plan: Plan | None = None
+    if getattr(sub, "plan_id", None):
+        plan = db.get(Plan, int(sub.plan_id))
+    if not plan and sub.plan_name_snapshot:
+        plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
+    mu = int(getattr(plan, "max_users", None) or 0) if plan else 0
+    if mu > 0:
+        return mu
+    return 10_000
+
+
+def _subscription_to_out(db: Session, sub: Subscription) -> SubscriptionOut:
+    return SubscriptionOut(
+        id=sub.id,
+        office_id=sub.office_id,
+        status=sub.status,
+        start_at=sub.start_at,
+        end_at=sub.end_at,
+        plan_name_snapshot=sub.plan_name_snapshot,
+        plan_id=getattr(sub, "plan_id", None),
+        price_snapshot_cents=sub.price_snapshot_cents,
+        notes=sub.notes,
+        max_users_override=getattr(sub, "max_users_override", None),
+        max_users_effective=_effective_max_users(db, sub),
+    )
+
+
 def require_office_user(user: User = Depends(current_user)) -> User:
     if user.role not in (UserRole.office_owner, UserRole.staff):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Office user required")
@@ -443,22 +479,8 @@ def require_active_subscription(db: Session = Depends(get_db), user: User = Depe
 
     now = _now()
 
-    # Enforce user limit by subscription plan.
-    # include `office_owner` in the user limit count.
-    max_users_total: int | None = None
-    if sub.status == SubscriptionStatus.trial:
-        max_users_total = 3
-    else:
-        plan: Plan | None = None
-        if getattr(sub, "plan_id", None):
-            plan = db.get(Plan, int(sub.plan_id))
-        if not plan and sub.plan_name_snapshot:
-            plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
-        max_users_total = int(getattr(plan, "max_users", None) or 0) or None
-
-    if not max_users_total:
-        # Backwards compatibility: if legacy plans don't have limits.
-        max_users_total = 10_000
+    # Enforce user limit (trial default 3, plan max_users, or super-admin override).
+    max_users_total = _effective_max_users(db, sub)
 
     # Only disable when actual limit exceeded.
     active_count = db.scalar(
@@ -676,7 +698,7 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
         TRIAL_BLOCK_DAYS_BEFORE = 3
         if (sub.end_at - now) <= timedelta(days=TRIAL_BLOCK_DAYS_BEFORE):
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Trial expiring. Upgrade subscription.")
-        max_users_total = 3
+        max_users_total = _effective_max_users(db, sub)
         allowed_perm_keys = set(PERMISSIONS.keys())
     else:
         plan: Plan | None = None
@@ -684,7 +706,7 @@ def office_create_user(payload: OfficeUserCreate, db: Session = Depends(get_db),
             plan = db.get(Plan, int(sub.plan_id))
         if not plan and sub.plan_name_snapshot:
             plan = db.scalar(select(Plan).where(Plan.name == sub.plan_name_snapshot))
-        max_users_total = int(getattr(plan, "max_users", None) or 0) or 10_000
+        max_users_total = _effective_max_users(db, sub)
         if not plan or not getattr(plan, "allowed_perm_keys_csv", None):
             allowed_perm_keys = set(PERMISSIONS.keys())
         else:
@@ -1875,17 +1897,7 @@ def billing_status(db: Session = Depends(get_db), user: User = Depends(require_o
     sub = db.scalar(select(Subscription).where(Subscription.office_id == user.office_id).order_by(Subscription.id.desc()))
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
-    return SubscriptionOut(
-        id=sub.id,
-        office_id=sub.office_id,
-        status=sub.status,
-        start_at=sub.start_at,
-        end_at=sub.end_at,
-        plan_name_snapshot=sub.plan_name_snapshot,
-        plan_id=getattr(sub, "plan_id", None),
-        price_snapshot_cents=sub.price_snapshot_cents,
-        notes=sub.notes,
-    )
+    return _subscription_to_out(db, sub)
 
 
 @app.get("/subscription/me", response_model=SubscriptionOut)
@@ -2677,17 +2689,36 @@ def admin_get_subscription(office_id: int, db: Session = Depends(get_db), _: Use
     sub = db.scalar(select(Subscription).where(Subscription.office_id == office_id).order_by(Subscription.id.desc()))
     if not sub:
         raise HTTPException(status_code=404, detail="Subscription not found")
-    return SubscriptionOut(
-        id=sub.id,
-        office_id=sub.office_id,
-        status=sub.status,
-        start_at=sub.start_at,
-        end_at=sub.end_at,
-        plan_name_snapshot=sub.plan_name_snapshot,
-        plan_id=getattr(sub, "plan_id", None),
-        price_snapshot_cents=sub.price_snapshot_cents,
-        notes=sub.notes,
-    )
+    return _subscription_to_out(db, sub)
+
+
+@app.patch("/admin/offices/{office_id}/subscription", response_model=SubscriptionOut)
+def admin_patch_subscription(
+    office_id: int,
+    payload: AdminPatchSubscriptionRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_super_admin),
+):
+    sub = db.scalar(select(Subscription).where(Subscription.office_id == office_id).order_by(Subscription.id.desc()))
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "trial_end_at" in data:
+        te = data["trial_end_at"]
+        if te is None:
+            raise HTTPException(status_code=400, detail="trial_end_at cannot be null")
+        if te <= _now():
+            raise HTTPException(status_code=400, detail="trial_end_at must be in the future")
+        if sub.status not in (SubscriptionStatus.trial, SubscriptionStatus.active):
+            raise HTTPException(status_code=400, detail="Cannot update end date for this subscription state")
+        sub.end_at = te
+    if "max_users_override" in data:
+        sub.max_users_override = data["max_users_override"]
+    db.commit()
+    db.refresh(sub)
+    return _subscription_to_out(db, sub)
 
 
 @app.put("/admin/offices/{office_id}/trial", response_model=SubscriptionOut)
@@ -2709,15 +2740,5 @@ def admin_update_trial(
         sub.notes = payload.notes
     db.commit()
     db.refresh(sub)
-    return SubscriptionOut(
-        id=sub.id,
-        office_id=sub.office_id,
-        status=sub.status,
-        start_at=sub.start_at,
-        end_at=sub.end_at,
-        plan_name_snapshot=sub.plan_name_snapshot,
-        plan_id=getattr(sub, "plan_id", None),
-        price_snapshot_cents=sub.price_snapshot_cents,
-        notes=sub.notes,
-    )
+    return _subscription_to_out(db, sub)
 

@@ -102,6 +102,8 @@ class Subscription(Base):
     plan_name_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Reference to the exact plan option that produced this subscription.
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id"), nullable=True, index=True)
+    # When set, overrides trial default (3) or plan max_users for user-cap enforcement.
+    max_users_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
