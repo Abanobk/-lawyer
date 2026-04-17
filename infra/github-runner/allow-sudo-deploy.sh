@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# يضيف لـ githubrunner صلاحية تشغيل bash كـ root بدون كلمة مرور (لخطوة النشر في GitHub Actions فقط).
-# شغّل مرة واحدة على TrueNAS كـ root:
+# ينسخ سكربت النشر إلى /usr/local/sbin ويضيف sudoers لـ githubrunner (NOPASSWD على هذا الملف فقط).
+# شغّل مرة واحدة على TrueNAS كـ root من داخل الريبو:
 #   bash infra/github-runner/allow-sudo-deploy.sh
 #
 set -euo pipefail
 
 RUNNER_USER="${RUNNER_USER:-githubrunner}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$SCRIPT_DIR/lawyer-gh-deploy.sh"
+DEST="/usr/local/sbin/lawyer-gh-deploy.sh"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "شغّل كـ root"
@@ -17,11 +20,17 @@ if ! id "$RUNNER_USER" &>/dev/null; then
   exit 1
 fi
 
+if [[ ! -f "$SRC" ]]; then
+  echo "خطأ: لم يُعثر على $SRC"
+  exit 1
+fi
+
+install -m 755 -o root -g root "$SRC" "$DEST"
+
 f="/etc/sudoers.d/gh-runner-lawyer-deploy"
 {
-  echo "# GitHub Actions self-hosted: deploy job يستخدم sudo bash -c"
-  echo "${RUNNER_USER} ALL=(root) NOPASSWD: /bin/bash"
-  echo "${RUNNER_USER} ALL=(root) NOPASSWD: /usr/bin/bash"
+  echo "# GitHub Actions: NOPASSWD على سكربت النشر فقط"
+  echo "${RUNNER_USER} ALL=(root) NOPASSWD: ${DEST}"
 } >"$f"
 chmod 440 "$f"
 
@@ -29,5 +38,6 @@ if command -v visudo &>/dev/null; then
   visudo -c -f "$f" || { rm -f "$f"; exit 1; }
 fi
 
-echo "تم إنشاء $f"
-echo "اختبر: su - ${RUNNER_USER} -s /bin/bash -c 'sudo -n /usr/bin/bash -c \"echo ok\"'"
+echo "تم: $DEST و $f"
+echo "اختبار (يشغّل نشرًا كاملًا): su - ${RUNNER_USER} -s /bin/bash -c 'sudo -n ${DEST}'"
+echo "أو فقط التحقق من القاعدة: sudo -n -l -U ${RUNNER_USER}"
