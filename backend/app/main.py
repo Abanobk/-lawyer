@@ -59,6 +59,7 @@ from app.schemas import (
     PlanOut,
     PlanUpdate,
     CaseCreate,
+    CasePatch,
     CaseFileOut,
     CaseOut,
     CaseTransactionCreate,
@@ -982,6 +983,40 @@ def create_case(payload: CaseCreate, db: Session = Depends(get_db), user: User =
         primary_lawyer_email=primary_user.email if primary_user else None,
         created_at=case.created_at,
     )
+
+
+@app.patch("/cases/{case_id}", response_model=CaseOut)
+def patch_case(
+    case_id: int,
+    payload: CasePatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("accounts.read")),
+):
+    row = db.execute(
+        select(Case, Client)
+        .join(Client, Client.id == Case.client_id)
+        .where(Case.office_id == user.office_id, Case.id == case_id)
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found")
+    case, client = row
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "fee_total" in data:
+        case.fee_total = data["fee_total"]
+    db.commit()
+    db.refresh(case)
+    primary = db.scalar(
+        select(User)
+        .join(CaseAssignment, CaseAssignment.user_id == User.id)
+        .where(
+            CaseAssignment.office_id == user.office_id,
+            CaseAssignment.case_id == case.id,
+            CaseAssignment.is_primary == True,  # noqa: E712
+        )
+    )
+    return _case_to_out(case, client, primary)
 
 
 @app.post("/cases/{case_id}/files")

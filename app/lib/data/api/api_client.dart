@@ -65,6 +65,16 @@ class ApiClient {
     return _handleJson(res, decode: decode);
   }
 
+  Future<T> patchJson<T>(
+    String path,
+    Object body, {
+    T Function(Object? json)? decode,
+  }) async {
+    final uri = ApiConfig.uri(path);
+    final res = await _http.patch(uri, headers: await _authHeaders(), body: jsonEncode(body));
+    return _handleJson(res, decode: decode);
+  }
+
   Future<T> deleteJson<T>(
     String path, {
     T Function(Object? json)? decode,

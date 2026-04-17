@@ -48,52 +48,84 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
     }
   }
 
-  Future<void> _addTransaction() async {
+  Future<void> _addTransaction(double? caseFeeTotal) async {
     final amountCtrl = TextEditingController();
+    final agreedFeeCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     String direction = 'income';
     DateTime occurred = DateTime.now();
+    var mode = 'transaction';
+    final showAgreedFeeOption = caseFeeTotal == null;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setLocal) {
           return AlertDialog(
-            title: const Text('إضافة عملية مالية'),
+            title: const Text('إضافة إلى الحساب'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'income', label: Text('أتعاب')),
-                      ButtonSegment(value: 'expense', label: Text('مصروف')),
-                    ],
-                    selected: {direction},
-                    onSelectionChanged: (s) => setLocal(() => direction = s.first),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: amountCtrl,
-                    decoration: const InputDecoration(labelText: 'المبلغ *'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                  TextField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(labelText: 'البيان (اختياري)'),
-                  ),
-                  ListTile(
-                    title: Text(DateFormat('yyyy-MM-dd').format(occurred.toLocal())),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: occurred,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) setLocal(() => occurred = picked);
-                    },
-                  ),
+                  if (showAgreedFeeOption) ...[
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'transaction', label: Text('عملية مالية')),
+                        ButtonSegment(value: 'agreed_fee', label: Text('إجمالي الأتعاب المتفق عليها')),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (s) => setLocal(() => mode = s.first),
+                    ),
+                    const SizedBox(height: 12),
+                    if (mode == 'agreed_fee')
+                      Text(
+                        'يُحدَّد المبلغ الكلي المتفق عليه للقضية. لن يُضاف سطر تحصيل في الجدول إلا إذا اخترت «عملية مالية».',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    if (mode == 'agreed_fee') const SizedBox(height: 8),
+                  ],
+                  if (!showAgreedFeeOption || mode == 'transaction') ...[
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'income', label: Text('أتعاب')),
+                        ButtonSegment(value: 'expense', label: Text('مصروف')),
+                      ],
+                      selected: {direction},
+                      onSelectionChanged: (s) => setLocal(() => direction = s.first),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: amountCtrl,
+                      decoration: const InputDecoration(labelText: 'المبلغ *'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    TextField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(labelText: 'البيان (اختياري)'),
+                    ),
+                    ListTile(
+                      title: Text(DateFormat('yyyy-MM-dd').format(occurred.toLocal())),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: occurred,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) setLocal(() => occurred = picked);
+                      },
+                    ),
+                  ] else ...[
+                    TextField(
+                      controller: agreedFeeCtrl,
+                      decoration: const InputDecoration(labelText: 'إجمالي الأتعاب المتفق عليها *'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -107,13 +139,39 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
     );
     if (ok != true) {
       amountCtrl.dispose();
+      agreedFeeCtrl.dispose();
       descCtrl.dispose();
       return;
     }
+
+    if (showAgreedFeeOption && mode == 'agreed_fee') {
+      final rawFee = agreedFeeCtrl.text.trim().replaceAll(',', '.');
+      final feeVal = double.tryParse(rawFee);
+      amountCtrl.dispose();
+      agreedFeeCtrl.dispose();
+      descCtrl.dispose();
+      if (feeVal == null || feeVal <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('مبلغ غير صالح')));
+        return;
+      }
+      try {
+        await _casesApi.patchCase(caseId: widget.caseId, body: {'fee_total': feeVal});
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حفظ إجمالي الأتعاب المتفق عليها')));
+        _reload();
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+      return;
+    }
+
     final raw = amountCtrl.text.trim().replaceAll(',', '.');
     final amt = double.tryParse(raw);
     final desc = descCtrl.text.trim();
     amountCtrl.dispose();
+    agreedFeeCtrl.dispose();
     descCtrl.dispose();
     if (amt == null || amt <= 0) {
       if (!mounted) return;
@@ -313,7 +371,7 @@ class _CaseClientAccountPageState extends State<CaseClientAccountPage> {
                       backgroundColor: const Color(0xFF16A34A),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: _addTransaction,
+                    onPressed: () => _addTransaction(c.feeTotal),
                     icon: const Icon(Icons.add),
                     label: const Text('إضافة عملية مالية'),
                   ),

@@ -108,5 +108,13 @@ class CasesApi {
       decode: (json) => CaseDto.fromJson(json as Map<String, dynamic>),
     );
   }
+
+  Future<CaseDto> patchCase({required int caseId, required Map<String, dynamic> body}) async {
+    return _client.patchJson<CaseDto>(
+      'cases/$caseId',
+      body,
+      decode: (json) => CaseDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
 }
 

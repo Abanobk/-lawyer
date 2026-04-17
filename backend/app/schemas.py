@@ -1,6 +1,6 @@
 from datetime import datetime, date
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.models import CaseKind, CustodySpendStatus, MoneyDirection, OfficeStatus, ProofStatus, SubscriptionStatus, UserRole
 
@@ -256,6 +256,19 @@ class CaseCreate(BaseModel):
     primary_lawyer_user_id: int | None = None
     first_session_number: str | None = Field(default=None, max_length=50)
     first_session_year: int | None = None
+
+
+class CasePatch(BaseModel):
+    """تحديث جزئي للقضية (مثلاً إجمالي الأتعاب المتفق عليها من صفحة الحساب)."""
+
+    fee_total: float | None = None
+
+    @field_validator("fee_total")
+    @classmethod
+    def fee_total_positive(cls, v: float | None) -> float | None:
+        if v is not None and v <= 0:
+            raise ValueError("fee_total must be greater than 0")
+        return v
 
 
 class CaseOut(BaseModel):
