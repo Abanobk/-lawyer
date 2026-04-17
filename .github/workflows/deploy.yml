@@ -1,3 +1,15 @@
+# النشر من GitHub Hosted (لا يحتاج self-hosted runner على TrueNAS).
+#
+# المتطلبات في الريبو: Settings → Secrets and variables → Actions
+#   DEPLOY_HOST      عنوان يصل إليه الإنترنت (IP عام أو دومين يشير للسيرفر)
+#   DEPLOY_USER      مستخدم SSH (مثلاً root أو deploy)
+#   DEPLOY_SSH_KEY   المفتاح الخاص كامل (-----BEGIN ... PRIVATE KEY-----)
+# اختياري:
+#   DEPLOY_SSH_PORT  منفذ SSH إن لم يكن 22
+#
+# إذا السيرفر فقط على Tailscale/شبكة داخلية بدون وصول من GitHub:
+#   إمّا تفتح SSH للعامة (جدار ناري) أو تعيد تشغيل runner محلي على NAS.
+
 name: Deploy server
 
 on:
@@ -7,19 +19,43 @@ on:
 
 jobs:
   deploy:
-    # هذا الـ job يعمل على Runner داخل السيرفر نفسه (TrueNAS).
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
-      - name: Deploy (pull + compose)
-        shell: bash
+      - name: التحقق من أسرار النشر
         run: |
+          set -euo pipefail
+          ok=true
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then echo "::error::أضف Secret باسم DEPLOY_HOST"; ok=false; fi
+          if [ -z "${{ secrets.DEPLOY_USER }}" ]; then echo "::error::أضف Secret باسم DEPLOY_USER"; ok=false; fi
+          if [ -z "${{ secrets.DEPLOY_SSH_KEY }}" ]; then echo "::error::أضف Secret باسم DEPLOY_SSH_KEY"; ok=false; fi
+          if [ "$ok" != true ]; then exit 1; fi
+
+      - name: سحب الكود وتشغيل Docker على السيرفر (SSH)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          PORT_ARGS=()
+          if [ -n "${DEPLOY_SSH_PORT:-}" ]; then
+            PORT_ARGS=(-p "${DEPLOY_SSH_PORT}")
+          fi
+          ssh "${PORT_ARGS[@]}" -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'bash -s' << 'REMOTE_EOF'
           set -euo pipefail
           cd "/mnt/marichia/files/app-data/lawyer/repo"
           git fetch origin main
           git checkout main
-          # يطابق نسخة GitHub حتى لو في تعديلات محلية على السيرفر (مثل docker-compose)
           git reset --hard origin/main
           cd infra
-          # يمنع أخطاء «No such container» عند إعادة إنشاء الحاويات بعد تغيّر الـ IDs
           docker compose down --remove-orphans || true
           docker compose up -d --build --remove-orphans
+          REMOTE_EOF
