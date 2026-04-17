@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
+import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/sessions_api.dart';
 
 class SessionsPage extends StatefulWidget {
@@ -13,14 +15,17 @@ class SessionsPage extends StatefulWidget {
 class _SessionsPageState extends State<SessionsPage> {
   final _api = SessionsApi();
   final _meApi = MeApi();
+  final _permApi = PermissionsApi();
   late Future<List<SessionDto>> _future = _api.list();
   late Future<MeDto> _meFuture = _meApi.me();
+  late Future<UserPermissionsDto> _permsFuture = _permApi.myPermissions();
 
   void _reload() => setState(() => _future = _api.list());
 
   void _reloadAll() => setState(() {
         _future = _api.list();
         _meFuture = _meApi.me();
+        _permsFuture = _permApi.myPermissions();
       });
 
   Future<void> _reschedule(SessionDto s) async {
@@ -119,56 +124,70 @@ class _SessionsPageState extends State<SessionsPage> {
               future: _meFuture,
               builder: (context, meSnap) {
                 final isAdmin = meSnap.data?.role == 'office_owner';
-                return FutureBuilder<List<SessionDto>>(
-                  future: _future,
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snap.hasError) {
-                      return Center(child: Text('تعذر تحميل الجلسات: ${snap.error}'));
-                    }
-                    final items = snap.data ?? const <SessionDto>[];
-                    if (items.isEmpty) {
-                      return const Center(child: Text('لا يوجد جلسات بعد'));
-                    }
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.all(12),
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(label: Text('التاريخ')),
-                          DataColumn(label: Text('الموكل')),
-                          DataColumn(label: Text('القضية')),
-                          DataColumn(label: Text('رقم/سنة')),
-                          DataColumn(label: Text('تذكير مالي')),
-                          DataColumn(label: Text('إجراء')),
-                        ],
-                        rows: items
-                            .map(
-                              (s) => DataRow(
-                                cells: [
-                                  DataCell(Text(df.format(s.sessionDate.toLocal()))),
-                                  DataCell(Text(s.clientName)),
-                                  DataCell(Text(s.caseTitle)),
-                                  DataCell(Text(_numYear(s.sessionNumber, s.sessionYear))),
-                                  DataCell(Text(_feeReminderHint(s), maxLines: 2, overflow: TextOverflow.ellipsis)),
-                                  DataCell(
-                                    isAdmin
-                                        ? Wrap(
-                                            spacing: 8,
-                                            children: [
-                                              TextButton(onPressed: () => _edit(s), child: const Text('تعديل')),
-                                              TextButton(onPressed: () => _setRoll(s), child: const Text('رول')),
-                                              TextButton(onPressed: () => _reschedule(s), child: const Text('ترحيل')),
-                                            ],
-                                          )
-                                        : const Text('—'),
+                return FutureBuilder<UserPermissionsDto>(
+                  future: _permsFuture,
+                  builder: (context, permSnap) {
+                    final canViewAccounts = permSnap.data?.permissions.contains('accounts.read') ?? false;
+                    return FutureBuilder<List<SessionDto>>(
+                      future: _future,
+                      builder: (context, snap) {
+                        if (snap.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        if (snap.hasError) {
+                          return Center(child: Text('تعذر تحميل الجلسات: ${snap.error}'));
+                        }
+                        final items = snap.data ?? const <SessionDto>[];
+                        if (items.isEmpty) {
+                          return const Center(child: Text('لا يوجد جلسات بعد'));
+                        }
+                        final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(12),
+                          child: DataTable(
+                            columns: const [
+                              DataColumn(label: Text('التاريخ')),
+                              DataColumn(label: Text('الموكل')),
+                              DataColumn(label: Text('القضية')),
+                              DataColumn(label: Text('رقم/سنة')),
+                              DataColumn(label: Text('تذكير مالي')),
+                              DataColumn(label: Text('إجراء')),
+                            ],
+                            rows: items
+                                .map(
+                                  (s) => DataRow(
+                                    cells: [
+                                      DataCell(Text(df.format(s.sessionDate.toLocal()))),
+                                      DataCell(Text(s.clientName)),
+                                      DataCell(
+                                        _SessionCaseLinks(
+                                          caseId: s.caseId,
+                                          caseTitle: s.caseTitle,
+                                          officeCode: officeCode,
+                                          canOpenAccount: canViewAccounts,
+                                        ),
+                                      ),
+                                      DataCell(Text(_numYear(s.sessionNumber, s.sessionYear))),
+                                      DataCell(Text(_feeReminderHint(s), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                                      DataCell(
+                                        isAdmin
+                                            ? Wrap(
+                                                spacing: 8,
+                                                children: [
+                                                  TextButton(onPressed: () => _edit(s), child: const Text('تعديل')),
+                                                  TextButton(onPressed: () => _setRoll(s), child: const Text('رول')),
+                                                  TextButton(onPressed: () => _reschedule(s), child: const Text('ترحيل')),
+                                                ],
+                                              )
+                                            : const Text('—'),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            )
-                            .toList(),
-                      ),
+                                )
+                                .toList(),
+                          ),
+                        );
+                      },
                     );
                   },
                 );
@@ -201,6 +220,61 @@ class _SessionsPageState extends State<SessionsPage> {
     }
     if (parts.isEmpty) return '—';
     return parts.join(' · ');
+  }
+}
+
+class _SessionCaseLinks extends StatelessWidget {
+  const _SessionCaseLinks({
+    required this.caseId,
+    required this.caseTitle,
+    required this.officeCode,
+    required this.canOpenAccount,
+  });
+
+  final int caseId;
+  final String caseTitle;
+  final String officeCode;
+  final bool canOpenAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    if (officeCode.isEmpty) {
+      return Text(caseTitle, maxLines: 2, overflow: TextOverflow.ellipsis);
+    }
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Tooltip(
+            message: 'تفاصيل القضية',
+            child: InkWell(
+              onTap: () => context.go('/o/$officeCode/cases/$caseId'),
+              child: Text(
+                caseTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                  decorationColor: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (canOpenAccount)
+          IconButton(
+            icon: Icon(Icons.account_balance_wallet_outlined, size: 20, color: theme.colorScheme.primary),
+            tooltip: 'حساب القضية التفصيلي',
+            onPressed: () => context.go('/o/$officeCode/accounts/case/$caseId'),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+      ],
+    );
   }
 }
 
