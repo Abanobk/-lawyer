@@ -26,6 +26,9 @@ class _CasesPageState extends State<CasesPage> {
 
   late Future<_CasesData> _future = _load();
 
+  /// null = الكل، true = مفتوحة، false = مغلقة
+  bool? _activeFilter;
+
   Future<_CasesData> _load() async {
     final results = await Future.wait([
       _casesApi.list(),
@@ -135,7 +138,32 @@ class _CasesPageState extends State<CasesPage> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilterChip(
+                label: const Text('الكل'),
+                selected: _activeFilter == null,
+                onSelected: (_) => setState(() => _activeFilter = null),
+              ),
+              FilterChip(
+                label: const Text('مفتوحة'),
+                selected: _activeFilter == true,
+                onSelected: (_) => setState(() => _activeFilter = true),
+              ),
+              FilterChip(
+                label: const Text('مغلقة'),
+                selected: _activeFilter == false,
+                onSelected: (_) => setState(() => _activeFilter = false),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         Expanded(
           child: Card(
             child: FutureBuilder<_CasesData>(
@@ -147,9 +175,16 @@ class _CasesPageState extends State<CasesPage> {
                 if (snap.hasError) {
                   return Center(child: Text('تعذر تحميل القضايا: ${snap.error}'));
                 }
-                final cases = snap.data?.cases ?? const <CaseDto>[];
+                var cases = snap.data?.cases ?? const <CaseDto>[];
+                if (_activeFilter != null) {
+                  cases = cases.where((c) => c.isActive == _activeFilter).toList();
+                }
                 if (cases.isEmpty) {
-                  return const Center(child: Text('لا يوجد قضايا بعد'));
+                  return Center(
+                    child: Text(
+                      snap.data?.cases.isEmpty == true ? 'لا يوجد قضايا بعد' : 'لا قضايا ضمن الفلتر الحالي',
+                    ),
+                  );
                 }
 
                 return SingleChildScrollView(

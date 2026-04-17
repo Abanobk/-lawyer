@@ -3,6 +3,7 @@ import 'dart:js_interop';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
@@ -507,6 +508,71 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
     return t.direction == 'income' ? 'أتعاب' : 'مصروف';
   }
 
+  Future<void> _confirmToggleCaseActive(CaseDto c) async {
+    final closing = c.isActive;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(closing ? 'إغلاق القضية؟' : 'إعادة فتح القضية؟'),
+        content: Text(
+          closing
+              ? 'ستُسجَّل القضية كمغلقة (أرشفة). يمكن إعادة فتحها لاحقًا.'
+              : 'ستعود القضية للعمل كقضية نشطة في القوائم والتقارير.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _casesApi.patchCase(caseId: c.id, body: {'is_active': !c.isActive});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث حالة القضية')));
+      _reload();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  void _copyClientFinancialSummary({
+    required CaseDto c,
+    required ClientDto? client,
+    required double? fee,
+    required double netPaid,
+    required double? remaining,
+    required NumberFormat money,
+    required DateFormat df,
+  }) {
+    final buf = StringBuffer();
+    buf.writeln('ملخص مالي — ${c.title}');
+    buf.writeln('الموكل: ${c.clientName}');
+    if (client?.phone != null && client!.phone!.trim().isNotEmpty) {
+      buf.writeln('الهاتف: ${client.phone}');
+    }
+    if (c.court != null && c.court!.trim().isNotEmpty) buf.writeln('المحكمة: ${c.court}');
+    buf.writeln('المرجع: ${_caseRef(c)}');
+    buf.writeln('التاريخ: ${df.format(DateTime.now())}');
+    buf.writeln('');
+    if (fee != null) {
+      buf.writeln('إجمالي الأتعاب المتفق عليها: ${money.format(fee)} ج.م');
+    } else {
+      buf.writeln('إجمالي الأتعاب المتفق عليها: غير محدد');
+    }
+    buf.writeln('إجمالي المحصّل (صافي الدفعات): ${money.format(netPaid)} ج.م');
+    if (remaining != null) {
+      buf.writeln('المتبقي على الأتعاب: ${money.format(remaining)} ج.م');
+    } else {
+      buf.writeln('المتبقي: —');
+    }
+    buf.writeln('');
+    buf.writeln('— مُنشأ من نظام مكتب المحاماة —');
+    Clipboard.setData(ClipboardData(text: buf.toString()));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ الملخص للحافظة')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
@@ -628,6 +694,20 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
                                 style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
                               ),
                             ],
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: () => _copyClientFinancialSummary(
+                                c: c,
+                                client: d.client,
+                                fee: fee,
+                                netPaid: netPaid,
+                                remaining: remaining,
+                                money: money,
+                                df: df,
+                              ),
+                              icon: const Icon(Icons.copy_all_outlined, size: 18),
+                              label: const Text('نسخ ملخص للموكل (نص)'),
+                            ),
                             if (d.canViewAccounts && officeCode.isNotEmpty) ...[
                               const SizedBox(height: 12),
                               Wrap(
@@ -671,6 +751,13 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
                             ),
                             const SizedBox(height: 8),
                             Text('البدء: ${df.format(c.createdAt.toLocal())}'),
+                            if (d.me.role == 'office_owner') ...[
+                              const SizedBox(height: 12),
+                              FilledButton.tonal(
+                                onPressed: () => _confirmToggleCaseActive(c),
+                                child: Text(c.isActive ? 'إغلاق القضية (أرشفة)' : 'إعادة فتح القضية'),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -882,6 +969,36 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
               ],
             ),
             const SizedBox(height: 12),
+            ExpansionTile(
+              leading: const Icon(Icons.article_outlined),
+              title: const Text('قوالب نصية سريعة'),
+              subtitle: const Text('نسخ عبارات جاهزة للمراسلات والمذكرات'),
+              children: [
+                _CaseDocTemplateTile(
+                  label: 'طلب تأجيل جلسة',
+                  text:
+                      'سيادتكم الموقرين،\nألتمس من عدالتكم التفضل بالأمر بتأجيل الجلسة المحددة لظروف قهرية، مع حفظ كافة الحقوق.',
+                ),
+                _CaseDocTemplateTile(
+                  label: 'مذكرة تعريفية بالدعوى',
+                  text:
+                      'مذكرة تعريفية:\nأولا: الوقائع…\nثانيا: الأساس القانوني…\nثالثا: الطلبات…\nوإنا لذلك نلتمس من عدالتكم الحكم بما هو موضح بعاليه.',
+                ),
+                _CaseDocTemplateTile(
+                  label: 'متابعة مع الموكل',
+                  text:
+                      'تحية طيبة،\nنود إفادتكم بأنه تم جدولة جلسة جديدة بالقضية، وسنوافيكم بالتفاصيل. يرجى التواصل لأي استفسار.',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'أرشيف مرفقات هذه القضية (PDF، صور، مستندات)',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 8),
             if (d.files.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
@@ -890,9 +1007,9 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
             else
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade200),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                 ),
                 child: Column(
                   children: d.files.map((f) {
@@ -922,6 +1039,32 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CaseDocTemplateTile extends StatelessWidget {
+  const _CaseDocTemplateTile({required this.label, required this.text});
+
+  final String label;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(label),
+      trailing: IconButton(
+        tooltip: 'نسخ',
+        icon: const Icon(Icons.copy_outlined),
+        onPressed: () {
+          Clipboard.setData(ClipboardData(text: text));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم نسخ «$label»')));
+        },
+      ),
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: text));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تم نسخ «$label»')));
+      },
     );
   }
 }

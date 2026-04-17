@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/core/util/role_labels.dart';
 import 'package:lawyer_app/core/widgets/theme_appearance_menu.dart';
+import 'package:lawyer_app/features/office/widgets/office_search_delegate.dart';
 import 'package:lawyer_app/data/api/billing_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
@@ -33,6 +35,7 @@ class OfficeShell extends StatelessWidget {
     _OfficeNavItem('clients', 'الموكلين', Icons.people_outline),
     _OfficeNavItem('cases', 'القضايا', Icons.work_outline),
     _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
+    _OfficeNavItem('calendar', 'الأجندة', Icons.calendar_view_month_outlined),
     _OfficeNavItem('accounts', 'الحسابات', Icons.account_balance_wallet_outlined),
     _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
     _OfficeNavItem('subscription', 'الاشتراك', Icons.subscriptions_outlined),
@@ -77,7 +80,10 @@ class OfficeShell extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _DesktopOfficeHeader(officeLink: officeLinkForCurrentHost()),
+                        _DesktopOfficeHeader(
+                          officeCode: officeCode,
+                          officeLink: officeLinkForCurrentHost(),
+                        ),
                         banner,
                         Expanded(
                           child: ContentCanvas(child: child),
@@ -102,7 +108,10 @@ class OfficeShell extends StatelessWidget {
           ),
           appBar: AppBar(
             title: const Text('لوحة المكتب'),
-            actions: const [ThemeAppearanceMenuButton()],
+            actions: [
+              OfficeSearchLaunchButton(officeCode: officeCode),
+              const ThemeAppearanceMenuButton(),
+            ],
           ),
           body: ContentCanvas(
             child: Column(
@@ -253,7 +262,25 @@ class _Sidebar extends StatelessWidget {
                           builder: (context, ms) {
                             final role = ms.data?.role;
                             final items = base.where((i) => i.segment != 'subscription' || role == 'office_owner').toList();
-                            return _NavList(officeCode: officeCode, current: current, items: items);
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (role != null)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                                    child: Text(
+                                      'دورك: ${roleLabelAr(role)}',
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                            color: Colors.white70,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: _NavList(officeCode: officeCode, current: current, items: items),
+                                ),
+                              ],
+                            );
                           },
                         );
                       },
@@ -294,6 +321,9 @@ bool _allowNav(String segment, Set<String> keys) {
       required = 'cases.read';
       break;
     case 'sessions':
+      required = 'cases.read';
+      break;
+    case 'calendar':
       required = 'cases.read';
       break;
     case 'accounts':
@@ -361,8 +391,12 @@ class _NavList extends StatelessWidget {
 }
 
 class _DesktopOfficeHeader extends StatelessWidget {
-  const _DesktopOfficeHeader({required this.officeLink});
+  const _DesktopOfficeHeader({
+    required this.officeCode,
+    required this.officeLink,
+  });
 
+  final String officeCode;
   final String officeLink;
 
   @override
@@ -388,6 +422,7 @@ class _DesktopOfficeHeader extends StatelessWidget {
                 label: const Text('نسخ رابط المكتب'),
               ),
               const ThemeAppearanceMenuButton(),
+              OfficeSearchLaunchButton(officeCode: officeCode),
               const Spacer(),
               FutureBuilder<(MeDto, OfficeDto)>(
                 future: loadOfficeWelcomeContext(),
@@ -429,6 +464,14 @@ class _DesktopOfficeHeader extends StatelessWidget {
                           Text(
                             'في مكتب المستشار ${off.name}',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'دورك: ${roleLabelAr(me.role)}',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ],
                       ),

@@ -1,4 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:lawyer_app/core/util/csv_download_web.dart';
+import 'package:lawyer_app/core/util/office_data_export.dart';
+import 'package:lawyer_app/data/api/cases_api.dart';
+import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
 
@@ -12,6 +17,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _meApi = MeApi();
   final _officeApi = OfficeApi();
+  final _clientsApi = ClientsApi();
+  final _casesApi = CasesApi();
 
   final _officeName = TextEditingController();
   final _phone = TextEditingController();
@@ -21,6 +28,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _exportBusy = false;
   bool _editing = false;
   String? _loginEmail;
   String _role = '';
@@ -158,6 +166,56 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _editing = false);
   }
 
+  Future<void> _exportClientsCsv() async {
+    if (_exportBusy) return;
+    setState(() => _exportBusy = true);
+    try {
+      final list = await _clientsApi.list();
+      final csv = clientsToCsv(list);
+      if (kIsWeb) {
+        downloadCsvWeb('clients_export.csv', csv);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تنزيل ملف الموكلين')));
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تنزيل CSV مفعّل على نسخة الويب من التطبيق')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تصدير الموكلين: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exportBusy = false);
+    }
+  }
+
+  Future<void> _exportCasesCsv() async {
+    if (_exportBusy) return;
+    setState(() => _exportBusy = true);
+    try {
+      final list = await _casesApi.list();
+      final csv = casesToCsv(list);
+      if (kIsWeb) {
+        downloadCsvWeb('cases_export.csv', csv);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تنزيل ملف القضايا')));
+        }
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تنزيل CSV مفعّل على نسخة الويب من التطبيق')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تصدير القضايا: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exportBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -270,6 +328,41 @@ class _SettingsPageState extends State<SettingsPage> {
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Text(_loginEmail ?? '—', style: Theme.of(context).textTheme.bodyLarge),
                       ),
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'نسخ احتياطي وتصدير',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'تصدير بيانات الموكلين والقضايا كملف CSV (UTF-8) للاحتفاظ بها على جهازك. يُفضّل التنزيل من متصفح سطح المكتب.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: _exportBusy ? null : _exportClientsCsv,
+                          icon: _exportBusy
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.file_download_outlined),
+                          label: const Text('تصدير الموكلين CSV'),
+                        ),
+                        FilledButton.tonalIcon(
+                          onPressed: _exportBusy ? null : _exportCasesCsv,
+                          icon: const Icon(Icons.file_download_outlined),
+                          label: const Text('تصدير القضايا CSV'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 28),
                     Row(

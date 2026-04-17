@@ -14,6 +14,7 @@ import 'package:lawyer_app/features/office/pages/clients_page.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 import 'package:lawyer_app/features/office/pages/dashboard_page.dart';
 import 'package:lawyer_app/features/office/pages/employees_page.dart';
+import 'package:lawyer_app/features/office/pages/office_calendar_page.dart';
 import 'package:lawyer_app/features/office/pages/sessions_page.dart';
 import 'package:lawyer_app/features/office/pages/settings_page.dart';
 import 'package:lawyer_app/features/office/pages/subscription_page.dart';
@@ -82,6 +83,10 @@ GoRouter createAppRouter() {
               GoRoute(
                 path: 'sessions',
                 builder: (context, state) => const SessionsPage(),
+              ),
+              GoRoute(
+                path: 'calendar',
+                builder: (context, state) => const OfficeCalendarPage(),
               ),
               GoRoute(
                 path: 'accounts',
