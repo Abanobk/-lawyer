@@ -19,6 +19,7 @@ class SignupPage extends StatefulWidget {
 class _SignupPageState extends State<SignupPage> {
   final _formKey = GlobalKey<FormState>();
   final _officeCtrl = TextEditingController();
+  final _fullNameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _api = AuthApi();
@@ -41,6 +42,7 @@ class _SignupPageState extends State<SignupPage> {
     try {
       final result = await _api.signup(
         officeName: _officeCtrl.text.trim(),
+        fullName: _fullNameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
       );
@@ -175,6 +177,19 @@ class _SignupPageState extends State<SignupPage> {
                         validator: (v) {
                           final t = v?.trim() ?? '';
                           if (t.length < 2) return 'أدخل اسمًا لا يقل عن حرفين';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _fullNameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'اسمك الكامل (يظهر في الترحيب)',
+                        ),
+                        textInputAction: TextInputAction.next,
+                        validator: (v) {
+                          final t = v?.trim() ?? '';
+                          if (t.length < 2) return 'أدخل اسمك الكامل (حرفان على الأقل)';
                           return null;
                         },
                       ),

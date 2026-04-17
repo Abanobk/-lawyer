@@ -13,8 +13,23 @@ class TokenPair(BaseModel):
 
 class SignupRequest(BaseModel):
     office_name: str = Field(min_length=2, max_length=200)
+    full_name: str = Field(min_length=2, max_length=200, description="اسم صاحب الحساب للترحيب")
     email: EmailStr
     password: str = Field(min_length=8, max_length=200)
+
+
+class MeProfilePatch(BaseModel):
+    full_name: str | None = Field(default=None, max_length=200)
+
+    @field_validator("full_name")
+    @classmethod
+    def _full_name_len(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if len(s) < 2:
+            raise ValueError("full_name must be at least 2 characters when set")
+        return s
 
 
 class SignupResponse(BaseModel):

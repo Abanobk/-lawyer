@@ -13,8 +13,8 @@ Future<(MeDto, OfficeInfo)> loadOfficeWelcomeContext() async {
 String officeUserDisplayName(MeDto me) {
   final n = me.fullName?.trim();
   if (n != null && n.isNotEmpty) return n;
-  final p = me.email.split('@').first;
-  return p.isEmpty ? 'محامٍ' : p;
+  // لا نعرض جزء البريد في الترحيب — يُحدَّد الاسم من «الإعدادات» أو عند التسجيل.
+  return 'ضيفنا الكريم';
 }
 
 String officeUserInitial(MeDto me) {

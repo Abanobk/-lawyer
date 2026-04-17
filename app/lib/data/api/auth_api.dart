@@ -48,6 +48,7 @@ class AuthApi {
 
   Future<SignupResult> signup({
     required String officeName,
+    required String fullName,
     required String email,
     required String password,
   }) async {
@@ -57,6 +58,7 @@ class AuthApi {
       headers: {'Content-Type': 'application/json; charset=utf-8'},
       body: jsonEncode({
         'office_name': officeName,
+        'full_name': fullName.trim(),
         'email': email.trim(),
         'password': password,
       }),

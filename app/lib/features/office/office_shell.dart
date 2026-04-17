@@ -194,8 +194,9 @@ class _Sidebar extends StatelessWidget {
                   }(),
                   builder: (context, snap) {
                     final name = snap.data?.name;
+                    final line = name != null && name.isNotEmpty ? 'مكتب المستشار $name' : 'مكتب المستشار ($officeCode)';
                     return Text(
-                      name ?? officeCode,
+                      line,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(

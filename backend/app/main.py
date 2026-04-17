@@ -89,6 +89,7 @@ from app.schemas import (
     OfficeOut,
     SignupRequest,
     SignupResponse,
+    MeProfilePatch,
     SubscriptionOut,
     AdminPatchSubscriptionRequest,
     TokenPair,
@@ -592,6 +593,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     user = User(
         office_id=office.id,
         email=payload.email,
+        full_name=payload.full_name.strip(),
         password_hash=hash_password(payload.password),
         role=UserRole.office_owner,
     )
@@ -635,6 +637,28 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @app.get("/me", response_model=UserOut)
 def me(user: User = Depends(current_user)):
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=getattr(user, "full_name", None),
+        is_active=getattr(user, "is_active", True),
+        role=user.role,
+        office_id=user.office_id,
+        created_at=user.created_at,
+    )
+
+
+@app.patch("/me", response_model=UserOut)
+def patch_me_profile(
+    payload: MeProfilePatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    data = payload.model_dump(exclude_unset=True)
+    if "full_name" in data:
+        user.full_name = data["full_name"]
+    db.commit()
+    db.refresh(user)
     return UserOut(
         id=user.id,
         email=user.email,

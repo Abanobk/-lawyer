@@ -36,5 +36,13 @@ class MeApi {
       decode: (json) => MeDto.fromJson(json as Map<String, dynamic>),
     );
   }
+
+  Future<MeDto> patchProfile({String? fullName}) async {
+    return _client.patchJson<MeDto>(
+      'me',
+      {if (fullName != null) 'full_name': fullName},
+      decode: (json) => MeDto.fromJson(json as Map<String, dynamic>),
+    );
+  }
 }
 
