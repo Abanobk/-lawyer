@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/core/widgets/theme_appearance_menu.dart';
 import 'package:lawyer_app/data/api/billing_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
@@ -72,7 +73,7 @@ class OfficeShell extends StatelessWidget {
                 ),
                 Expanded(
                   child: ColoredBox(
-                    color: AppColors.surfaceMuted,
+                    color: Theme.of(context).scaffoldBackgroundColor,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -101,6 +102,7 @@ class OfficeShell extends StatelessWidget {
           ),
           appBar: AppBar(
             title: const Text('لوحة المكتب'),
+            actions: const [ThemeAppearanceMenuButton()],
           ),
           body: ContentCanvas(
             child: Column(
@@ -366,7 +368,7 @@ class _DesktopOfficeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       elevation: 0,
       child: SafeArea(
         bottom: false,
@@ -385,6 +387,7 @@ class _DesktopOfficeHeader extends StatelessWidget {
                 icon: const Icon(Icons.link, size: 18),
                 label: const Text('نسخ رابط المكتب'),
               ),
+              const ThemeAppearanceMenuButton(),
               const Spacer(),
               FutureBuilder<(MeDto, OfficeDto)>(
                 future: loadOfficeWelcomeContext(),

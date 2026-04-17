@@ -9,6 +9,9 @@ import 'package:lawyer_app/data/api/finance_api.dart';
 import 'package:lawyer_app/data/api/office_expenses_api.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/reports_api.dart';
+import 'package:lawyer_app/core/theme/app_spacing.dart';
+import 'package:lawyer_app/core/widgets/adaptive_data_table.dart';
+import 'package:lawyer_app/core/widgets/app_states.dart';
 import 'package:lawyer_app/features/office/pages/custody_page.dart';
 import 'package:lawyer_app/features/office/pages/petty_cash_page.dart';
 
@@ -114,14 +117,14 @@ class _AccountsPageState extends State<AccountsPage> with SingleTickerProviderSt
         Row(
           children: [
             Icon(Icons.account_balance_wallet_outlined, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpacing.sm),
             Text(
               'الإدارة المالية',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -138,7 +141,7 @@ class _AccountsPageState extends State<AccountsPage> with SingleTickerProviderSt
                   Tab(text: 'تقارير'),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Expanded(
                 child: TabBarView(
                   controller: c,
@@ -1111,27 +1114,31 @@ class _ReportsViewState extends State<_ReportsView> {
       future: _clientsFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const AppBodyLoading(message: 'جاري تحميل الموكلين…');
         }
         if (snap.hasError) {
-          return Center(child: Text('تعذر تحميل الموكلين: ${snap.error}'));
+          return AppEmptyState(
+            title: 'تعذّر تحميل الموكلين',
+            subtitle: '${snap.error}',
+            icon: Icons.error_outline,
+          );
         }
         final clients = snap.data ?? const <ClientDto>[];
         return Card(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: DefaultTabController(
               length: 4,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text('التقارير المالية', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Text(
                     'قسّمنا التقارير إلى تبويبات لتسهيل القراءة.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                   TabBar(
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
@@ -1142,7 +1149,7 @@ class _ReportsViewState extends State<_ReportsView> {
                       Tab(text: 'سجل التدقيق'),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                   Expanded(
                     child: TabBarView(
                       children: [
@@ -1166,287 +1173,340 @@ class _ReportsViewState extends State<_ReportsView> {
   }
 
   Widget _buildReportsTabPhaseJ(BuildContext context) {
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        Text(
-          'قائمة دخل مبسطة وتدفق نقدي يومي (خزينة رئيسية).',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            OutlinedButton(
-              onPressed: () async {
-                final p = await showDatePicker(
-                  context: context,
-                  initialDate: _jFrom,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (p != null) setState(() => _jFrom = p);
-              },
-              child: Text('من ${_dfJ.format(_jFrom)}'),
-            ),
-            OutlinedButton(
-              onPressed: () async {
-                final p = await showDatePicker(
-                  context: context,
-                  initialDate: _jTo,
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (p != null) setState(() => _jTo = p);
-              },
-              child: Text('إلى ${_dfJ.format(_jTo)}'),
-            ),
-            FilledButton(
-              onPressed: _loadingJ ? null : _loadPhaseJReports,
-              child: _loadingJ
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('قائمة الدخل + التدفق النقدي'),
-            ),
-          ],
-        ),
-        if (_incomeStmt != null) ...[
-          const SizedBox(height: 10),
-          Card(
-            margin: EdgeInsets.zero,
+    final surface = Theme.of(context).colorScheme.surface;
+    return CustomScrollView(
+      slivers: [
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _PinnedReportFiltersDelegate(
+            height: 118,
+            background: surface,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.only(top: 4, bottom: AppSpacing.sm),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('قائمة الدخل المبسطة', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  _jLine(context, 'إيرادات تحصيلات القضايا', _incomeStmt!.revenueCaseIncome),
-                  _jLine(context, 'مصروفات مباشرة على القضايا', -_incomeStmt!.costsCaseExpenses),
-                  const Divider(height: 16),
-                  _jLine(context, 'هامش القضايا (إيراد − مصروف قضية)', _incomeStmt!.grossMarginCases, bold: true),
-                  const Divider(height: 16),
-                  _jLine(context, 'مصروفات المكتب التشغيلية', -_incomeStmt!.expenseOffice),
-                  _jLine(context, 'تغذية النثرية (خروج من الخزينة)', -_incomeStmt!.expensePettyTopUps),
-                  if (_incomeStmt!.includesCustody)
-                    _jLine(context, 'سلف العهد (خروج من الخزينة)', -_incomeStmt!.expenseCustodyAdvances),
-                  const Divider(height: 16),
-                  _jLine(context, 'صافي بعد خروج الخزينة الرئيسية', _incomeStmt!.netAfterOperatingMainCash, bold: true),
-                  const SizedBox(height: 8),
-                  Text(_incomeStmt!.noteAr, style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    'قائمة دخل مبسطة وتدفق نقدي يومي (خزينة رئيسية).',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () async {
+                          final p = await showDatePicker(
+                            context: context,
+                            initialDate: _jFrom,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (p != null) setState(() => _jFrom = p);
+                        },
+                        child: Text('من ${_dfJ.format(_jFrom)}'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () async {
+                          final p = await showDatePicker(
+                            context: context,
+                            initialDate: _jTo,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (p != null) setState(() => _jTo = p);
+                        },
+                        child: Text('إلى ${_dfJ.format(_jTo)}'),
+                      ),
+                      FilledButton(
+                        onPressed: _loadingJ ? null : _loadPhaseJReports,
+                        child: _loadingJ
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('قائمة الدخل + التدفق النقدي'),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
-        ],
-        if (_cashFlow.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text('التدفق النقدي اليومي (وارد تحصيل / صادر خزينة)', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columns: const [
-                DataColumn(label: Text('اليوم')),
-                DataColumn(label: Text('وارد')),
-                DataColumn(label: Text('صادر')),
-                DataColumn(label: Text('الصافي')),
-              ],
-              rows: _cashFlow
-                  .map(
-                    (r) => DataRow(
-                      cells: [
-                        DataCell(Text(r.day)),
-                        DataCell(Text(_moneyJ.format(r.inflow))),
-                        DataCell(Text(_moneyJ.format(r.outflow))),
-                        DataCell(Text(_moneyJ.format(r.net), style: TextStyle(fontWeight: r.net >= 0 ? FontWeight.w600 : FontWeight.normal))),
-                      ],
-                    ),
-                  )
-                  .toList(),
+        ),
+        if (_incomeStmt != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('قائمة الدخل المبسطة', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: AppSpacing.sm),
+                      _jLine(context, 'إيرادات تحصيلات القضايا', _incomeStmt!.revenueCaseIncome),
+                      _jLine(context, 'مصروفات مباشرة على القضايا', -_incomeStmt!.costsCaseExpenses),
+                      const Divider(height: AppSpacing.lg),
+                      _jLine(context, 'هامش القضايا (إيراد − مصروف قضية)', _incomeStmt!.grossMarginCases, bold: true),
+                      const Divider(height: AppSpacing.lg),
+                      _jLine(context, 'مصروفات المكتب التشغيلية', -_incomeStmt!.expenseOffice),
+                      _jLine(context, 'تغذية النثرية (خروج من الخزينة)', -_incomeStmt!.expensePettyTopUps),
+                      if (_incomeStmt!.includesCustody)
+                        _jLine(context, 'سلف العهد (خروج من الخزينة)', -_incomeStmt!.expenseCustodyAdvances),
+                      const Divider(height: AppSpacing.lg),
+                      _jLine(context, 'صافي بعد خروج الخزينة الرئيسية', _incomeStmt!.netAfterOperatingMainCash, bold: true),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(_incomeStmt!.noteAr, style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-        ],
+        if (_cashFlow.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'التدفق النقدي اليومي (وارد تحصيل / صادر خزينة)',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  AdaptiveDataTable(
+                    headers: const ['اليوم', 'وارد', 'صادر', 'الصافي'],
+                    rows: _cashFlow
+                        .map(
+                          (r) => [
+                            r.day,
+                            _moneyJ.format(r.inflow),
+                            _moneyJ.format(r.outflow),
+                            _moneyJ.format(r.net),
+                          ],
+                        )
+                        .toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
 
   Widget _buildReportsTabClients(BuildContext context, List<ClientDto> clients) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'تقرير موكل ثم ملخص مالي لقضية واحدة (بعد تحميل قضايا الموكل).',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            DropdownMenu<int>(
-              width: 420,
-              label: const Text('الموكل'),
-              initialSelection: _clientId,
-              dropdownMenuEntries: clients.map((c) => DropdownMenuEntry(value: c.id, label: c.fullName)).toList(),
-              onSelected: (v) async {
-                setState(() {
-                  _clientId = v;
-                  _clientReport = null;
-                  _caseIdJ = null;
-                  _caseFinSum = null;
-                  _casesForJ = const [];
-                });
-                if (v != null) await _loadCasesForJ(v);
-              },
-            ),
-            FilledButton(
-              onPressed: _loadingClient ? null : _loadClientReport,
-              child: _loadingClient
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('عرض تقرير الموكل'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: _clientReport == null
-              ? const Center(child: Text('اختر موكلًا ثم اعرض التقرير'))
-              : SingleChildScrollView(
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('القضية')),
-                      DataColumn(label: Text('الأتعاب')),
-                      DataColumn(label: Text('المحصّل')),
-                      DataColumn(label: Text('المتبقي')),
-                    ],
-                    rows: _clientReport!.cases
-                        .map(
-                          (c) => DataRow(
-                            cells: [
-                              DataCell(Text(c.caseTitle)),
-                              DataCell(Text(c.feeTotal?.toStringAsFixed(2) ?? '—')),
-                              DataCell(Text(c.incomeSum.toStringAsFixed(2))),
-                              DataCell(Text(c.remaining?.toStringAsFixed(2) ?? '—')),
-                            ],
-                          ),
-                        )
-                        .toList(),
+    final surface = Theme.of(context).colorScheme.surface;
+    return CustomScrollView(
+      slivers: [
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _PinnedReportFiltersDelegate(
+            height: 156,
+            background: surface,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'تقرير موكل ثم ملخص مالي لقضية واحدة (بعد تحميل قضايا الموكل).',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
-                ),
-        ),
-        const Divider(height: 24),
-        Text('ملخص مالي لقضية', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        Text('اختر الموكل أعلاه لتحميل قائمة القضايا، ثم اختر القضية.', style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            DropdownMenu<int>(
-              width: 400,
-              enabled: _casesForJ.isNotEmpty,
-              label: const Text('القضية'),
-              initialSelection: _caseIdJ,
-              dropdownMenuEntries: _casesForJ.map((c) => DropdownMenuEntry(value: c.id, label: c.title)).toList(),
-              onSelected: (v) => setState(() {
-                _caseIdJ = v;
-                _caseFinSum = null;
-              }),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.md,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      DropdownMenu<int>(
+                        width: 420,
+                        label: const Text('الموكل'),
+                        initialSelection: _clientId,
+                        dropdownMenuEntries: clients.map((c) => DropdownMenuEntry(value: c.id, label: c.fullName)).toList(),
+                        onSelected: (v) async {
+                          setState(() {
+                            _clientId = v;
+                            _clientReport = null;
+                            _caseIdJ = null;
+                            _caseFinSum = null;
+                            _casesForJ = const [];
+                          });
+                          if (v != null) await _loadCasesForJ(v);
+                        },
+                      ),
+                      FilledButton(
+                        onPressed: _loadingClient ? null : _loadClientReport,
+                        child: _loadingClient
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('عرض تقرير الموكل'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            FilledButton.tonal(
-              onPressed: _loadingJ || _caseIdJ == null ? null : _loadCaseFinancialSummary,
-              child: const Text('عرض الملخص'),
-            ),
-          ],
+          ),
         ),
-        if (_caseFinSum != null) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+        if (_clientReport == null)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: AppEmptyState(
+              title: 'لا يوجد تقرير بعد',
+              subtitle: 'اختر موكلًا ثم اضغط «عرض تقرير الموكل».',
+              icon: Icons.person_search_outlined,
+            ),
+          )
+        else
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: AdaptiveDataTable(
+                headers: const ['القضية', 'الأتعاب', 'المحصّل', 'المتبقي'],
+                rows: _clientReport!.cases
+                    .map(
+                      (c) => [
+                        c.caseTitle,
+                        c.feeTotal?.toStringAsFixed(2) ?? '—',
+                        c.incomeSum.toStringAsFixed(2),
+                        c.remaining?.toStringAsFixed(2) ?? '—',
+                      ],
+                    )
+                    .toList(),
+              ),
+            ),
+          ),
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Chip(label: Text('تحصيلات: ${_moneyJ.format(_caseFinSum!.sumIncome)}')),
-              Chip(label: Text('مصروفات قضية: ${_moneyJ.format(_caseFinSum!.sumExpense)}')),
-              Chip(label: Text('صافي نقد القضية: ${_moneyJ.format(_caseFinSum!.netCashCase)}')),
-              if (_caseFinSum!.feeTotal != null) Chip(label: Text('متفق أتعاب: ${_moneyJ.format(_caseFinSum!.feeTotal!)}')),
-              if (_caseFinSum!.remainingFromFee != null)
-                Chip(label: Text('متبقي أتعاب: ${_moneyJ.format(_caseFinSum!.remainingFromFee!)}')),
-              Chip(label: Text('عهدة معتمدة: ${_moneyJ.format(_caseFinSum!.custodySpendsApproved)}')),
-              Chip(label: Text('عهدة معلقة: ${_moneyJ.format(_caseFinSum!.custodySpendsPending)}')),
+              const Divider(height: AppSpacing.xl),
+              Text('ملخص مالي لقضية', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text('اختر الموكل أعلاه لتحميل قائمة القضايا، ثم اختر القضية.', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  DropdownMenu<int>(
+                    width: 400,
+                    enabled: _casesForJ.isNotEmpty,
+                    label: const Text('القضية'),
+                    initialSelection: _caseIdJ,
+                    dropdownMenuEntries: _casesForJ.map((c) => DropdownMenuEntry(value: c.id, label: c.title)).toList(),
+                    onSelected: (v) => setState(() {
+                      _caseIdJ = v;
+                      _caseFinSum = null;
+                    }),
+                  ),
+                  FilledButton.tonal(
+                    onPressed: _loadingJ || _caseIdJ == null ? null : _loadCaseFinancialSummary,
+                    child: const Text('عرض الملخص'),
+                  ),
+                ],
+              ),
+              if (_caseFinSum != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    Chip(label: Text('تحصيلات: ${_moneyJ.format(_caseFinSum!.sumIncome)}')),
+                    Chip(label: Text('مصروفات قضية: ${_moneyJ.format(_caseFinSum!.sumExpense)}')),
+                    Chip(label: Text('صافي نقد القضية: ${_moneyJ.format(_caseFinSum!.netCashCase)}')),
+                    if (_caseFinSum!.feeTotal != null) Chip(label: Text('متفق أتعاب: ${_moneyJ.format(_caseFinSum!.feeTotal!)}')),
+                    if (_caseFinSum!.remainingFromFee != null)
+                      Chip(label: Text('متبقي أتعاب: ${_moneyJ.format(_caseFinSum!.remainingFromFee!)}')),
+                    Chip(label: Text('عهدة معتمدة: ${_moneyJ.format(_caseFinSum!.custodySpendsApproved)}')),
+                    Chip(label: Text('عهدة معلقة: ${_moneyJ.format(_caseFinSum!.custodySpendsPending)}')),
+                  ],
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
             ],
           ),
-        ],
-        const SizedBox(height: 16),
+        ),
       ],
     );
   }
 
   Widget _buildReportsTabCustody(BuildContext context, List<CustodyReportItemDto> custodyFiltered) {
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        Text(
-          'أرصدة العهد والسلف والمصروفات المعتمدة والمعلقة.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            DropdownMenu<int>(
-              width: 420,
-              label: const Text('الموظف (اختياري)'),
-              initialSelection: _custodyUserId,
-              dropdownMenuEntries: [
-                const DropdownMenuEntry<int>(value: 0, label: 'الكل'),
-                ..._custodyReportAll.map((r) => DropdownMenuEntry<int>(value: r.userId, label: r.userEmail)),
-              ],
-              onSelected: (v) => setState(() => _custodyUserId = (v == null || v == 0) ? null : v),
-            ),
-            FilledButton(
-              onPressed: _loadingCustody ? null : _loadCustodyReport,
-              child: _loadingCustody
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('عرض تقرير العهد'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 320,
-          child: custodyFiltered.isEmpty
-              ? const Center(child: Text('لا يوجد بيانات — اعرض التقرير'))
-              : SingleChildScrollView(
-                  child: DataTable(
-                    columns: const [
-                      DataColumn(label: Text('المستخدم')),
-                      DataColumn(label: Text('الرصيد')),
-                      DataColumn(label: Text('إجمالي السلف')),
-                      DataColumn(label: Text('مصروفات معتمدة')),
-                      DataColumn(label: Text('مصروفات معلقة')),
+    final surface = Theme.of(context).colorScheme.surface;
+    return CustomScrollView(
+      slivers: [
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _PinnedReportFiltersDelegate(
+            height: 132,
+            background: surface,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'أرصدة العهد والسلف والمصروفات المعتمدة والمعلقة.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.md,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      DropdownMenu<int>(
+                        width: 420,
+                        label: const Text('الموظف (اختياري)'),
+                        initialSelection: _custodyUserId,
+                        dropdownMenuEntries: [
+                          const DropdownMenuEntry<int>(value: 0, label: 'الكل'),
+                          ..._custodyReportAll.map((r) => DropdownMenuEntry<int>(value: r.userId, label: r.userEmail)),
+                        ],
+                        onSelected: (v) => setState(() => _custodyUserId = (v == null || v == 0) ? null : v),
+                      ),
+                      FilledButton(
+                        onPressed: _loadingCustody ? null : _loadCustodyReport,
+                        child: _loadingCustody
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('عرض تقرير العهد'),
+                      ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: custodyFiltered.isEmpty
+                ? const AppEmptyState(
+                    title: 'لا توجد بيانات',
+                    subtitle: 'اضغط «عرض تقرير العهد» بعد اختيار موظف أو «الكل».',
+                    icon: Icons.account_balance_wallet_outlined,
+                  )
+                : AdaptiveDataTable(
+                    headers: const ['المستخدم', 'الرصيد', 'إجمالي السلف', 'مصروفات معتمدة', 'مصروفات معلقة'],
                     rows: custodyFiltered
                         .map(
-                          (r) => DataRow(
-                            cells: [
-                              DataCell(Text(r.userEmail)),
-                              DataCell(Text(r.currentBalance.toStringAsFixed(2))),
-                              DataCell(Text(r.advancesSum.toStringAsFixed(2))),
-                              DataCell(Text(r.approvedSpendsSum.toStringAsFixed(2))),
-                              DataCell(Text(r.pendingSpendsSum.toStringAsFixed(2))),
-                            ],
-                          ),
+                          (r) => [
+                            r.userEmail,
+                            r.currentBalance.toStringAsFixed(2),
+                            r.advancesSum.toStringAsFixed(2),
+                            r.approvedSpendsSum.toStringAsFixed(2),
+                            r.pendingSpendsSum.toStringAsFixed(2),
+                          ],
                         )
                         .toList(),
+                    minTableWidth: 640,
                   ),
-                ),
+          ),
         ),
       ],
     );
@@ -1470,6 +1530,41 @@ class _ReportsViewState extends State<_ReportsView> {
         ],
       ),
     );
+  }
+}
+
+/// شريط فلاتر/أزرار ثابت أثناء التمرير داخل تبويبات التقارير (نقطة ٢).
+class _PinnedReportFiltersDelegate extends SliverPersistentHeaderDelegate {
+  _PinnedReportFiltersDelegate({
+    required this.height,
+    required this.child,
+    required this.background,
+  });
+
+  final double height;
+  final Widget child;
+  final Color background;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Material(
+      color: background,
+      elevation: overlapsContent ? 1 : 0,
+      shadowColor: Theme.of(context).shadowColor.withValues(alpha: 0.12),
+      surfaceTintColor: Colors.transparent,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedReportFiltersDelegate oldDelegate) {
+    return oldDelegate.height != height || oldDelegate.child != child || oldDelegate.background != background;
   }
 }
 
