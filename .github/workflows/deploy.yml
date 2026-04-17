@@ -16,6 +16,7 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
+      - uses: actions/checkout@v4
       - name: Deploy (pull + compose)
         shell: bash
         run: bash infra/github-runner/lawyer-gh-deploy.sh
