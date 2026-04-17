@@ -1772,6 +1772,270 @@ class _ProofsTabState extends State<_ProofsTab> {
   }
 }
 
+Widget _adminDetailRow(BuildContext context, IconData icon, String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.black54, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              SelectableText(value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SubUrgencyStyle {
+  const _SubUrgencyStyle({required this.background, required this.border, required this.accent, required this.hint});
+  final Color background;
+  final Color border;
+  final Color accent;
+  final String hint;
+}
+
+_SubUrgencyStyle _urgencyForEnd(DateTime endAtUtc, String status) {
+  final now = DateTime.now();
+  final end = endAtUtc.toLocal();
+  if (status == 'expired' || status == 'cancelled' || end.isBefore(now)) {
+    return const _SubUrgencyStyle(
+      background: Color(0xFFFFEBEE),
+      border: Color(0xFFE57373),
+      accent: Color(0xFFB71C1C),
+      hint: 'منتهٍ',
+    );
+  }
+  final dayEnd = DateTime(end.year, end.month, end.day);
+  final dayNow = DateTime(now.year, now.month, now.day);
+  final days = dayEnd.difference(dayNow).inDays;
+  if (days <= 0) {
+    return const _SubUrgencyStyle(
+      background: Color(0xFFFFEBEE),
+      border: Color(0xFFE57373),
+      accent: Color(0xFFB71C1C),
+      hint: 'ينتهي اليوم أو انتهى',
+    );
+  }
+  if (days <= 3) {
+    return _SubUrgencyStyle(
+      background: const Color(0xFFFFE0B2),
+      border: const Color(0xFFFF9800),
+      accent: const Color(0xFFE65100),
+      hint: 'ينتهي خلال $days أيام',
+    );
+  }
+  if (days <= 7) {
+    return const _SubUrgencyStyle(
+      background: Color(0xFFFFF9C4),
+      border: Color(0xFFFFCA28),
+      accent: Color(0xFFF57F17),
+      hint: 'أقل من أسبوع',
+    );
+  }
+  if (days <= 30) {
+    return _SubUrgencyStyle(
+      background: const Color(0xFFE8F5E9),
+      border: const Color(0xFF66BB6A),
+      accent: const Color(0xFF1B5E20),
+      hint: '$days يوم متبقية',
+    );
+  }
+  return _SubUrgencyStyle(
+    background: const Color(0xFFE3F2FD),
+    border: const Color(0xFF42A5F5),
+    accent: const Color(0xFF0D47A1),
+    hint: '$days يوم متبقية',
+  );
+}
+
+bool _sameOfficeIds(List<AdminOfficeDto> a, List<AdminOfficeDto> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].id != b[i].id) return false;
+  }
+  return true;
+}
+
+class _OfficesSubscriptionListPanel extends StatefulWidget {
+  const _OfficesSubscriptionListPanel({
+    required this.offices,
+    required this.adminApi,
+    required this.selectedOfficeId,
+    required this.refreshToken,
+    this.onSelect,
+  });
+
+  final List<AdminOfficeDto> offices;
+  final AdminApi adminApi;
+  final int? selectedOfficeId;
+  final ValueChanged<int>? onSelect;
+  final int refreshToken;
+
+  @override
+  State<_OfficesSubscriptionListPanel> createState() => _OfficesSubscriptionListPanelState();
+}
+
+class _OfficesSubscriptionListPanelState extends State<_OfficesSubscriptionListPanel> {
+  late Future<List<AdminSubscriptionDto?>> _subsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _subsFuture = _fetch();
+  }
+
+  Future<List<AdminSubscriptionDto?>> _fetch() {
+    return Future.wait(
+      widget.offices.map((o) async {
+        try {
+          return await widget.adminApi.getSubscription(o.id);
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _OfficesSubscriptionListPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final officesChanged = !_sameOfficeIds(oldWidget.offices, widget.offices);
+    final tokenChanged = oldWidget.refreshToken != widget.refreshToken;
+    if (officesChanged || tokenChanged) {
+      setState(() {
+        _subsFuture = _fetch();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<AdminSubscriptionDto?>>(
+      future: _subsFuture,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
+        }
+        if (snap.hasError) {
+          return Center(child: Text('تعذر تحميل الاشتراكات: ${snap.error}'));
+        }
+        final subs = snap.data ?? List<AdminSubscriptionDto?>.filled(widget.offices.length, null);
+        return LayoutBuilder(
+          builder: (context, c) {
+            final wide = c.maxWidth >= 520;
+            final child = wide
+                ? GridView.builder(
+                    padding: const EdgeInsets.all(10),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: 1.55,
+                    ),
+                    itemCount: widget.offices.length,
+                    itemBuilder: (context, i) => _officeCard(context, widget.offices[i], subs[i]),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(10),
+                    itemCount: widget.offices.length,
+                    itemBuilder: (context, i) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _officeCard(context, widget.offices[i], subs[i]),
+                    ),
+                  );
+            return child;
+          },
+        );
+      },
+    );
+  }
+
+  Widget _officeCard(BuildContext context, AdminOfficeDto o, AdminSubscriptionDto? sub) {
+    final selected = widget.onSelect != null && widget.selectedOfficeId == o.id;
+    final st = sub == null
+        ? const _SubUrgencyStyle(
+            background: Color(0xFFF5F5F5),
+            border: Color(0xFFBDBDBD),
+            accent: Color(0xFF616161),
+            hint: 'لا بيانات',
+          )
+        : _urgencyForEnd(sub.endAt, sub.status);
+    final df = intl.DateFormat.yMMMd().add_Hm();
+    return Material(
+      color: st.background,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: widget.onSelect == null ? null : () => widget.onSelect!(o.id),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: st.border, width: selected ? 2.8 : 1.2),
+            boxShadow: selected
+                ? [BoxShadow(color: st.accent.withValues(alpha: 0.22), blurRadius: 10, offset: const Offset(0, 3))]
+                : null,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      o.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900, height: 1.2),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      st.hint,
+                      style: TextStyle(color: st.accent, fontWeight: FontWeight.w800, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text('كود: ${o.code}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
+              Text('حالة المكتب: ${o.status}', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54)),
+              const Spacer(),
+              if (sub != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${sub.status} — ينتهي ${df.format(sub.endAt.toLocal())}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _OfficesTab extends StatefulWidget {
   const _OfficesTab({required this.future, required this.adminApi});
   final Future<List<AdminOfficeDto>> future;
@@ -1786,6 +2050,8 @@ class _OfficesTabState extends State<_OfficesTab> {
   AdminSubscriptionDto? _sub;
   bool _loading = false;
   bool _showAllOffices = false;
+  /// يزيد بعد التعديل أو التحديث لإعادة جلب ألوان الانتهاء للمكاتب.
+  int _officeSubsRefreshToken = 0;
   late Future<AdminTrialAnalyticsDto> _trialAnalyticsFuture;
   late Future<AdminSubscriptionsAnalyticsDto> _subsAnalyticsFuture;
   late Future<AdminAlertsDto> _alertsFuture;
@@ -1817,6 +2083,7 @@ class _OfficesTabState extends State<_OfficesTab> {
 
   void _refreshAll() {
     setState(() {
+      _officeSubsRefreshToken++;
       _trialAnalyticsFuture = widget.adminApi.trialAnalytics(days: 30);
       _subsAnalyticsFuture = widget.adminApi.subscriptionsAnalytics(days: 30);
       _alertsFuture = widget.adminApi.alerts();
@@ -1860,7 +2127,8 @@ class _OfficesTabState extends State<_OfficesTab> {
         children: [
           Row(
             children: [
-              Text('المكاتب', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+              Text('المكاتب', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+              IconButton(onPressed: _refreshAll, tooltip: 'تحديث القائمة والألوان', icon: const Icon(Icons.refresh)),
               const Spacer(),
               DropdownButton<bool>(
                 value: _showAllOffices,
@@ -1880,69 +2148,44 @@ class _OfficesTabState extends State<_OfficesTab> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
+          Text(
+            'الألوان: أزرق بعيد — أخضر — أصفر — برتقالي — أحمر قريب/منتهٍ',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
+          ),
+          const SizedBox(height: 10),
           Expanded(
             child: _showAllOffices
-                ? FutureBuilder<List<AdminSubscriptionDto?>>(
-                    future: Future.wait(
-                      offices.map((o) async {
-                        try {
-                          return await widget.adminApi.getSubscription(o.id);
-                        } catch (_) {
-                          return null;
-                        }
-                      }),
-                    ),
-                    builder: (context, snapSubs) {
-                      if (snapSubs.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapSubs.hasError) return Center(child: Text('تعذر تحميل الاشتراكات: ${snapSubs.error}'));
-                      final subs = (snapSubs.data ?? const <AdminSubscriptionDto?>[]).whereType<AdminSubscriptionDto>().toList();
-                      if (subs.isEmpty) return const Center(child: Text('لا توجد اشتراكات'));
-                      return ListView.separated(
-                        itemCount: subs.length,
-                        separatorBuilder: (context, index) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final s = subs[i];
-                          AdminOfficeDto? office;
-                          for (final o in offices) {
-                            if (o.id == s.officeId) {
-                              office = o;
-                              break;
-                            }
-                          }
-                          return ListTile(
-                            title: Text(office?.name ?? 'مكتب #${s.officeId}'),
-                            subtitle: Text('الحالة: ${s.status} — ${s.endAt.toLocal()}'),
-                          );
-                        },
-                      );
-                    },
+                ? _OfficesSubscriptionListPanel(
+                    offices: offices,
+                    adminApi: widget.adminApi,
+                    selectedOfficeId: null,
+                    refreshToken: _officeSubsRefreshToken,
+                    onSelect: null,
                   )
                 : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
                         flex: 3,
-                        child: Card(
-                          child: ListView(
-                            children: offices
-                                .map(
-                                  (o) => ListTile(
-                                    title: Text(o.name),
-                                    subtitle: Text('كود: ${o.code} — ${o.status}'),
-                                    selected: _selectedOfficeId == o.id,
-                                    onTap: () => _loadSub(o.id),
-                                  ),
-                                )
-                                .toList(),
-                          ),
+                        child: _OfficesSubscriptionListPanel(
+                          offices: offices,
+                          adminApi: widget.adminApi,
+                          selectedOfficeId: _selectedOfficeId,
+                          refreshToken: _officeSubsRefreshToken,
+                          onSelect: _loadSub,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         flex: 4,
                         child: Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5)),
+                          ),
+                          clipBehavior: Clip.antiAlias,
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: _selectedOfficeId == null
@@ -1951,50 +2194,68 @@ class _OfficesTabState extends State<_OfficesTab> {
                                     ? const Center(child: CircularProgressIndicator())
                                     : (_sub == null
                                         ? const Center(child: Text('لا توجد بيانات اشتراك'))
-                                        : Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text('حالة الاشتراك: ${_sub!.status}', style: Theme.of(context).textTheme.titleMedium),
-                                                  ),
-                                                  if (_sub!.status == 'trial' || _sub!.status == 'active')
-                                                    FilledButton.tonalIcon(
-                                                      onPressed: () async {
-                                                        final id = _selectedOfficeId;
-                                                        if (id == null) return;
-                                                        await _openAdminEditOfficeSubscriptionDialog(
-                                                          context: context,
-                                                          adminApi: widget.adminApi,
-                                                          officeId: id,
-                                                          officeName: () {
-                                                            for (final o in offices) {
-                                                              if (o.id == id) return o.name;
-                                                            }
-                                                            return null;
-                                                          }(),
-                                                          onSaved: () {
-                                                            _refreshAll();
-                                                            _loadSub(id);
-                                                          },
-                                                        );
-                                                      },
-                                                      icon: const Icon(Icons.edit_outlined),
-                                                      label: const Text('تعديل'),
+                                        : SingleChildScrollView(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        'تفاصيل الاشتراك',
+                                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                                                      ),
                                                     ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Text('بداية: ${_sub!.startAt.toLocal()}'),
-                                              Text('نهاية: ${_sub!.endAt.toLocal()}'),
-                                              Text('حد المستخدمين الفعلي: ${_sub!.maxUsersEffective}'),
-                                              if (_sub!.maxUsersOverride != null) Text('تجاوز يدوي: ${_sub!.maxUsersOverride}'),
-                                              if ((_sub!.notes ?? '').isNotEmpty) ...[
-                                                const SizedBox(height: 8),
-                                                Text('ملاحظات: ${_sub!.notes}'),
+                                                    if (_sub!.status == 'trial' || _sub!.status == 'active')
+                                                      FilledButton.tonalIcon(
+                                                        onPressed: () async {
+                                                          final id = _selectedOfficeId;
+                                                          if (id == null) return;
+                                                          await _openAdminEditOfficeSubscriptionDialog(
+                                                            context: context,
+                                                            adminApi: widget.adminApi,
+                                                            officeId: id,
+                                                            officeName: () {
+                                                              for (final o in offices) {
+                                                                if (o.id == id) return o.name;
+                                                              }
+                                                              return null;
+                                                            }(),
+                                                            onSaved: () {
+                                                              _refreshAll();
+                                                              _loadSub(id);
+                                                            },
+                                                          );
+                                                        },
+                                                        icon: const Icon(Icons.edit_outlined),
+                                                        label: const Text('تعديل'),
+                                                      ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Wrap(
+                                                  spacing: 8,
+                                                  runSpacing: 8,
+                                                  children: [
+                                                    Chip(
+                                                      avatar: Icon(
+                                                        _sub!.status == 'trial' ? Icons.hourglass_top : Icons.verified_outlined,
+                                                        size: 18,
+                                                      ),
+                                                      label: Text('الحالة: ${_sub!.status}'),
+                                                    ),
+                                                    Chip(label: Text('المستخدمون: ${_sub!.maxUsersEffective}')),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 12),
+                                                _adminDetailRow(context, Icons.play_circle_outline, 'البداية', _sub!.startAt.toLocal().toString()),
+                                                _adminDetailRow(context, Icons.flag_outlined, 'النهاية', _sub!.endAt.toLocal().toString()),
+                                                if (_sub!.maxUsersOverride != null)
+                                                  _adminDetailRow(context, Icons.group_outlined, 'تجاوز يدوي للحد', '${_sub!.maxUsersOverride}'),
+                                                if ((_sub!.notes ?? '').isNotEmpty)
+                                                  _adminDetailRow(context, Icons.notes_outlined, 'ملاحظات', _sub!.notes!),
                                               ],
-                                            ],
+                                            ),
                                           ))),
                           ),
                         ),
@@ -2023,19 +2284,15 @@ class _OfficesTabState extends State<_OfficesTab> {
             }
             final offices = snap.data ?? const <AdminOfficeDto>[];
             if (offices.isEmpty) return const Center(child: Text('لا يوجد مكاتب بعد'));
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Text('المكاتب', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    IconButton(onPressed: _refreshAll, tooltip: 'تحديث', icon: const Icon(Icons.refresh)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Expanded(child: _buildOfficesContent(offices)),
-              ],
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: _buildOfficesContent(offices),
+              ),
             );
           },
         ),
@@ -2113,7 +2370,7 @@ class _AdminEditSubscriptionDialogState extends State<_AdminEditSubscriptionDial
     super.dispose();
   }
 
-  Future<void> _pickEnd() async {
+  Future<void> _pickDateOnly() async {
     final d = await showDatePicker(
       context: context,
       initialDate: DateTime(_endLocal.year, _endLocal.month, _endLocal.day),
@@ -2121,11 +2378,23 @@ class _AdminEditSubscriptionDialogState extends State<_AdminEditSubscriptionDial
       lastDate: DateTime.now().add(const Duration(days: 365 * 8)),
     );
     if (d == null || !mounted) return;
+    setState(() {
+      _endLocal = DateTime(d.year, d.month, d.day, _endLocal.hour, _endLocal.minute);
+    });
+  }
+
+  Future<void> _pickTimeOnly() async {
     final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_endLocal));
     if (t == null || !mounted) return;
     setState(() {
-      _endLocal = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+      _endLocal = DateTime(_endLocal.year, _endLocal.month, _endLocal.day, t.hour, t.minute);
     });
+  }
+
+  Future<void> _pickDateAndTime() async {
+    await _pickDateOnly();
+    if (!mounted) return;
+    await _pickTimeOnly();
   }
 
   Future<void> _save() async {
@@ -2178,13 +2447,54 @@ class _AdminEditSubscriptionDialogState extends State<_AdminEditSubscriptionDial
             Text('الحالة: ${widget.initial.status}', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             Text('الحد الفعلي للمستخدمين الآن: ${widget.initial.maxUsersEffective}'),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('تاريخ ووقت الانتهاء'),
-              subtitle: Text(df.format(_endLocal)),
-              trailing: IconButton(icon: const Icon(Icons.event_outlined), onPressed: _saving ? null : _pickEnd),
+            const SizedBox(height: 16),
+            Text('تاريخ ووقت الانتهاء', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Material(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _saving ? null : _pickDateAndTime,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.event_available_outlined, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          df.format(_endLocal),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      Text('اضغط للتعديل', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
+                    ],
+                  ),
+                ),
+              ),
             ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _saving ? null : _pickDateOnly,
+                    icon: const Icon(Icons.calendar_month_outlined),
+                    label: const Text('التاريخ'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _saving ? null : _pickTimeOnly,
+                    icon: const Icon(Icons.schedule),
+                    label: const Text('الوقت'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
             TextField(
               controller: _maxUsers,
               keyboardType: TextInputType.number,
