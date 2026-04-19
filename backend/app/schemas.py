@@ -728,3 +728,24 @@ class PettyCashPeriodReportOut(BaseModel):
     opening_balance: float
     closing_balance_implied: float
 
+
+class OfficeMobileBuildRegister(BaseModel):
+    """يستدعيه CI بعد رفع الـ APK إلى التخزين."""
+
+    office_code: str = Field(min_length=2, max_length=32)
+    version_code: int = Field(ge=1)
+    version_name: str = Field(min_length=1, max_length=64)
+    download_url: str = Field(min_length=8, max_length=1200)
+    sha256_hex: str | None = Field(default=None, max_length=64)
+    release_notes: str | None = None
+
+
+class OfficeMobileDownloadOut(BaseModel):
+    office_code: str
+    version_code: int
+    version_name: str
+    download_url: str
+    sha256_hex: str | None = None
+    release_notes: str | None = None
+    built_at: datetime
+

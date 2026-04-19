@@ -45,6 +45,27 @@ class Office(Base):
 
     users: Mapped[list["User"]] = relationship(back_populates="office")
     subscriptions: Mapped[list["Subscription"]] = relationship(back_populates="office")
+    mobile_builds: Mapped[list["OfficeMobileBuild"]] = relationship(back_populates="office")
+
+
+class OfficeMobileBuild(Base):
+    """سجل إصدارات تطبيق أندرويد (white-label) لكل مكتب — يُحدَّث من CI بعد الرفع."""
+
+    __tablename__ = "office_mobile_builds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    version_code: Mapped[int] = mapped_column(Integer, index=True)
+    version_name: Mapped[str] = mapped_column(String(64))
+    download_url: Mapped[str] = mapped_column(String(1200))
+    sha256_hex: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    release_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+    office: Mapped["Office"] = relationship(back_populates="mobile_builds")
+
+
+Index("ix_office_mobile_builds_office_created", OfficeMobileBuild.office_id, OfficeMobileBuild.created_at)
 
 
 class User(Base):

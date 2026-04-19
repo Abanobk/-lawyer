@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/theme/theme_mode_scope.dart';
 import 'package:lawyer_app/router/app_router.dart';
@@ -47,7 +48,9 @@ class _LawyerAppState extends State<LawyerApp> {
         listenable: _theme,
         builder: (context, _) {
           return MaterialApp.router(
-            title: 'مكتب المحاماة الحديث',
+            title: TenantBuildConfig.officeCode.isEmpty
+                ? 'مكتب المحاماة الحديث'
+                : 'مكتب المحاماة — ${TenantBuildConfig.officeCode}',
             scrollBehavior: _AppScrollBehavior(),
             debugShowCheckedModeBanner: false,
             theme: buildAppTheme(),

@@ -5,6 +5,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// White-label: pass from CI, e.g. `flutter build apk -- -POFFICE_CODE=myoffice -PAPP_LABEL=مكتب+العلا`
+val officeCodeProp = (project.findProperty("OFFICE_CODE") as String?)?.trim().orEmpty()
+val officeSuffix = officeCodeProp.replace(Regex("[^a-zA-Z0-9_]"), "_").take(48)
+val appLabelProp = (project.findProperty("APP_LABEL") as String?)?.trim().orEmpty()
+
 android {
     namespace = "com.easytecheg.lawyer.lawyer_app"
     compileSdk = flutter.compileSdkVersion
@@ -20,10 +25,12 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.easytecheg.lawyer.lawyer_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        if (officeSuffix.isNotEmpty()) {
+            applicationIdSuffix = ".office_$officeSuffix"
+        }
+        manifestPlaceholders["applicationLabel"] =
+            if (appLabelProp.isNotEmpty()) appLabelProp else "مكتب المحاماة"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

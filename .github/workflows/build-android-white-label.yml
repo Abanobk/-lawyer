@@ -1,0 +1,62 @@
+# بناء APK أندرويد (white-label) لمكتب واحد وتسجيل الرابط في الـ API.
+# يتطلب Secrets: MOBILE_BUILD_WEBHOOK_TOKEN (نفس قيمة MOBILE_BUILD_WEBHOOK_TOKEN في خادم FastAPI)
+# تشغيل يدوي: Actions → هذا الملف → Run workflow
+name: Build Android white-label APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      office_code:
+        description: رمز المكتب (كما في الرابط /o/<code>/…)
+        required: true
+        type: string
+      api_base_url:
+        description: عنوان الـ API الكامل لتطبيق أندرويد (مثل https://lawyer.example.com/api)
+        required: true
+        type: string
+      app_label:
+        description: اسم الظهور على أندرويد (اختياري، ASCII أفضل)
+        required: false
+        type: string
+        default: ""
+      backend_api_root:
+        description: جذر الـ API لاستدعاء POST الداخلي (نفس النطاق عادةً، مثل https://lawyer.example.com/api)
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build APK
+        run: |
+          chmod +x infra/mobile-build/build_white_label_apk.sh
+          infra/mobile-build/build_white_label_apk.sh \
+            "${{ inputs.office_code }}" \
+            "${{ inputs.api_base_url }}" \
+            "${{ inputs.app_label }}" \
+            "${{ github.run_id }}"
+
+      - name: Create release and register in backend
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFICE_CODE: ${{ inputs.office_code }}
+          BACKEND_API_ROOT: ${{ inputs.backend_api_root }}
+          MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
+        run: |
+          chmod +x infra/mobile-build/register_github_release_build.sh
+          infra/mobile-build/register_github_release_build.sh

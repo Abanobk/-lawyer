@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone, time as dt_time
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Query, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Header, Query, status
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -41,6 +41,7 @@ from app.models import (
     Office,
     OfficeActivityDaily,
     OfficeAuditLog,
+    OfficeMobileBuild,
     OfficeStatus,
     Plan,
     PaymentProof,
@@ -113,6 +114,8 @@ from app.schemas import (
     OfficeUserOut,
     OfficeOut,
     OfficePatch,
+    OfficeMobileBuildRegister,
+    OfficeMobileDownloadOut,
     SignupRequest,
     SignupResponse,
     MeProfilePatch,
@@ -844,6 +847,97 @@ def patch_my_office(
     db.commit()
     db.refresh(office)
     return _office_to_out(office)
+
+
+def _verify_mobile_build_webhook_token(x_mobile_build_token: str | None) -> None:
+    expected = (settings.mobile_build_webhook_token or "").strip()
+    if not expected:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Mobile build webhook not configured")
+    if not x_mobile_build_token or x_mobile_build_token.strip() != expected:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid build token")
+
+
+def _latest_mobile_build(db: Session, office_id: int) -> OfficeMobileBuild | None:
+    return db.scalars(
+        select(OfficeMobileBuild)
+        .where(OfficeMobileBuild.office_id == office_id)
+        .order_by(OfficeMobileBuild.version_code.desc(), OfficeMobileBuild.created_at.desc())
+        .limit(1)
+    ).first()
+
+
+@app.get("/office/mobile-download", response_model=OfficeMobileDownloadOut)
+def office_mobile_download(db: Session = Depends(get_db), user: User = Depends(require_office_user)):
+    office = db.get(Office, user.office_id)
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    row = _latest_mobile_build(db, office.id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No Android build registered yet for this office")
+    return OfficeMobileDownloadOut(
+        office_code=office.code,
+        version_code=row.version_code,
+        version_name=row.version_name,
+        download_url=row.download_url,
+        sha256_hex=row.sha256_hex,
+        release_notes=row.release_notes,
+        built_at=row.created_at,
+    )
+
+
+@app.get("/public/offices/{office_code}/mobile-app", response_model=OfficeMobileDownloadOut)
+def public_office_mobile_app(office_code: str, db: Session = Depends(get_db)):
+    code = office_code.strip()
+    office = db.scalar(select(Office).where(Office.code == code))
+    if not office:
+        raise HTTPException(status_code=404, detail="Office not found")
+    row = _latest_mobile_build(db, office.id)
+    if not row:
+        raise HTTPException(status_code=404, detail="No Android build for this office")
+    return OfficeMobileDownloadOut(
+        office_code=office.code,
+        version_code=row.version_code,
+        version_name=row.version_name,
+        download_url=row.download_url,
+        sha256_hex=row.sha256_hex,
+        release_notes=row.release_notes,
+        built_at=row.created_at,
+    )
+
+
+@app.post("/internal/office-mobile-builds", response_model=OfficeMobileDownloadOut)
+def internal_register_mobile_build(
+    payload: OfficeMobileBuildRegister,
+    db: Session = Depends(get_db),
+    x_mobile_build_token: str | None = Header(None, alias="X-Mobile-Build-Token"),
+):
+    _verify_mobile_build_webhook_token(x_mobile_build_token)
+    office = db.scalar(select(Office).where(Office.code == payload.office_code.strip()))
+    if not office:
+        raise HTTPException(status_code=404, detail="Unknown office_code")
+    sha = payload.sha256_hex.strip().lower() if payload.sha256_hex else None
+    if sha is not None and (len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha)):
+        raise HTTPException(status_code=400, detail="sha256_hex must be 64 lowercase hex chars")
+    row = OfficeMobileBuild(
+        office_id=office.id,
+        version_code=payload.version_code,
+        version_name=payload.version_name.strip(),
+        download_url=payload.download_url.strip(),
+        sha256_hex=sha,
+        release_notes=payload.release_notes,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return OfficeMobileDownloadOut(
+        office_code=office.code,
+        version_code=row.version_code,
+        version_name=row.version_name,
+        download_url=row.download_url,
+        sha256_hex=row.sha256_hex,
+        release_notes=row.release_notes,
+        built_at=row.created_at,
+    )
 
 
 @app.get("/office/users", response_model=list[OfficeUserOut])

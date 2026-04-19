@@ -6,6 +6,7 @@ import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
+import 'package:lawyer_app/features/office/widgets/office_mobile_download_card.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -258,6 +259,8 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                       ),
                     ],
+                    const SizedBox(height: 20),
+                    const OfficeMobileDownloadCard(),
                     const SizedBox(height: 24),
                     Text('بيانات المكتب', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 12),

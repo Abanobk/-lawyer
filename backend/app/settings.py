@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Mount a persistent host path to this directory in docker-compose.
     upload_dir: str = "/data/uploads"
 
+    # CI يستدعي POST /internal/office-mobile-builds مع الرأس X-Mobile-Build-Token
+    mobile_build_webhook_token: str = ""
+
 
 settings = Settings()
 

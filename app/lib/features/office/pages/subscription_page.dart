@@ -9,6 +9,7 @@ import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
 import 'package:lawyer_app/core/widgets/promo_image_memory.dart';
 import 'package:lawyer_app/data/api/plans_api.dart';
 import 'package:lawyer_app/data/api/subscription_api.dart';
+import 'package:lawyer_app/features/office/widgets/office_mobile_download_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SubscriptionPage extends StatefulWidget {
@@ -157,6 +158,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
               const SizedBox(height: 4),
               const Text('اختر مدة الاشتراك من الأزرار، ثم افتح إنستاباي. بعد التحويل ارفع الإثبات في الأسفل للمراجعة.'),
+              const SizedBox(height: 14),
+              const OfficeMobileDownloadCard(),
               const SizedBox(height: 10),
               if (snap.connectionState == ConnectionState.waiting)
                 const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()))
