@@ -53,6 +53,9 @@ if [[ -f "$RUNNER_DIR/svc.sh" ]]; then
   echo ""
   echo "تم. للتحقق: systemctl status \"actions.runner.*\" --no-pager"
   systemctl list-units 'actions.runner.*' --no-pager 2>/dev/null || true
+  echo ""
+  echo "بعد أي إعادة تشغيل للسيرفر يجب أن يعود الـ runner تلقائياً."
+  echo "إن بقي الوضع «Waiting for a runner» في GitHub: sudo bash infra/github-runner/ensure-runner-on-boot.sh"
 else
   echo "لا يوجد svc.sh في $RUNNER_DIR — حدّث حزمة actions-runner من GitHub."
   exit 1

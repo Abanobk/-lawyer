@@ -3,7 +3,13 @@
 #   bash infra/github-runner/grant-runner-repo-access.sh
 #   ثم أعد تشغيل خدمة الـ runner.
 # بديل (إن عمل sudo على جهازك): bash infra/github-runner/allow-sudo-deploy.sh
-# لتثبيت الـ runner: infra/github-runner/setup-durable-service.sh
+# لتثبيت الـ runner: sudo bash infra/github-runner/setup-durable-service.sh
+#
+# إذا بعد إعادة تشغيل السيرفر ظهر «Waiting for a runner to pick up this job»:
+#   1) على السيرفر: sudo systemctl list-units 'actions.runner.*' --no-pager
+#   2) إن كانت الخدمة inactive: sudo bash infra/github-runner/ensure-runner-on-boot.sh
+#   3) تأكد أن الـ runner مفعّل للإقلاع: systemctl is-enabled 'actions.runner.*'
+#      (إن كان disabled نفّذ ensure-runner-on-boot.sh أو أعد setup-durable-service.sh)
 
 name: Deploy server
 
