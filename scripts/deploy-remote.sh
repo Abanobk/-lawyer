@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # نشر يدوي من جهازك إلى السيرفر (بعد ضبط المتغيرات أو تصديرها في البيئة).
 #
-# مثال:
-#   export DEPLOY_HOST=192.168.1.72
-#   export DEPLOY_USER=ubuntu
+# مثال (يفضّل DEPLOY_HOST = اسم نطاق يتحل عندك — Tailscale أو DNS — بدل 192.168.x.x لو مش على نفس LAN):
+#   export DEPLOY_HOST=nas.easytecheg.net
+#   export DEPLOY_USER=root
 #   export DEPLOY_REPO_PATH=/mnt/marichia/files/app-data/lawyer/repo
 #   ./scripts/deploy-remote.sh
 #
