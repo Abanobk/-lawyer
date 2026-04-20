@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # بعد [build_white_label_apk.sh]: ينشئ إصدار GitHub، يرفع الـ APK، ويُسجّل الرابط في الباكند.
-# متغيرات بيئة مطلوبة: GITHUB_REPOSITORY, GITHUB_RUN_ID, OFFICE_CODE,
+# متغيرات بيئة مطلوبة: GITHUB_REPOSITORY, GITHUB_RUN_NUMBER, OFFICE_CODE,
 # BACKEND_API_ROOT (مثل https://host/api), MOBILE_BUILD_WEBHOOK_TOKEN
 set -euo pipefail
 
@@ -9,7 +9,7 @@ APK="${ROOT}/app/build/app/outputs/flutter-apk/app-release.apk"
 test -f "$APK"
 
 REPO="${GITHUB_REPOSITORY:?}"
-VC="${GITHUB_RUN_ID:?}"
+VC="${GITHUB_RUN_NUMBER:?}"
 CODE="${OFFICE_CODE:?}"
 BACKEND="${BACKEND_API_ROOT:?}"
 TOKEN="${MOBILE_BUILD_WEBHOOK_TOKEN:?}"

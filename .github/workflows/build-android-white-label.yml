@@ -144,7 +144,7 @@ jobs:
             "${{ matrix.office_code }}" \
             "${{ inputs.api_base_url || vars.MOBILE_API_BASE_URL }}" \
             "${{ matrix.app_label }}" \
-            "${{ github.run_id }}"
+            "${{ github.run_number }}"
 
       - name: Create release and register in backend
         env:
@@ -152,6 +152,7 @@ jobs:
           OFFICE_CODE: ${{ matrix.office_code }}
           BACKEND_API_ROOT: ${{ inputs.backend_api_root || vars.BACKEND_API_ROOT }}
           MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           chmod +x infra/mobile-build/register_github_release_build.sh
           infra/mobile-build/register_github_release_build.sh
