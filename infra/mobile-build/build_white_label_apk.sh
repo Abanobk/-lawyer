@@ -13,9 +13,9 @@ API_BASE_URL="${2:?api_base_url required}"
 APP_LABEL="${3:-}"
 BUILD_NUM="${4:?build_number required}"
 
-GRADLE_ARGS=( -P "OFFICE_CODE=${OFFICE_CODE}" )
+GRADLE_ARGS=( "-POFFICE_CODE=${OFFICE_CODE}" )
 if [[ -n "${APP_LABEL}" ]]; then
-  GRADLE_ARGS+=( -P "APP_LABEL=${APP_LABEL}" )
+  GRADLE_ARGS+=( "-PAPP_LABEL=${APP_LABEL}" )
 fi
 
 flutter pub get
