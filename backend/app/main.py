@@ -116,6 +116,7 @@ from app.schemas import (
     OfficePatch,
     OfficeMobileBuildRegister,
     OfficeMobileDownloadOut,
+    OfficeActiveOut,
     SignupRequest,
     SignupResponse,
     MeProfilePatch,
@@ -938,6 +939,17 @@ def internal_register_mobile_build(
         release_notes=row.release_notes,
         built_at=row.created_at,
     )
+
+
+@app.get("/internal/offices/active", response_model=list[OfficeActiveOut])
+def internal_list_active_offices(
+    db: Session = Depends(get_db),
+    x_mobile_build_token: str | None = Header(None, alias="X-Mobile-Build-Token"),
+):
+    """يستخدمه CI لجلب قائمة المكاتب النشطة لبناء APK لكل مكتب."""
+    _verify_mobile_build_webhook_token(x_mobile_build_token)
+    offices = db.scalars(select(Office).where(Office.status == OfficeStatus.active).order_by(Office.code.asc())).all()
+    return [OfficeActiveOut(code=o.code, name=o.name) for o in offices]
 
 
 @app.get("/office/users", response_model=list[OfficeUserOut])

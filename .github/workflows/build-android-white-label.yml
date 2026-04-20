@@ -7,28 +7,63 @@ on:
   workflow_dispatch:
     inputs:
       office_code:
-        description: رمز المكتب (كما في الرابط /o/<code>/…)
-        required: true
+        description: (اختياري) لو عايز تبني لمكتب واحد فقط اكتب رمزه. لو فاضي هيبني لكل المكاتب النشطة.
+        required: false
         type: string
+        default: ""
       api_base_url:
         description: عنوان الـ API الكامل لتطبيق أندرويد (مثل https://lawyer.example.com/api)
         required: true
         type: string
       app_label:
-        description: اسم الظهور على أندرويد (اختياري، ASCII أفضل)
+        description: (اختياري) اسم الظهور على أندرويد. لو بتبني لكل المكاتب سيُستخدم اسم المكتب من الـ API إن تُرك فارغًا.
         required: false
         type: string
         default: ""
       backend_api_root:
-        description: جذر الـ API لاستدعاء POST الداخلي (نفس النطاق عادةً، مثل https://lawyer.example.com/api)
+        description: جذر خادم الباكند (مثل https://lawyer.example.com)
         required: true
         type: string
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Build matrix from offices list
+        id: set-matrix
+        env:
+          BACKEND_API_ROOT: ${{ inputs.backend_api_root }}
+          OFFICE_CODE: ${{ inputs.office_code }}
+          APP_LABEL: ${{ inputs.app_label }}
+          MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${OFFICE_CODE}" ]]; then
+            label="${APP_LABEL}"
+            if [[ -z "$label" ]]; then label="${OFFICE_CODE}"; fi
+            echo "matrix={\"include\":[{\"office_code\":\"${OFFICE_CODE}\",\"app_label\":\"${label}\"}]}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          offices_json="$(curl -fsSL \
+            -H "X-Mobile-Build-Token: ${MOBILE_BUILD_WEBHOOK_TOKEN}" \
+            "${BACKEND_API_ROOT}/internal/offices/active")"
+
+          # { include: [ { office_code, app_label }, ... ] }
+          matrix="$(echo "$offices_json" | jq -c '{include: [ .[] | {office_code: .code, app_label: .name} ] }')"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
     runs-on: ubuntu-latest
+    needs: prepare
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,15 +81,15 @@ jobs:
         run: |
           chmod +x infra/mobile-build/build_white_label_apk.sh
           infra/mobile-build/build_white_label_apk.sh \
-            "${{ inputs.office_code }}" \
+            "${{ matrix.office_code }}" \
             "${{ inputs.api_base_url }}" \
-            "${{ inputs.app_label }}" \
+            "${{ matrix.app_label }}" \
             "${{ github.run_id }}"
 
       - name: Create release and register in backend
         env:
           GH_TOKEN: ${{ github.token }}
-          OFFICE_CODE: ${{ inputs.office_code }}
+          OFFICE_CODE: ${{ matrix.office_code }}
           BACKEND_API_ROOT: ${{ inputs.backend_api_root }}
           MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
         run: |

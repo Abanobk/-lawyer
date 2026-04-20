@@ -749,3 +749,8 @@ class OfficeMobileDownloadOut(BaseModel):
     release_notes: str | None = None
     built_at: datetime
 
+
+class OfficeActiveOut(BaseModel):
+    code: str
+    name: str
+
