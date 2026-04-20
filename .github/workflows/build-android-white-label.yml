@@ -21,7 +21,7 @@ on:
         type: string
         default: ""
       backend_api_root:
-        description: جذر خادم الباكند (مثل https://lawyer.example.com)
+        description: جذر API للباكند (يفضّل https://lawyer.example.com/api). لو حطيت الدومين فقط، الـ workflow هتضيف /api تلقائيًا.
         required: true
         type: string
   schedule:
@@ -67,6 +67,28 @@ jobs:
             echo "Missing secret: MOBILE_BUILD_WEBHOOK_TOKEN"
             echo "Add it in GitHub: Settings → Secrets and variables → Actions → New repository secret"
             exit 2
+          fi
+
+          normalize_api_root() {
+            local raw="$1"
+            raw="$(echo "$raw" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' )"
+            if [[ -z "$raw" ]]; then
+              echo ""
+              return 0
+            fi
+            raw="${raw%/}"
+            case "$raw" in
+              */api) echo "$raw" ;;
+              *) echo "${raw}/api" ;;
+            esac
+          }
+
+          BACKEND_API_ROOT="$(normalize_api_root "${BACKEND_API_ROOT}")"
+          if [[ -z "${BACKEND_API_ROOT}" ]]; then
+            echo "BACKEND_API_ROOT is empty."
+            echo "For workflow_dispatch: fill backend_api_root."
+            echo "For schedule/push: set GitHub repo variable BACKEND_API_ROOT (recommended: https://your-domain/api)."
+            exit 5
           fi
 
           if [[ -n "${OFFICE_CODE}" ]]; then
@@ -139,10 +161,33 @@ jobs:
 
       - name: Build APK
         run: |
+          set -euo pipefail
+          normalize_api_root() {
+            local raw="$1"
+            raw="$(echo "$raw" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' )"
+            if [[ -z "$raw" ]]; then
+              echo ""
+              return 0
+            fi
+            raw="${raw%/}"
+            case "$raw" in
+              */api) echo "$raw" ;;
+              *) echo "${raw}/api" ;;
+            esac
+          }
+
+          API_BASE="$(normalize_api_root "${{ inputs.api_base_url || vars.MOBILE_API_BASE_URL }}")"
+          if [[ -z "${API_BASE}" ]]; then
+            echo "api_base_url is empty."
+            echo "For workflow_dispatch: fill api_base_url."
+            echo "For schedule/push: set GitHub repo variable MOBILE_API_BASE_URL (recommended: https://your-domain/api)."
+            exit 5
+          fi
+
           chmod +x infra/mobile-build/build_white_label_apk.sh
           infra/mobile-build/build_white_label_apk.sh \
             "${{ matrix.office_code }}" \
-            "${{ inputs.api_base_url || vars.MOBILE_API_BASE_URL }}" \
+            "${API_BASE}" \
             "${{ matrix.app_label }}" \
             "${{ github.run_number }}"
 
@@ -154,5 +199,28 @@ jobs:
           MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
+          set -euo pipefail
+          normalize_api_root() {
+            local raw="$1"
+            raw="$(echo "$raw" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' )"
+            if [[ -z "$raw" ]]; then
+              echo ""
+              return 0
+            fi
+            raw="${raw%/}"
+            case "$raw" in
+              */api) echo "$raw" ;;
+              *) echo "${raw}/api" ;;
+            esac
+          }
+
+          export BACKEND_API_ROOT="$(normalize_api_root "${BACKEND_API_ROOT}")"
+          if [[ -z "${BACKEND_API_ROOT}" ]]; then
+            echo "BACKEND_API_ROOT is empty."
+            echo "For workflow_dispatch: fill backend_api_root."
+            echo "For schedule/push: set GitHub repo variable BACKEND_API_ROOT (recommended: https://your-domain/api)."
+            exit 5
+          fi
+
           chmod +x infra/mobile-build/register_github_release_build.sh
           infra/mobile-build/register_github_release_build.sh
