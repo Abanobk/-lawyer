@@ -41,6 +41,12 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [[ -z "${MOBILE_BUILD_WEBHOOK_TOKEN}" ]]; then
+            echo "Missing secret: MOBILE_BUILD_WEBHOOK_TOKEN"
+            echo "Add it in GitHub: Settings → Secrets and variables → Actions → New repository secret"
+            exit 2
+          fi
+
           if [[ -n "${OFFICE_CODE}" ]]; then
             label="${APP_LABEL}"
             if [[ -z "$label" ]]; then label="${OFFICE_CODE}"; fi
@@ -53,6 +59,15 @@ jobs:
             "${BACKEND_API_ROOT}/internal/offices/active")"
 
           # { include: [ { office_code, app_label }, ... ] }
+          if ! echo "$offices_json" | jq -e . >/dev/null 2>&1; then
+            echo "Backend response is not JSON. Check BACKEND_API_ROOT and token."
+            echo "BACKEND_API_ROOT=${BACKEND_API_ROOT}"
+            echo "First 200 chars of response:"
+            echo "$offices_json" | head -c 200
+            echo ""
+            exit 3
+          fi
+
           matrix="$(echo "$offices_json" | jq -c '{include: [ .[] | {office_code: .code, app_label: .name} ] }')"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
