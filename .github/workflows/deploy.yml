@@ -23,6 +23,16 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+      - name: Debug deploy context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "PWD=$(pwd)"
+          echo "HEAD=$(git rev-parse HEAD)"
+          echo ""
+          echo "First lines of infra/github-runner/lawyer-gh-deploy.sh:"
+          sed -n '1,60p' infra/github-runner/lawyer-gh-deploy.sh
       - name: Deploy (pull + compose)
         shell: bash
         run: bash infra/github-runner/lawyer-gh-deploy.sh
