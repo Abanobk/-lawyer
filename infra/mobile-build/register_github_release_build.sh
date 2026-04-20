@@ -30,6 +30,11 @@ fi
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/app-release.apk"
 ROOT_JSON="${BACKEND%/}"
 
+payload="$(mktemp)"
+printf '%s' "{\"office_code\":\"${CODE}\",\"version_code\":${VC},\"version_name\":\"1.0.${VC}\",\"download_url\":\"${DOWNLOAD_URL}\"}" >"$payload"
+echo "Register payload (${#CODE} code chars, ${#DOWNLOAD_URL} url chars, VC=${VC}):"
+wc -c "$payload" | awk '{print "payload_bytes="$1}'
+
 resp="$(mktemp)"
 http="$(curl -sS \
   -o "$resp" \
@@ -37,12 +42,15 @@ http="$(curl -sS \
   -X POST "${ROOT_JSON}/internal/office-mobile-builds" \
   -H "Content-Type: application/json" \
   -H "X-Mobile-Build-Token: ${TOKEN}" \
-  -d "{\"office_code\":\"${CODE}\",\"version_code\":${VC},\"version_name\":\"1.0.${VC}\",\"download_url\":\"${DOWNLOAD_URL}\"}" || true)"
+  --data-binary @"${payload}" || true)"
 
 if [[ "$http" != "200" && "$http" != "201" ]]; then
   echo "Backend register failed. HTTP=$http"
   echo "Response:"
   cat "$resp" || true
+  echo ""
+  echo "Payload (first 300 chars):"
+  head -c 300 "$payload" || true
   echo ""
   exit 22
 fi
