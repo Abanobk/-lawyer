@@ -3,8 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
-import 'dart:js_interop';
-import 'package:web/web.dart' as web;
+import 'package:lawyer_app/core/util/web_file_download.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/case_files_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
@@ -314,15 +313,7 @@ class _CaseFilesDialogState extends State<_CaseFilesDialog> {
   Future<void> _downloadOne(CaseFileDto f) async {
     final res = await widget.api.download(fileId: f.id);
     if (!kIsWeb) return;
-    final bytesPart = res.$1.toJS as web.BlobPart;
-    final parts = <web.BlobPart>[bytesPart].toJS;
-    final blob = web.Blob(parts, web.BlobPropertyBag(type: res.$3));
-    final url = web.URL.createObjectURL(blob);
-    final a = web.HTMLAnchorElement()
-      ..href = url
-      ..download = res.$2;
-    a.click();
-    web.URL.revokeObjectURL(url);
+    downloadBytesAsFileOnWeb(bytes: res.$1, contentType: res.$3, filename: res.$2);
   }
 
   Future<void> _openInNewTab(CaseFileDto f) async {
@@ -331,18 +322,7 @@ class _CaseFilesDialogState extends State<_CaseFilesDialog> {
 
     final bytes = res.$1;
     final contentType = res.$3;
-    final bytesPart = bytes.toJS as web.BlobPart;
-    final parts = <web.BlobPart>[bytesPart].toJS;
-    final blob = web.Blob(parts, web.BlobPropertyBag(type: contentType));
-    final url = web.URL.createObjectURL(blob);
-    final a = web.HTMLAnchorElement()
-      ..href = url
-      ..target = '_blank'
-      ..rel = 'noopener';
-    a.click();
-    Future<void>.delayed(const Duration(seconds: 2), () {
-      web.URL.revokeObjectURL(url);
-    });
+    openBytesInNewTabOnWeb(bytes: bytes, contentType: contentType);
   }
 
   Future<void> _downloadAll() async {

@@ -1,5 +1,3 @@
-import 'dart:js_interop';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +12,7 @@ import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/sessions_api.dart';
 import 'package:lawyer_app/data/api/transactions_api.dart';
-import 'package:web/web.dart' as web;
+import 'package:lawyer_app/core/util/web_file_download.dart';
 
 class CaseDetailPage extends StatefulWidget {
   const CaseDetailPage({super.key, required this.caseId});
@@ -80,15 +78,7 @@ class _CaseDetailPageState extends State<CaseDetailPage> {
   Future<void> _webDownload(CaseFileDto f) async {
     if (!kIsWeb) return;
     final res = await _filesApi.download(fileId: f.id);
-    final bytesPart = res.$1.toJS as web.BlobPart;
-    final parts = <web.BlobPart>[bytesPart].toJS;
-    final blob = web.Blob(parts, web.BlobPropertyBag(type: res.$3));
-    final url = web.URL.createObjectURL(blob);
-    final a = web.HTMLAnchorElement()
-      ..href = url
-      ..download = res.$2;
-    a.click();
-    web.URL.revokeObjectURL(url);
+    downloadBytesAsFileOnWeb(bytes: res.$1, contentType: res.$3, filename: res.$2);
   }
 
   Future<void> _uploadFile() async {

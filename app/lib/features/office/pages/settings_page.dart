@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:lawyer_app/core/util/csv_download_web.dart';
+import 'package:lawyer_app/core/util/csv_download.dart';
 import 'package:lawyer_app/core/util/office_data_export.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
