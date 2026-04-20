@@ -184,12 +184,19 @@ jobs:
             exit 5
           fi
 
+          VC=$(( ${{ github.run_number }} * 10 + ${{ github.run_attempt }} ))
+          if [[ "$VC" -gt 2100000000 ]]; then
+            echo "ANDROID_VERSION_CODE too large for Android: $VC"
+            exit 6
+          fi
+          echo "ANDROID_VERSION_CODE=$VC" >> "$GITHUB_ENV"
+
           chmod +x infra/mobile-build/build_white_label_apk.sh
           infra/mobile-build/build_white_label_apk.sh \
             "${{ matrix.office_code }}" \
             "${API_BASE}" \
             "${{ matrix.app_label }}" \
-            "${{ github.run_number }}"
+            "${VC}"
 
       - name: Create release and register in backend
         env:
@@ -197,7 +204,8 @@ jobs:
           OFFICE_CODE: ${{ matrix.office_code }}
           BACKEND_API_ROOT: ${{ inputs.backend_api_root || vars.BACKEND_API_ROOT }}
           MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
-          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           normalize_api_root() {
