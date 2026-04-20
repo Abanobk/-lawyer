@@ -13,16 +13,18 @@ API_BASE_URL="${2:?api_base_url required}"
 APP_LABEL="${3:-}"
 BUILD_NUM="${4:?build_number required}"
 
-GRADLE_ARGS=( "-POFFICE_CODE=${OFFICE_CODE}" )
+# Pass gradle project properties via environment variables.
+# Gradle automatically maps ORG_GRADLE_PROJECT_<key> to project properties, which
+# avoids flutter CLI argument parsing issues and handles spaces safely.
+export ORG_GRADLE_PROJECT_OFFICE_CODE="${OFFICE_CODE}"
 if [[ -n "${APP_LABEL}" ]]; then
-  GRADLE_ARGS+=( "-PAPP_LABEL=${APP_LABEL}" )
+  export ORG_GRADLE_PROJECT_APP_LABEL="${APP_LABEL}"
 fi
 
 flutter pub get
 flutter build apk --release \
   "--build-number=${BUILD_NUM}" \
   --dart-define="API_BASE_URL=${API_BASE_URL}" \
-  --dart-define="OFFICE_CODE=${OFFICE_CODE}" \
-  -- "${GRADLE_ARGS[@]}"
+  --dart-define="OFFICE_CODE=${OFFICE_CODE}"
 
 echo "APK: ${ROOT}/app/build/app/outputs/flutter-apk/app-release.apk"
