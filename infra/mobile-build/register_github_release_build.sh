@@ -30,10 +30,29 @@ fi
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/app-release.apk"
 ROOT_JSON="${BACKEND%/}"
 
+export DOWNLOAD_URL
+export ANDROID_VERSION_CODE="${VC}"
+
 payload="$(mktemp)"
-printf '%s' "{\"office_code\":\"${CODE}\",\"version_code\":${VC},\"version_name\":\"1.0.${VC}\",\"download_url\":\"${DOWNLOAD_URL}\"}" >"$payload"
+python3 - <<PY >"$payload"
+import json
+import os
+
+payload = {
+  "office_code": os.environ["OFFICE_CODE"],
+  "version_code": int(os.environ["ANDROID_VERSION_CODE"]),
+  "version_name": f"1.0.{os.environ['ANDROID_VERSION_CODE']}",
+  "download_url": os.environ["DOWNLOAD_URL"],
+}
+print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+PY
 echo "Register payload (${#CODE} code chars, ${#DOWNLOAD_URL} url chars, VC=${VC}):"
-wc -c "$payload" | awk '{print "payload_bytes="$1}'
+bytes="$(wc -c <"$payload" | tr -d ' ')"
+echo "payload_bytes=${bytes}"
+if [[ "${bytes}" -lt 2 ]]; then
+  echo "Payload file is empty; aborting."
+  exit 23
+fi
 
 resp="$(mktemp)"
 http="$(curl -sS \
