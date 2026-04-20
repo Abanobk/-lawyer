@@ -30,9 +30,13 @@ jobs:
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
           echo "PWD=$(pwd)"
           echo "HEAD=$(git rev-parse HEAD)"
+          echo "WHOAMI=$(whoami)"
+          echo ""
+          echo "sudo check (should be non-interactive):"
+          sudo -n -l || true
           echo ""
           echo "First lines of infra/github-runner/lawyer-gh-deploy.sh:"
           sed -n '1,60p' infra/github-runner/lawyer-gh-deploy.sh
       - name: Deploy (pull + compose)
         shell: bash
-        run: bash infra/github-runner/lawyer-gh-deploy.sh
+        run: sudo -n /root/bin/lawyer-gh-deploy.sh
