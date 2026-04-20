@@ -7,7 +7,12 @@ set -euo pipefail
 DEFAULT_REPO_PATH="/mnt/marichia/files/app-data/lawyer/repo"
 REPO_PATH="${LAWYER_REPO_PATH:-$DEFAULT_REPO_PATH}"
 
-if [[ -n "${GITHUB_WORKSPACE:-}" && -d "${GITHUB_WORKSPACE}/.git" ]]; then
+# الأفضل استخدام الريبو الثابت على السيرفر لأن `infra/docker-compose.yml`
+# يعتمد على وجود `../.env` بجانب الريبو (غير موجود عادةً داخل GITHUB_WORKSPACE).
+# استخدم GITHUB_WORKSPACE فقط لو مسار السيرفر غير متاح.
+if [[ -d "$REPO_PATH/.git" ]]; then
+  : # keep REPO_PATH as-is
+elif [[ -n "${GITHUB_WORKSPACE:-}" && -d "${GITHUB_WORKSPACE}/.git" ]]; then
   REPO_PATH="$GITHUB_WORKSPACE"
 fi
 
