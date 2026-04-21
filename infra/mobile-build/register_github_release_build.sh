@@ -56,10 +56,12 @@ fi
 
 resp="$(mktemp)"
 http="$(curl -sS \
+  --http1.1 \
   -o "$resp" \
   -w "%{http_code}" \
   -X POST "${ROOT_JSON}/internal/office-mobile-builds" \
   -H "Content-Type: application/json" \
+  -H "Content-Length: ${bytes}" \
   -H "X-Mobile-Build-Token: ${TOKEN}" \
   --data-binary @"${payload}" || true)"
 
