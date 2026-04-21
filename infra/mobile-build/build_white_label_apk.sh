@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 # بناء APK لمكتب واحد (white-label). يُستدعى من CI أو يدويًا من جذر المستودع.
-# الاستخدام: build_white_label_apk.sh <office_code> <api_base_url> [app_label] <build_number>
+# الاستخدام: build_white_label_apk.sh [office_code] [api_base_url] [app_label] [build_number]
+# بدون معاملات: يستخدم القيم الافتراضية أدناه (مكتب النمث على lawyer.easytecheg.net).
+# تجاوز الافتراضي: مرّر المعاملات أو اضبط LAWYER_OFFICE_CODE / LAWYER_API_BASE_URL / LAWYER_BUILD_NUMBER.
 # مثال:
+#   ./infra/mobile-build/build_white_label_apk.sh
 #   ./infra/mobile-build/build_white_label_apk.sh myoffice https://api.example.com/api "" 42
 set -euo pipefail
+
+# افتراضيات البناء المحلي — نفس المسار كما في الويب: /o/7ta4cz9ld7/...
+: "${LAWYER_OFFICE_CODE:=7ta4cz9ld7}"
+: "${LAWYER_API_BASE_URL:=https://lawyer.easytecheg.net/api}"
+: "${LAWYER_BUILD_NUMBER:=1}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/app"
 
-OFFICE_CODE="${1:?office_code required}"
-API_BASE_URL="${2:?api_base_url required}"
+OFFICE_CODE="${1:-$LAWYER_OFFICE_CODE}"
+API_BASE_URL="${2:-$LAWYER_API_BASE_URL}"
 APP_LABEL="${3:-}"
-BUILD_NUM="${4:?build_number required}"
+BUILD_NUM="${4:-$LAWYER_BUILD_NUMBER}"
 
 # Pass gradle project properties via environment variables.
 # Gradle automatically maps ORG_GRADLE_PROJECT_<key> to project properties, which
