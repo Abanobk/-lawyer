@@ -54,6 +54,15 @@ if [[ "${bytes}" -lt 2 ]]; then
   exit 23
 fi
 
+# Validate JSON locally before sending (helps catch hidden chars / truncation).
+python3 - <<'PY'
+import json, sys
+with open(sys.argv[1], "rb") as f:
+    raw = f.read()
+json.loads(raw.decode("utf-8"))
+print("payload_json_ok=1")
+PY "$payload"
+
 resp="$(mktemp)"
 http="$(curl -sS \
   --http1.1 \
@@ -61,7 +70,6 @@ http="$(curl -sS \
   -w "%{http_code}" \
   -X POST "${ROOT_JSON}/internal/office-mobile-builds" \
   -H "Content-Type: application/json" \
-  -H "Content-Length: ${bytes}" \
   -H "X-Mobile-Build-Token: ${TOKEN}" \
   --data-binary @"${payload}" || true)"
 

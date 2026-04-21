@@ -12,6 +12,21 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+# (مهم للـ deploy workflow) تأكد أن githubrunner يقدر يعمل sudo بدون كلمة مرور
+# على سكربت النشر فقط. على TrueNAS، أحيانًا ملفات sudoers.d أو /root/bin
+# تتعرض للتغيير/الضياع بعد restart/upgrade.
+#
+# يمكنك ضبط LAWYER_REPO_PATH لو الريبو على مسار ثابت مختلف.
+DEFAULT_REPO_PATH="/mnt/marichia/files/app-data/lawyer/repo"
+REPO_PATH="${LAWYER_REPO_PATH:-$DEFAULT_REPO_PATH}"
+ALLOW_SUDO_SCRIPT="${REPO_PATH}/infra/github-runner/allow-sudo-deploy.sh"
+if [[ -f "$ALLOW_SUDO_SCRIPT" ]]; then
+  echo "→ ensure deploy sudoers (allow-sudo-deploy.sh)"
+  bash "$ALLOW_SUDO_SCRIPT" || echo "تحذير: allow-sudo-deploy.sh فشل — راجع /etc/sudoers و /etc/sudoers.d"
+else
+  echo "→ skip deploy sudoers (not found): $ALLOW_SUDO_SCRIPT"
+fi
+
 mapfile -t units < <(systemctl list-unit-files --no-legend 2>/dev/null | awk '/^actions\.runner\./ && /\.service$/ {print $1}' || true)
 
 if [[ ${#units[@]} -eq 0 ]]; then
