@@ -54,6 +54,9 @@ if [[ "${bytes}" -lt 2 ]]; then
   exit 23
 fi
 
+# Expose payload path for URL-encoding step.
+export PAYLOAD_PATH="$payload"
+
 # Validate JSON locally before sending (helps catch hidden chars / truncation).
 python3 - "$payload" <<'PY'
 import json, sys
@@ -65,16 +68,22 @@ PY
 
 resp="$(mktemp)"
 json_body="$(cat "$payload")"
+qs="$(python3 - <<'PY'
+import json, os, urllib.parse
+payload = json.loads(open(os.environ["PAYLOAD_PATH"], "r", encoding="utf-8").read())
+print(urllib.parse.urlencode(payload))
+PY
+)"
+
 trace="$(mktemp)"
 http="$(curl -sS \
   --http1.1 \
   -v \
   -o "$resp" \
   -w "%{http_code}" \
-  -X POST "${ROOT_JSON}/internal/office-mobile-builds" \
-  -H "Content-Type: application/json" \
+  -X POST "${ROOT_JSON}/internal/office-mobile-builds?${qs}" \
   -H "X-Mobile-Build-Token: ${TOKEN}" \
-  --data-raw "${json_body}" 2>"$trace" || true)"
+  2>"$trace" || true)"
 
 if [[ "$http" != "200" && "$http" != "201" ]]; then
   echo "Backend register failed. HTTP=$http"

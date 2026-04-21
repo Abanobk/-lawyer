@@ -908,11 +908,31 @@ def public_office_mobile_app(office_code: str, db: Session = Depends(get_db)):
 
 @app.post("/internal/office-mobile-builds", response_model=OfficeMobileDownloadOut)
 def internal_register_mobile_build(
-    payload: OfficeMobileBuildRegister,
+    payload: OfficeMobileBuildRegister | None = None,
     db: Session = Depends(get_db),
     x_mobile_build_token: str | None = Header(None, alias="X-Mobile-Build-Token"),
+    office_code: str | None = Query(None),
+    version_code: int | None = Query(None),
+    version_name: str | None = Query(None),
+    download_url: str | None = Query(None),
+    sha256_hex: str | None = Query(None),
+    release_notes: str | None = Query(None),
 ):
     _verify_mobile_build_webhook_token(x_mobile_build_token)
+    if payload is None:
+        # Some proxies/CDNs can drop JSON bodies unexpectedly. Support query params as a fallback
+        # for CI webhooks so registration remains reliable.
+        if not (office_code and version_code is not None and version_name and download_url):
+            raise HTTPException(status_code=422, detail="Missing office_code/version_code/version_name/download_url")
+        payload = OfficeMobileBuildRegister(
+            office_code=office_code,
+            version_code=version_code,
+            version_name=version_name,
+            download_url=download_url,
+            sha256_hex=sha256_hex,
+            release_notes=release_notes,
+        )
+
     office = db.scalar(select(Office).where(Office.code == payload.office_code.strip()))
     if not office:
         raise HTTPException(status_code=404, detail="Unknown office_code")
