@@ -53,14 +53,15 @@ class TransactionsApi {
     String? description,
     DateTime? occurredAt,
   }) async {
+    final desc = description?.trim();
     return _client.postJson<CaseTransactionDto>(
       'transactions',
       {
         'case_id': caseId,
-        'direction': direction,
+        'direction': direction.trim(),
         'amount': amount,
-        'description': description,
-        if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
+        ...?((desc != null && desc.isNotEmpty) ? {'description': desc} : null),
+        ...?((occurredAt != null) ? {'occurred_at': occurredAt.toUtc().toIso8601String()} : null),
       },
       decode: (json) => CaseTransactionDto.fromJson(json as Map<String, dynamic>),
     );
@@ -73,11 +74,13 @@ class TransactionsApi {
     String? description,
     DateTime? occurredAt,
   }) async {
+    final dir = direction?.trim();
+    final desc = description?.trim();
     final body = <String, dynamic>{
-      if (direction != null) 'direction': direction,
-      if (amount != null) 'amount': amount,
-      if (description != null) 'description': description,
-      if (occurredAt != null) 'occurred_at': occurredAt.toUtc().toIso8601String(),
+      ...?((dir != null && dir.isNotEmpty) ? {'direction': dir} : null),
+      ...?((amount != null) ? {'amount': amount} : null),
+      ...?((desc != null && desc.isNotEmpty) ? {'description': desc} : null),
+      ...?((occurredAt != null) ? {'occurred_at': occurredAt.toUtc().toIso8601String()} : null),
     };
     return _client.putJson<CaseTransactionDto>(
       'transactions/$transactionId',

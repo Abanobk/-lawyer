@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
@@ -24,6 +25,34 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _loading = false;
   bool _showPass = false;
+  bool _prefilled = false;
+  final _google = GoogleSignIn(scopes: const ['email']);
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillAndAutoRedirect();
+  }
+
+  Future<void> _prefillAndAutoRedirect() async {
+    // If already signed in, go directly to the office dashboard.
+    final token = await _storage.getAccessToken();
+    final code = await _storage.getOfficeCode();
+    if (!mounted) return;
+    if (token != null && token.trim().isNotEmpty && code != null && code.trim().isNotEmpty) {
+      context.go('/o/${code.trim()}/dashboard');
+      return;
+    }
+
+    // Prefill last used email for convenience.
+    final lastEmail = await _storage.getLastEmail();
+    if (!mounted) return;
+    if (!_prefilled && lastEmail != null && lastEmail.isNotEmpty) {
+      _email.text = lastEmail;
+      _prefilled = true;
+      setState(() {});
+    }
+  }
 
   @override
   void dispose() {
@@ -42,6 +71,7 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _loading = true);
     try {
+      await _storage.saveLastEmail(email);
       final tokens = await _authApi.login(email: email, password: pass);
 
       // Temporarily save tokens to call /office (needs Authorization header).
@@ -68,6 +98,27 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تسجيل الدخول: $e')));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickGoogleEmail() async {
+    if (_loading) return;
+    try {
+      final account = await _google.signIn();
+      if (account == null) return;
+      if (!mounted) return;
+      _email.text = account.email;
+      await _storage.saveLastEmail(account.email);
+      if (!mounted) return;
+      FocusScope.of(context).nextFocus();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم اختيار البريد من Google. أكمل كلمة المرور.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تسجيل Google على هذا الجهاز: $e')),
+      );
     }
   }
 
@@ -111,6 +162,12 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ],
                     const SizedBox(height: 24),
+                    OutlinedButton.icon(
+                      onPressed: _loading ? null : _pickGoogleEmail,
+                      icon: const Icon(Icons.account_circle_outlined),
+                      label: const Text('اختيار البريد من Google'),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: _email,
                       decoration: const InputDecoration(labelText: 'البريد الإلكتروني'),

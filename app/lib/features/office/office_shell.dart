@@ -255,7 +255,61 @@ class _Sidebar extends StatelessWidget {
                     return FutureBuilder<UserPermissionsDto>(
                       future: permsApi.myPermissions(),
                       builder: (context, ps) {
-                        final keys = ps.data?.permissions.toSet() ?? const <String>{};
+                        if (ps.connectionState != ConnectionState.done) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      'جارٍ تحميل القائمة…',
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: _NavList(
+                                  officeCode: officeCode,
+                                  current: current,
+                                  items: [OfficeShell._items.first],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        if (ps.hasError || !ps.hasData) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                                child: Text(
+                                  'تعذر تحميل الصلاحيات — سيتم عرض قائمة مبسطة.',
+                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
+                                ),
+                              ),
+                              Expanded(
+                                child: _NavList(
+                                  officeCode: officeCode,
+                                  current: current,
+                                  items: [OfficeShell._items.first],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        final keys = ps.data!.permissions.toSet();
                         final base = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
                         return FutureBuilder<MeDto>(
                           future: meApi.me(),
@@ -292,9 +346,10 @@ class _Sidebar extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.redAccent),
                 title: const Text('تسجيل الخروج', style: TextStyle(color: Colors.redAccent)),
-                onTap: () {
+                onTap: () async {
                   Navigator.maybePop(context);
-                  context.go('/');
+                  await AuthTokenStorage().clear();
+                  if (context.mounted) context.go('/');
                 },
               ),
               const SizedBox(height: 8),

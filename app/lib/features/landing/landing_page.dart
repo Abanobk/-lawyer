@@ -2,9 +2,51 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
+import 'package:lawyer_app/data/api/office_api.dart';
+import 'package:lawyer_app/data/auth_token_storage.dart';
 
-class LandingPage extends StatelessWidget {
+class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
+
+  @override
+  State<LandingPage> createState() => _LandingPageState();
+}
+
+class _LandingPageState extends State<LandingPage> {
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoRedirectIfSignedIn();
+  }
+
+  Future<void> _autoRedirectIfSignedIn() async {
+    final storage = AuthTokenStorage();
+    final token = await storage.getAccessToken();
+    if (token == null || token.trim().isEmpty) {
+      if (mounted) setState(() => _checked = true);
+      return;
+    }
+
+    // If we already know the office code, go straight to it.
+    final code = (await storage.getOfficeCode())?.trim();
+    if (code != null && code.isNotEmpty) {
+      if (mounted) context.go('/o/$code/dashboard');
+      return;
+    }
+
+    // Otherwise, resolve office from backend once, then persist.
+    try {
+      final office = await OfficeApi().myOffice();
+      await storage.saveOfficeCode(office.code);
+      if (mounted) context.go('/o/${office.code}/dashboard');
+      return;
+    } catch (_) {
+      // If token is invalid/expired, fall back to landing choices.
+      if (mounted) setState(() => _checked = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +64,9 @@ class LandingPage extends StatelessWidget {
               ),
             ),
             child: SafeArea(
-              child: wide ? _WideBody() : _CompactBody(),
+              child: !_checked
+                  ? const Center(child: CircularProgressIndicator())
+                  : (wide ? _WideBody() : _CompactBody()),
             ),
           ),
           Align(
