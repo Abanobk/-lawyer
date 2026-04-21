@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
@@ -18,6 +19,12 @@ class _LandingPageState extends State<LandingPage> {
   @override
   void initState() {
     super.initState();
+    if (TenantBuildConfig.isTenantApk) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go('/login');
+      });
+      return;
+    }
     _autoRedirectIfSignedIn();
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/features/admin/admin_gate_page.dart';
 import 'package:lawyer_app/features/auth/login_page.dart';
 import 'package:lawyer_app/features/auth/signup_page.dart';
@@ -22,9 +23,19 @@ import 'package:lawyer_app/features/office/pages/subscription_page.dart';
 final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 GoRouter createAppRouter() {
+  final tenant = TenantBuildConfig.officeCode.trim();
+  final start = tenant.isNotEmpty ? '/login' : '/';
+
   return GoRouter(
     navigatorKey: _rootKey,
-    initialLocation: '/',
+    initialLocation: start,
+    redirect: (context, state) {
+      final t = TenantBuildConfig.officeCode.trim();
+      if (t.isEmpty) return null;
+      final loc = state.matchedLocation;
+      if (loc == '/' || loc == '/signup') return '/login';
+      return null;
+    },
     routes: [
       GoRoute(
         path: '/',

@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/theme/app_theme.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
@@ -97,12 +100,16 @@ class OfficeShell extends StatelessWidget {
           );
         }
 
+        final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
         return Scaffold(
           drawer: Drawer(
+            backgroundColor: AppColors.sidebar,
+            surfaceTintColor: Colors.transparent,
+            width: drawerW,
             child: _Sidebar(
               officeCode: officeCode,
               current: current,
-              width: null,
+              width: drawerW,
               inDrawer: true,
             ),
           ),
@@ -153,7 +160,8 @@ class _Sidebar extends StatelessWidget {
     final tokens = AuthTokenStorage();
     final permsApi = PermissionsApi();
     final meApi = MeApi();
-    final officeLink = '${Uri.base.origin}/o/$officeCode';
+    final origin = Uri.base.origin.trim();
+    final officeLink = origin.isEmpty ? '/o/$officeCode' : '$origin/o/$officeCode';
     final nav = Material(
       color: AppColors.sidebar,
       child: SafeArea(
@@ -310,7 +318,10 @@ class _Sidebar extends StatelessWidget {
                         }
 
                         final keys = ps.data!.permissions.toSet();
-                        final base = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
+                        var base = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
+                        if (base.isEmpty) {
+                          base = [OfficeShell._items.first];
+                        }
                         return FutureBuilder<MeDto>(
                           future: meApi.me(),
                           builder: (context, ms) {
@@ -349,7 +360,8 @@ class _Sidebar extends StatelessWidget {
                 onTap: () async {
                   Navigator.maybePop(context);
                   await AuthTokenStorage().clear();
-                  if (context.mounted) context.go('/');
+                  if (!context.mounted) return;
+                  context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
                 },
               ),
               const SizedBox(height: 8),

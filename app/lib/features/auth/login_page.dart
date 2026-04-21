@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:lawyer_app/core/config/api_config.dart';
+import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
@@ -26,7 +27,12 @@ class _LoginPageState extends State<LoginPage> {
   bool _loading = false;
   bool _showPass = false;
   bool _prefilled = false;
-  final _google = GoogleSignIn(scopes: const ['email']);
+  late final GoogleSignIn _google = GoogleSignIn(
+    scopes: const ['email'],
+    serverClientId: TenantBuildConfig.googleWebClientId.trim().isEmpty
+        ? null
+        : TenantBuildConfig.googleWebClientId.trim(),
+  );
 
   @override
   void initState() {
@@ -35,13 +41,21 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _prefillAndAutoRedirect() async {
+    final tenant = TenantBuildConfig.officeCode.trim();
     // If already signed in, go directly to the office dashboard.
     final token = await _storage.getAccessToken();
     final code = await _storage.getOfficeCode();
     if (!mounted) return;
-    if (token != null && token.trim().isNotEmpty && code != null && code.trim().isNotEmpty) {
-      context.go('/o/${code.trim()}/dashboard');
-      return;
+    if (token != null && token.trim().isNotEmpty) {
+      if (tenant.isNotEmpty) {
+        await _storage.saveOfficeCode(tenant);
+        if (mounted) context.go('/o/$tenant/dashboard');
+        return;
+      }
+      if (code != null && code.trim().isNotEmpty) {
+        context.go('/o/${code.trim()}/dashboard');
+        return;
+      }
     }
 
     // Prefill last used email for convenience.
@@ -82,6 +96,15 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       final office = await _officeApi.myOffice();
+      final tenantCode = TenantBuildConfig.officeCode.trim();
+      if (tenantCode.isNotEmpty && office.code != tenantCode) {
+        await _storage.clear();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('هذا الحساب لا يخص مكتب هذا التطبيق.')),
+        );
+        return;
+      }
       await _storage.saveSession(
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -167,6 +190,15 @@ class _LoginPageState extends State<LoginPage> {
                       icon: const Icon(Icons.account_circle_outlined),
                       label: const Text('اختيار البريد من Google'),
                     ),
+                    if (!kIsWeb && TenantBuildConfig.googleWebClientId.trim().isEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'لتفعيل Google على أندرويد: أضف Web Client ID من Google Cloud ومرّره عند البناء: --dart-define=GOOGLE_WEB_CLIENT_ID=…',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     TextField(
                       controller: _email,
@@ -195,10 +227,11 @@ class _LoginPageState extends State<LoginPage> {
                           ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Text('دخول'),
                     ),
-                    TextButton(
-                      onPressed: () => context.go('/signup'),
-                      child: const Text('ليس لديك مكتب؟ أنشئ حسابًا'),
-                    ),
+                    if (!TenantBuildConfig.isTenantApk)
+                      TextButton(
+                        onPressed: () => context.go('/signup'),
+                        child: const Text('ليس لديك مكتب؟ أنشئ حسابًا'),
+                      ),
                   ],
                 ),
               ),
