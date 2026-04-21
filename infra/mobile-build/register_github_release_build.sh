@@ -64,6 +64,7 @@ print("payload_json_ok=1")
 PY
 
 resp="$(mktemp)"
+json_body="$(cat "$payload")"
 http="$(curl -sS \
   --http1.1 \
   -o "$resp" \
@@ -71,7 +72,7 @@ http="$(curl -sS \
   -X POST "${ROOT_JSON}/internal/office-mobile-builds" \
   -H "Content-Type: application/json" \
   -H "X-Mobile-Build-Token: ${TOKEN}" \
-  --data-binary @"${payload}" || true)"
+  --data-raw "${json_body}" || true)"
 
 if [[ "$http" != "200" && "$http" != "201" ]]; then
   echo "Backend register failed. HTTP=$http"
