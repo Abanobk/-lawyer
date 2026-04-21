@@ -55,13 +55,13 @@ if [[ "${bytes}" -lt 2 ]]; then
 fi
 
 # Validate JSON locally before sending (helps catch hidden chars / truncation).
-python3 - <<'PY'
+python3 - "$payload" <<'PY'
 import json, sys
 with open(sys.argv[1], "rb") as f:
     raw = f.read()
 json.loads(raw.decode("utf-8"))
 print("payload_json_ok=1")
-PY "$payload"
+PY
 
 resp="$(mktemp)"
 http="$(curl -sS \
