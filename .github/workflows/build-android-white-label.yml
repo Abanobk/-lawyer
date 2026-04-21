@@ -44,8 +44,9 @@ env:
   # مثال:
   #   MOBILE_API_BASE_URL=https://lawyer.easytecheg.net/api
   #   BACKEND_API_ROOT=https://lawyer.easytecheg.net/api
-  MOBILE_API_BASE_URL: ${{ vars.MOBILE_API_BASE_URL }}
-  BACKEND_API_ROOT: ${{ vars.BACKEND_API_ROOT }}
+  # ملاحظة: بعض الناس تضعها في Secrets بدل Variables — ندعم الاثنين.
+  MOBILE_API_BASE_URL: ${{ vars.MOBILE_API_BASE_URL || secrets.MOBILE_API_BASE_URL }}
+  BACKEND_API_ROOT: ${{ vars.BACKEND_API_ROOT || secrets.BACKEND_API_ROOT }}
 
 jobs:
   prepare:
@@ -56,7 +57,7 @@ jobs:
       - name: Build matrix from offices list
         id: set-matrix
         env:
-          BACKEND_API_ROOT: ${{ inputs.backend_api_root || vars.BACKEND_API_ROOT }}
+          BACKEND_API_ROOT: ${{ inputs.backend_api_root || vars.BACKEND_API_ROOT || secrets.BACKEND_API_ROOT }}
           OFFICE_CODE: ${{ inputs.office_code || '' }}
           APP_LABEL: ${{ inputs.app_label || '' }}
           MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
@@ -176,7 +177,7 @@ jobs:
             esac
           }
 
-          API_BASE="$(normalize_api_root "${{ inputs.api_base_url || vars.MOBILE_API_BASE_URL }}")"
+          API_BASE="$(normalize_api_root "${{ inputs.api_base_url || vars.MOBILE_API_BASE_URL || secrets.MOBILE_API_BASE_URL }}")"
           if [[ -z "${API_BASE}" ]]; then
             echo "api_base_url is empty."
             echo "For workflow_dispatch: fill api_base_url."
@@ -202,7 +203,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OFFICE_CODE: ${{ matrix.office_code }}
-          BACKEND_API_ROOT: ${{ inputs.backend_api_root || vars.BACKEND_API_ROOT }}
+          BACKEND_API_ROOT: ${{ inputs.backend_api_root || vars.BACKEND_API_ROOT || secrets.BACKEND_API_ROOT }}
           MOBILE_BUILD_WEBHOOK_TOKEN: ${{ secrets.MOBILE_BUILD_WEBHOOK_TOKEN }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
