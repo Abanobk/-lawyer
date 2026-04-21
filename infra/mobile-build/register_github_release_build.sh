@@ -65,17 +65,22 @@ PY
 
 resp="$(mktemp)"
 json_body="$(cat "$payload")"
+trace="$(mktemp)"
 http="$(curl -sS \
   --http1.1 \
+  -v \
   -o "$resp" \
   -w "%{http_code}" \
   -X POST "${ROOT_JSON}/internal/office-mobile-builds" \
   -H "Content-Type: application/json" \
   -H "X-Mobile-Build-Token: ${TOKEN}" \
-  --data-raw "${json_body}" || true)"
+  --data-raw "${json_body}" 2>"$trace" || true)"
 
 if [[ "$http" != "200" && "$http" != "201" ]]; then
   echo "Backend register failed. HTTP=$http"
+  echo "Curl trace (first 120 lines):"
+  sed -n '1,120p' "$trace" || true
+  echo ""
   echo "Response:"
   cat "$resp" || true
   echo ""
