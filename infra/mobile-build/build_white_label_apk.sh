@@ -31,15 +31,16 @@ fi
 
 flutter pub get
 
-extra_defines=()
+# مع set -u، توسيع مصفوفة فارغة كـ "${arr[@]}" يفشل على bash القديم (مثل macOS).
+flutter_args=(
+  build apk --release
+  "--build-number=${BUILD_NUM}"
+  --dart-define="API_BASE_URL=${API_BASE_URL}"
+  --dart-define="OFFICE_CODE=${OFFICE_CODE}"
+)
 if [[ -n "${GOOGLE_WEB_CLIENT_ID:-}" ]]; then
-  extra_defines+=(--dart-define="GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID}")
+  flutter_args+=(--dart-define="GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID}")
 fi
-
-flutter build apk --release \
-  "--build-number=${BUILD_NUM}" \
-  --dart-define="API_BASE_URL=${API_BASE_URL}" \
-  --dart-define="OFFICE_CODE=${OFFICE_CODE}" \
-  "${extra_defines[@]}"
+flutter "${flutter_args[@]}"
 
 echo "APK: ${ROOT}/app/build/app/outputs/flutter-apk/app-release.apk"
