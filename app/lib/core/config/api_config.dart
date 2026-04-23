@@ -8,12 +8,15 @@ import 'package:flutter/foundation.dart';
 /// أمثلة بناء:
 /// `flutter build web --dart-define=API_BASE_URL=/api`
 /// `flutter build web --dart-define=API_BASE_URL=https://lawyer.easytecheg.net/api`
+///
+/// على Android/iOS لا تستخدم `localhost` كافتراضي (الموبايل يتصل بنفسه).
+/// للتطوير المحلي: `--dart-define=API_BASE_URL=http://10.0.2.2:8000` (محاكي) أو IP جهازك.
 class ApiConfig {
   ApiConfig._();
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8000',
+    defaultValue: 'https://lawyer.easytecheg.net/api',
   );
 
   static Uri uri(String path) {
