@@ -102,31 +102,27 @@ class OfficeShell extends StatelessWidget {
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
         // في RTL (العربية): `drawer` يفتح من جهة البداية = اليمين.
-        // ملحوظة: على بعض أجهزة Android، `Drawer` (Material3) قد يظهر كسطح رمادي/أبيض ويُخفي المحتوى.
-        // لذلك نُمرّر Widget ملوّن صراحةً لضمان ظهور القائمة.
-        Widget buildDrawer() => SizedBox(
+        // لازم `Drawer` الرسمي: لو مرّرنا Widget بعرض فقط، الـ `Column` اللي فيها `Expanded`
+        // بتاخد ارتفاع غير محدود والمحتوى ما يترسمش (قائمة بيضا).
+        Widget buildDrawer() => Drawer(
               width: drawerW,
-              child: Material(
-                color: AppColors.sidebar,
-                child: Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: _Sidebar(
-                    officeCode: officeCode,
-                    current: current,
-                    width: drawerW,
-                    inDrawer: true,
-                  ),
+              backgroundColor: AppColors.sidebar,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              child: Directionality(
+                textDirection: TextDirection.rtl,
+                child: _Sidebar(
+                  officeCode: officeCode,
+                  current: current,
+                  width: drawerW,
+                  inDrawer: true,
                 ),
               ),
             );
         return Scaffold(
           drawer: buildDrawer(),
-          // الـ scrim (الطبقة الرمادي/البيضاء) خارج القائمة كانت هي اللي بتبان "بيضاء".
-          // نخليها شفافة عشان ما تغطيش الشاشة.
-          drawerScrimColor: Colors.transparent,
-          // على Android بعض الأجهزة بتفتح الـ drawer باللمس من الحافة وتدي شكل مزعج/غلط.
-          // نخليه بالزر فقط.
-          drawerEnableOpenDragGesture: false,
+          drawerScrimColor: Colors.black38,
+          drawerEnableOpenDragGesture: true,
           endDrawerEnableOpenDragGesture: false,
           appBar: AppBar(
             automaticallyImplyLeading: false,
@@ -185,9 +181,7 @@ class _Sidebar extends StatelessWidget {
     final meApi = MeApi();
     final origin = Uri.base.origin.trim();
     final officeLink = origin.isEmpty ? '/o/$officeCode' : '$origin/o/$officeCode';
-    final nav = Material(
-      color: AppColors.sidebar,
-      child: SafeArea(
+    final content = SafeArea(
         child: SizedBox(
           width: width,
           child: Column(
@@ -391,10 +385,15 @@ class _Sidebar extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
+      );
 
-    return nav;
+    if (inDrawer) {
+      return content;
+    }
+    return Material(
+      color: AppColors.sidebar,
+      child: content,
+    );
   }
 }
 
