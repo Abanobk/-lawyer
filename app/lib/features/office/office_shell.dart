@@ -102,7 +102,8 @@ class OfficeShell extends StatelessWidget {
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
         return Scaffold(
-          drawer: Drawer(
+          // RTL: open from the right side for Arabic UX.
+          endDrawer: Drawer(
             backgroundColor: AppColors.sidebar,
             surfaceTintColor: Colors.transparent,
             width: drawerW,

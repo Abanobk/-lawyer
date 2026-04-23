@@ -126,6 +126,18 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _pickGoogleEmail() async {
     if (_loading) return;
+    if (!kIsWeb && TenantBuildConfig.googleWebClientId.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Google Sign-In يحتاج Web Client ID + SHA-1. '
+            'اضبط GOOGLE_WEB_CLIENT_ID عند البناء ثم أعد تثبيت الـ APK.',
+          ),
+        ),
+      );
+      return;
+    }
     try {
       final account = await _google.signIn();
       if (account == null) return;
