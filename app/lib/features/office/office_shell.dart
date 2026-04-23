@@ -102,18 +102,20 @@ class OfficeShell extends StatelessWidget {
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
         // في RTL (العربية): `drawer` يفتح من جهة البداية = اليمين.
-        // `endDrawer` في RTL يفتح من اليسار — ده كان سبب فتح القائمة من الشمال وفارغة على بعض الأجهزة.
-        Drawer buildDrawer() => Drawer(
-              backgroundColor: AppColors.sidebar,
-              surfaceTintColor: Colors.transparent,
+        // ملحوظة: على بعض أجهزة Android، `Drawer` (Material3) قد يظهر كسطح رمادي/أبيض ويُخفي المحتوى.
+        // لذلك نُمرّر Widget ملوّن صراحةً لضمان ظهور القائمة.
+        Widget buildDrawer() => SizedBox(
               width: drawerW,
-              child: Directionality(
-                textDirection: TextDirection.rtl,
-                child: _Sidebar(
-                  officeCode: officeCode,
-                  current: current,
-                  width: drawerW,
-                  inDrawer: true,
+              child: Material(
+                color: AppColors.sidebar,
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: _Sidebar(
+                    officeCode: officeCode,
+                    current: current,
+                    width: drawerW,
+                    inDrawer: true,
+                  ),
                 ),
               ),
             );
