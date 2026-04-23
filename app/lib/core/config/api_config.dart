@@ -19,6 +19,17 @@ class ApiConfig {
     defaultValue: 'https://lawyer.easytecheg.net/api',
   );
 
+  /// معرّف **OAuth 2.0 Client ID** من نوع *Web application* (ينتهي بـ `.apps.googleusercontent.com`).
+  /// - يُمرَّر عند البناء: `--dart-define=GOOGLE_WEB_CLIENT_ID=...`
+  /// - على GitHub Actions: ضع القيمة في Secret باسم `GOOGLE_WEB_CLIENT_ID`
+  ///
+  /// بدونها، Google Sign-In على Android يعتمد على تطابق **SHA-1** شهادة التوقيع مع إعداد Firebase.
+  /// بناء CI يستخدم غالبًا مفتاح توقيع مختلف عن جهازك، فيفشل الدخول من الويب وينجح محليًا.
+  static const String googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue: '',
+  );
+
   static Uri uri(String path) {
     final p = path.replaceAll(RegExp(r'^/+'), '');
     var base = baseUrl.replaceAll(RegExp(r'/+$'), '');

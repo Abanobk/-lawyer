@@ -135,12 +135,34 @@ class _OfficeShellState extends State<OfficeShell> {
               width: drawerW,
               backgroundColor: AppColors.sidebar,
               surfaceTintColor: Colors.transparent,
-              child: _Sidebar(
-                officeCode: widget.officeCode,
-                current: current,
-                width: drawerW,
-                inDrawer: true,
-                onCloseDrawer: closeMobileDrawer,
+              child: Material(
+                color: AppColors.sidebar,
+                type: MaterialType.canvas,
+                surfaceTintColor: Colors.transparent,
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    scaffoldBackgroundColor: AppColors.sidebar,
+                    canvasColor: AppColors.sidebar,
+                    splashColor: Colors.white24,
+                    highlightColor: Colors.white24,
+                    iconTheme: const IconThemeData(color: Colors.white),
+                    listTileTheme: const ListTileThemeData(
+                      iconColor: Colors.white,
+                      textColor: Colors.white,
+                    ),
+                    textTheme: Theme.of(context).textTheme.apply(
+                      bodyColor: Colors.white,
+                      displayColor: Colors.white,
+                    ),
+                  ),
+                  child: _Sidebar(
+                    officeCode: widget.officeCode,
+                    current: current,
+                    width: drawerW,
+                    inDrawer: true,
+                    onCloseDrawer: closeMobileDrawer,
+                  ),
+                ),
               ),
             ),
             appBar: AppBar(

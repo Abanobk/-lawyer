@@ -161,6 +161,9 @@ jobs:
           cache: true
 
       - name: Build APK
+        env:
+          # Web OAuth Client ID (نفس المستخدم في Firebase / Google Cloud). بدونها قد يعمل Google محليًا ويفشل على CI بسبب اختلاف SHA-1 التوقيع.
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           set -euo pipefail
           normalize_api_root() {

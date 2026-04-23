@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:lawyer_app/core/config/api_config.dart';
+import 'package:lawyer_app/core/config/api_config.dart' show ApiConfig;
 import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
@@ -27,9 +27,13 @@ class _LoginPageState extends State<LoginPage> {
   bool _loading = false;
   bool _showPass = false;
   bool _prefilled = false;
-  // على Android/iOS: يعتمد على google-services.json (لا نحتاج serverClientId).
-  // على الويب: google_sign_in_web يتعامل مع إعدادات الويب.
-  late final GoogleSignIn _google = GoogleSignIn(scopes: const ['email']);
+  // serverClientId = Web client ID يضمن الحصول على idToken حتى لو SHA-1 للتوقيع (مثلاً CI) غير مضاف في Firebase.
+  late final GoogleSignIn _google = GoogleSignIn(
+    scopes: const ['email'],
+    serverClientId: ApiConfig.googleWebClientId.trim().isEmpty
+        ? null
+        : ApiConfig.googleWebClientId.trim(),
+  );
 
   @override
   void initState() {
