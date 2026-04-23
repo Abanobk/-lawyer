@@ -16,40 +16,28 @@ import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/features/office/office_welcome_context.dart';
 import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
-/// صفحة قائمة كاملة (مثل أي شاشة عادية) — لا Drawer ولا Dialog؛ نفس مسار الرسم اللي يشتغل على الويب.
-class OfficeNavigationMenuPage extends StatelessWidget {
-  const OfficeNavigationMenuPage({
-    super.key,
-    required this.officeCode,
-    required this.currentSegment,
-  });
-
-  final String officeCode;
-  final String currentSegment;
-
-  @override
-  Widget build(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
-    return ColoredBox(
-      color: AppColors.sidebar,
-      child: DefaultTextStyle.merge(
-        style: const TextStyle(color: Colors.white),
-        child: IconTheme.merge(
-          data: const IconThemeData(color: Colors.white),
-          child: _Sidebar(
-            officeCode: officeCode,
-            current: currentSegment,
-            width: w,
-            inDrawer: true,
-            onCloseDrawer: () {
-              if (context.canPop()) context.pop();
-            },
-          ),
-        ),
-      ),
-    );
-  }
+class _OfficeNavItem {
+  const _OfficeNavItem(this.segment, this.label, this.icon);
+  final String segment;
+  final String label;
+  final IconData icon;
 }
+
+const _kOfficeNavItems = <_OfficeNavItem>[
+  _OfficeNavItem('dashboard', 'لوحة التحكم', Icons.dashboard_outlined),
+  _OfficeNavItem('clients', 'الموكلين', Icons.people_outline),
+  _OfficeNavItem('cases', 'القضايا', Icons.work_outline),
+  _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
+  _OfficeNavItem('calendar', 'الأجندة', Icons.calendar_view_month_outlined),
+  _OfficeNavItem(
+    'accounts',
+    'الحسابات',
+    Icons.account_balance_wallet_outlined,
+  ),
+  _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
+  _OfficeNavItem('subscription', 'الاشتراك', Icons.subscriptions_outlined),
+  _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
+];
 
 class OfficeShell extends StatefulWidget {
   const OfficeShell({super.key, required this.officeCode, required this.child});
@@ -57,21 +45,7 @@ class OfficeShell extends StatefulWidget {
   final String officeCode;
   final Widget child;
 
-  static const _items = <_OfficeNavItem>[
-    _OfficeNavItem('dashboard', 'لوحة التحكم', Icons.dashboard_outlined),
-    _OfficeNavItem('clients', 'الموكلين', Icons.people_outline),
-    _OfficeNavItem('cases', 'القضايا', Icons.work_outline),
-    _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
-    _OfficeNavItem('calendar', 'الأجندة', Icons.calendar_view_month_outlined),
-    _OfficeNavItem(
-      'accounts',
-      'الحسابات',
-      Icons.account_balance_wallet_outlined,
-    ),
-    _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
-    _OfficeNavItem('subscription', 'الاشتراك', Icons.subscriptions_outlined),
-    _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
-  ];
+  static const _items = _kOfficeNavItems;
 
   @override
   State<OfficeShell> createState() => _OfficeShellState();
@@ -187,27 +161,16 @@ class _OfficeShellState extends State<OfficeShell> {
   }
 }
 
-class _OfficeNavItem {
-  const _OfficeNavItem(this.segment, this.label, this.icon);
-  final String segment;
-  final String label;
-  final IconData icon;
-}
-
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.officeCode,
     required this.current,
     required this.width,
-    this.inDrawer = false,
-    this.onCloseDrawer,
   });
 
   final String officeCode;
   final String current;
   final double? width;
-  final bool inDrawer;
-  final VoidCallback? onCloseDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -219,8 +182,7 @@ class _Sidebar extends StatelessWidget {
         ? '/o/$officeCode'
         : '$origin/o/$officeCode';
 
-    /// على الموبايل: بدون Expanded + ListView داخل الـ drawer — على Android غالبًا
-    /// ما يعطي ارتفاعًا صفريًا فيُرسم لون السطح فقط (رمادي) من غير عناصر.
+    /// شريط جانبي سطح المكتب فقط؛ قائمة الموبايل في `OfficeNavigationMenuPage`.
     Widget navSection() {
       final futureBlock = FutureBuilder<String?>(
         future: tokens.getAccessToken(),
@@ -228,19 +190,11 @@ class _Sidebar extends StatelessWidget {
           final hasAuth = (snap.data ?? '').isNotEmpty;
           if (!hasAuth) {
             final items = [OfficeShell._items.first];
-            return inDrawer
-                ? _OfficeNavColumn(
-                    officeCode: officeCode,
-                    current: current,
-                    items: items,
-                    onBeforeNavigate: onCloseDrawer,
-                  )
-                : _NavList(
-                    officeCode: officeCode,
-                    current: current,
-                    items: items,
-                    onBeforeNavigate: onCloseDrawer,
-                  );
+            return _NavList(
+              officeCode: officeCode,
+              current: current,
+              items: items,
+            );
           }
           return FutureBuilder<UserPermissionsDto>(
             future: permsApi.myPermissions(),
@@ -248,7 +202,7 @@ class _Sidebar extends StatelessWidget {
               if (ps.connectionState != ConnectionState.done) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
+                  mainAxisSize: MainAxisSize.max,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -271,22 +225,13 @@ class _Sidebar extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (inDrawer)
-                      _OfficeNavColumn(
+                    Expanded(
+                      child: _NavList(
                         officeCode: officeCode,
                         current: current,
                         items: [OfficeShell._items.first],
-                        onBeforeNavigate: onCloseDrawer,
-                      )
-                    else
-                      Expanded(
-                        child: _NavList(
-                          officeCode: officeCode,
-                          current: current,
-                          items: [OfficeShell._items.first],
-                          onBeforeNavigate: onCloseDrawer,
-                        ),
                       ),
+                    ),
                   ],
                 );
               }
@@ -294,7 +239,7 @@ class _Sidebar extends StatelessWidget {
               if (ps.hasError || !ps.hasData) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
+                  mainAxisSize: MainAxisSize.max,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -304,22 +249,13 @@ class _Sidebar extends StatelessWidget {
                             ?.copyWith(color: Colors.white70),
                       ),
                     ),
-                    if (inDrawer)
-                      _OfficeNavColumn(
+                    Expanded(
+                      child: _NavList(
                         officeCode: officeCode,
                         current: current,
                         items: [OfficeShell._items.first],
-                        onBeforeNavigate: onCloseDrawer,
-                      )
-                    else
-                      Expanded(
-                        child: _NavList(
-                          officeCode: officeCode,
-                          current: current,
-                          items: [OfficeShell._items.first],
-                          onBeforeNavigate: onCloseDrawer,
-                        ),
                       ),
+                    ),
                   ],
                 );
               }
@@ -344,7 +280,7 @@ class _Sidebar extends StatelessWidget {
                       .toList();
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
+                    mainAxisSize: MainAxisSize.max,
                     children: [
                       if (role != null)
                         Padding(
@@ -358,22 +294,13 @@ class _Sidebar extends StatelessWidget {
                                 ),
                           ),
                         ),
-                      if (inDrawer)
-                        _OfficeNavColumn(
+                      Expanded(
+                        child: _NavList(
                           officeCode: officeCode,
                           current: current,
                           items: items,
-                          onBeforeNavigate: onCloseDrawer,
-                        )
-                      else
-                        Expanded(
-                          child: _NavList(
-                            officeCode: officeCode,
-                            current: current,
-                            items: items,
-                            onBeforeNavigate: onCloseDrawer,
-                          ),
                         ),
+                      ),
                     ],
                   );
                 },
@@ -383,7 +310,6 @@ class _Sidebar extends StatelessWidget {
         },
       );
 
-      if (inDrawer) return futureBlock;
       return Expanded(child: futureBlock);
     }
 
@@ -487,7 +413,6 @@ class _Sidebar extends StatelessWidget {
           style: TextStyle(color: Colors.redAccent),
         ),
         onTap: () async {
-          onCloseDrawer?.call();
           await AuthTokenStorage().clear();
           if (!context.mounted) return;
           context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
@@ -495,22 +420,6 @@ class _Sidebar extends StatelessWidget {
       ),
       const SizedBox(height: 8),
     ];
-
-    if (inDrawer) {
-      return ListView(
-        primary: false,
-        padding: EdgeInsets.only(
-          top: MediaQuery.paddingOf(context).top,
-          bottom: 12,
-        ),
-        physics: const ClampingScrollPhysics(),
-        children: [
-          ...drawerTop,
-          navSection(),
-          ...footer,
-        ],
-      );
-    }
 
     final sidebarColumn = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -608,37 +517,129 @@ Widget _buildOfficeNavTile(
   );
 }
 
-/// قائمة للـ drawer بدون ListView (ارتفاع طبيعي من المحتوى).
-class _OfficeNavColumn extends StatelessWidget {
-  const _OfficeNavColumn({
+/// شاشة القائمة على الموبايل تُعرض عبر [parentNavigatorKey] الجذر في [GoRouter]
+/// حتى لا تُحشَر داخل nested navigator الـ Shell (كان يظهر جسم رمادي بلا عناصر على Android).
+class OfficeNavigationMenuPage extends StatelessWidget {
+  const OfficeNavigationMenuPage({
+    super.key,
     required this.officeCode,
-    required this.current,
-    required this.items,
-    this.onBeforeNavigate,
+    required this.currentSegment,
   });
 
   final String officeCode;
-  final String current;
-  final List<_OfficeNavItem> items;
-  final VoidCallback? onBeforeNavigate;
+  final String currentSegment;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final item in items)
-            _buildOfficeNavTile(
-              context,
-              officeCode: officeCode,
-              current: current,
-              item: item,
-              onBeforeNavigate: onBeforeNavigate,
-            ),
-        ],
+    void popMenuIfStacked() {
+      if (context.canPop()) context.pop();
+    }
+
+    final origin = Uri.base.origin.trim();
+    final officeLink = origin.isEmpty ? '/o/$officeCode' : '$origin/o/$officeCode';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('القائمة'),
+        leading: IconButton(
+          tooltip: 'رجوع',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: popMenuIfStacked,
+        ),
+      ),
+      body: ColoredBox(
+        color: AppColors.sidebar,
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.gavel, color: Colors.white, size: 32),
+              const SizedBox(height: 12),
+              Text(
+                'مكتب المحاماة',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              Text(
+                'من إيزي تك',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'مكتب المستشار ($officeCode)',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      officeLink,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.white70,
+                          ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'نسخ رابط المكتب',
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: officeLink));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('تم نسخ رابط المكتب')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy, size: 20, color: Colors.white70),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'التنقّل',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Colors.white60,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              for (final item in _kOfficeNavItems)
+                _buildOfficeNavTile(
+                  context,
+                  officeCode: officeCode,
+                  current: currentSegment,
+                  item: item,
+                  onBeforeNavigate: popMenuIfStacked,
+                ),
+              const Divider(color: Colors.white24, height: 28),
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.redAccent),
+                title: const Text(
+                  'تسجيل الخروج',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+                onTap: () async {
+                  popMenuIfStacked();
+                  await AuthTokenStorage().clear();
+                  if (!context.mounted) return;
+                  context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -649,13 +650,11 @@ class _NavList extends StatelessWidget {
     required this.officeCode,
     required this.current,
     required this.items,
-    this.onBeforeNavigate,
   });
 
   final String officeCode;
   final String current;
   final List<_OfficeNavItem> items;
-  final VoidCallback? onBeforeNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -669,7 +668,6 @@ class _NavList extends StatelessWidget {
           officeCode: officeCode,
           current: current,
           item: items[i],
-          onBeforeNavigate: onBeforeNavigate,
         ),
       ),
     );

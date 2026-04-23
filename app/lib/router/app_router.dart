@@ -75,6 +75,9 @@ GoRouter createAppRouter() {
               ),
               GoRoute(
                 path: 'nav-menu',
+                // يعرض الصفحة على الـ Navigator الجذر وليس داخل nested navigator الـ Shell —
+                // على Android كان الـ Navigator الداخلي يترك مساحة بلا طلاء (رمادي الـ Scaffold).
+                parentNavigatorKey: _rootKey,
                 builder: (context, state) {
                   final code = state.pathParameters['officeCode']!;
                   final from = state.extra as String? ?? 'dashboard';
