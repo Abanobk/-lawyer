@@ -48,8 +48,18 @@ class _OfficeShellState extends State<OfficeShell> {
   bool _drawerOpen = false;
   final GlobalKey<ScaffoldState> _mobileScaffoldKey =
       GlobalKey<ScaffoldState>();
+  /// بدون ScrollController منفصل + primary:false، ListView داخل Drawer قد يربط
+  /// بـ PrimaryScrollController الخاص بالـ Scaffold فيختفي المحتوى على بعض أجهزة Android.
+  late final ScrollController _drawerListScrollController = ScrollController();
+
   late final Future<SubscriptionMeDto> _subscriptionFuture = BillingApi()
       .subscriptionMe();
+
+  @override
+  void dispose() {
+    _drawerListScrollController.dispose();
+    super.dispose();
+  }
 
   String _officeLinkForCurrentHost() {
     final origin = Uri.base.origin;
@@ -135,32 +145,20 @@ class _OfficeShellState extends State<OfficeShell> {
               width: drawerW,
               backgroundColor: AppColors.sidebar,
               surfaceTintColor: Colors.transparent,
-              child: Material(
+              child: ColoredBox(
                 color: AppColors.sidebar,
-                type: MaterialType.canvas,
-                surfaceTintColor: Colors.transparent,
-                child: Theme(
-                  data: Theme.of(context).copyWith(
-                    scaffoldBackgroundColor: AppColors.sidebar,
-                    canvasColor: AppColors.sidebar,
-                    splashColor: Colors.white24,
-                    highlightColor: Colors.white24,
-                    iconTheme: const IconThemeData(color: Colors.white),
-                    listTileTheme: const ListTileThemeData(
-                      iconColor: Colors.white,
-                      textColor: Colors.white,
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(color: Colors.white),
+                  child: IconTheme.merge(
+                    data: const IconThemeData(color: Colors.white),
+                    child: _Sidebar(
+                      officeCode: widget.officeCode,
+                      current: current,
+                      width: drawerW,
+                      inDrawer: true,
+                      onCloseDrawer: closeMobileDrawer,
+                      listScrollController: _drawerListScrollController,
                     ),
-                    textTheme: Theme.of(context).textTheme.apply(
-                      bodyColor: Colors.white,
-                      displayColor: Colors.white,
-                    ),
-                  ),
-                  child: _Sidebar(
-                    officeCode: widget.officeCode,
-                    current: current,
-                    width: drawerW,
-                    inDrawer: true,
-                    onCloseDrawer: closeMobileDrawer,
                   ),
                 ),
               ),
@@ -209,6 +207,7 @@ class _Sidebar extends StatelessWidget {
     required this.width,
     this.inDrawer = false,
     this.onCloseDrawer,
+    this.listScrollController,
   });
 
   final String officeCode;
@@ -216,6 +215,7 @@ class _Sidebar extends StatelessWidget {
   final double? width;
   final bool inDrawer;
   final VoidCallback? onCloseDrawer;
+  final ScrollController? listScrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -506,6 +506,8 @@ class _Sidebar extends StatelessWidget {
 
     if (inDrawer) {
       return ListView(
+        controller: listScrollController,
+        primary: false,
         padding: EdgeInsets.only(
           top: MediaQuery.paddingOf(context).top,
           bottom: 12,
