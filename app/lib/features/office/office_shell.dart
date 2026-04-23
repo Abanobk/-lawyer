@@ -101,30 +101,30 @@ class OfficeShell extends StatelessWidget {
         }
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
-        final drawerWidget = Drawer(
-          backgroundColor: AppColors.sidebar,
-          surfaceTintColor: Colors.transparent,
-          width: drawerW,
-          child: _Sidebar(
-            officeCode: officeCode,
-            current: current,
-            width: drawerW,
-            inDrawer: true,
-          ),
-        );
+        Drawer buildDrawer() => Drawer(
+              backgroundColor: AppColors.sidebar,
+              surfaceTintColor: Colors.transparent,
+              width: drawerW,
+              child: _Sidebar(
+                officeCode: officeCode,
+                current: current,
+                width: drawerW,
+                inDrawer: true,
+              ),
+            );
         return Scaffold(
-          // RTL: open from the right side for Arabic UX.
-          // اجعلها متاحة من الجهتين لتفادي أي Drawer أبيض نتيجة سحب من الاتجاه الخطأ.
-          drawer: drawerWidget,
-          endDrawer: drawerWidget,
+          // Mobile UX: always use endDrawer (right side) for Arabic.
+          // Disable left-edge drag to avoid opening an empty/incorrect drawer on some Android builds.
+          drawerEnableOpenDragGesture: false,
+          endDrawerEnableOpenDragGesture: true,
+          endDrawer: buildDrawer(),
           appBar: AppBar(
+            automaticallyImplyLeading: false,
             leading: Builder(
               builder: (context) => IconButton(
                 tooltip: 'القائمة',
                 icon: const Icon(Icons.menu),
-                onPressed: () => Directionality.of(context) == TextDirection.rtl
-                    ? Scaffold.of(context).openEndDrawer()
-                    : Scaffold.of(context).openDrawer(),
+                onPressed: () => Scaffold.of(context).openEndDrawer(),
               ),
             ),
             title: const Text('لوحة المكتب'),
