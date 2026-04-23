@@ -27,12 +27,9 @@ class _LoginPageState extends State<LoginPage> {
   bool _loading = false;
   bool _showPass = false;
   bool _prefilled = false;
-  late final GoogleSignIn _google = GoogleSignIn(
-    scopes: const ['email'],
-    serverClientId: TenantBuildConfig.googleWebClientId.trim().isEmpty
-        ? null
-        : TenantBuildConfig.googleWebClientId.trim(),
-  );
+  // على Android/iOS: يعتمد على google-services.json (لا نحتاج serverClientId).
+  // على الويب: google_sign_in_web يتعامل مع إعدادات الويب.
+  late final GoogleSignIn _google = GoogleSignIn(scopes: const ['email']);
 
   @override
   void initState() {
@@ -126,18 +123,6 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _pickGoogleEmail() async {
     if (_loading) return;
-    if (!kIsWeb && TenantBuildConfig.googleWebClientId.trim().isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Google Sign-In يحتاج Web Client ID + SHA-1. '
-            'اضبط GOOGLE_WEB_CLIENT_ID عند البناء ثم أعد تثبيت الـ APK.',
-          ),
-        ),
-      );
-      return;
-    }
     try {
       final account = await _google.signIn();
       if (account == null) return;
@@ -202,15 +187,6 @@ class _LoginPageState extends State<LoginPage> {
                       icon: const Icon(Icons.account_circle_outlined),
                       label: const Text('اختيار البريد من Google'),
                     ),
-                    if (!kIsWeb && TenantBuildConfig.googleWebClientId.trim().isEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'لتفعيل Google على أندرويد: أضف Web Client ID من Google Cloud ومرّره عند البناء: --dart-define=GOOGLE_WEB_CLIENT_ID=…',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
                     const SizedBox(height: 12),
                     TextField(
                       controller: _email,

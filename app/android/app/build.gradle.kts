@@ -6,8 +6,7 @@ plugins {
 }
 
 // White-label: pass from CI, e.g. `flutter build apk -- -POFFICE_CODE=myoffice -PAPP_LABEL=مكتب+العلا`
-val officeCodeProp = (project.findProperty("OFFICE_CODE") as String?)?.trim().orEmpty()
-val officeSuffix = officeCodeProp.replace(Regex("[^a-zA-Z0-9_]"), "_").take(48)
+// ملاحظة: لا نغيّر applicationId لكل مكتب حتى يبقى تكامل Google (Firebase) أبسط (App واحد فقط).
 val appLabelProp = (project.findProperty("APP_LABEL") as String?)?.trim().orEmpty()
 
 android {
@@ -26,9 +25,6 @@ android {
 
     defaultConfig {
         applicationId = "com.easytecheg.lawyer.lawyer_app"
-        if (officeSuffix.isNotEmpty()) {
-            applicationIdSuffix = ".office_$officeSuffix"
-        }
         manifestPlaceholders["applicationLabel"] =
             if (appLabelProp.isNotEmpty()) appLabelProp else "مكتب المحاماة"
         minSdk = flutter.minSdkVersion
