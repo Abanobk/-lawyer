@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -18,74 +16,39 @@ import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/features/office/office_welcome_context.dart';
 import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
-/// قائمة جانبية بدون `Drawer`/`Scaffold.drawer` — على بعض أجهزة Android الـ Drawer
-/// يُرسم بشكل خاطئ (لوحة رمادية فارغة) رغم صحة الشجرة. الحوار مستقل عن الـ Scaffold.
-Future<void> _openOfficeNavigationOverlay(
-  BuildContext context, {
-  required String officeCode,
-  required String currentSegment,
-  required double panelWidth,
-}) {
-  final loc = MaterialLocalizations.of(context);
-  return showGeneralDialog<void>(
-    context: context,
-    useRootNavigator: true,
-    barrierDismissible: true,
-    barrierLabel: loc.modalBarrierDismissLabel,
-    barrierColor: Colors.black54,
-    transitionDuration: const Duration(milliseconds: 280),
-    pageBuilder: (dialogContext, animation, _) {
-      final h = MediaQuery.sizeOf(dialogContext).height;
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.pop(dialogContext),
-              child: const ColoredBox(color: Colors.transparent),
-            ),
+/// صفحة قائمة كاملة (مثل أي شاشة عادية) — لا Drawer ولا Dialog؛ نفس مسار الرسم اللي يشتغل على الويب.
+class OfficeNavigationMenuPage extends StatelessWidget {
+  const OfficeNavigationMenuPage({
+    super.key,
+    required this.officeCode,
+    required this.currentSegment,
+  });
+
+  final String officeCode;
+  final String currentSegment;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    return ColoredBox(
+      color: AppColors.sidebar,
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(color: Colors.white),
+        child: IconTheme.merge(
+          data: const IconThemeData(color: Colors.white),
+          child: _Sidebar(
+            officeCode: officeCode,
+            current: currentSegment,
+            width: w,
+            inDrawer: true,
+            onCloseDrawer: () {
+              if (context.canPop()) context.pop();
+            },
           ),
-          PositionedDirectional(
-            top: 0,
-            bottom: 0,
-            start: 0,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(1, 0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                ),
-              ),
-              child: SizedBox(
-                width: panelWidth,
-                height: h,
-                child: ColoredBox(
-                  color: AppColors.sidebar,
-                  child: DefaultTextStyle.merge(
-                    style: const TextStyle(color: Colors.white),
-                    child: IconTheme.merge(
-                      data: const IconThemeData(color: Colors.white),
-                      child: _Sidebar(
-                        officeCode: officeCode,
-                        current: currentSegment,
-                        width: panelWidth,
-                        inDrawer: true,
-                        onCloseDrawer: () => Navigator.pop(dialogContext),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    },
-  );
+        ),
+      ),
+    );
+  }
 }
 
 class OfficeShell extends StatefulWidget {
@@ -129,6 +92,11 @@ class _OfficeShellState extends State<OfficeShell> {
     return 'dashboard';
   }
 
+  bool _onMobileNavMenuPage(BuildContext context) {
+    final segs = GoRouterState.of(context).uri.pathSegments;
+    return segs.length >= 3 && segs[2] == 'nav-menu';
+  }
+
   @override
   Widget build(BuildContext context) {
     final desktop = AppLayout.isWebDesktop(context);
@@ -137,7 +105,8 @@ class _OfficeShellState extends State<OfficeShell> {
     return FutureBuilder<SubscriptionMeDto>(
       future: _subscriptionFuture,
       builder: (context, snap) {
-        final banner = snap.hasData
+        final onNavMenu = _onMobileNavMenuPage(context);
+        final banner = snap.hasData && !onNavMenu
             ? SubscriptionTrialBanner(
                 sub: snap.data!,
                 onSubscribe: () =>
@@ -176,29 +145,32 @@ class _OfficeShellState extends State<OfficeShell> {
           );
         }
 
-        final drawerW = math.min(
-          320.0,
-          MediaQuery.sizeOf(context).width * 0.88,
-        );
-
         return Scaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            leading: IconButton(
-              tooltip: 'القائمة',
-              icon: const Icon(Icons.menu),
-              onPressed: () => _openOfficeNavigationOverlay(
-                context,
-                officeCode: widget.officeCode,
-                currentSegment: current,
-                panelWidth: drawerW,
-              ),
-            ),
-            title: const Text('لوحة المكتب'),
-            actions: [
-              OfficeSearchLaunchButton(officeCode: widget.officeCode),
-              const ThemeAppearanceMenuButton(),
-            ],
+            leading: onNavMenu
+                ? IconButton(
+                    tooltip: 'رجوع',
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      if (context.canPop()) context.pop();
+                    },
+                  )
+                : IconButton(
+                    tooltip: 'القائمة',
+                    icon: const Icon(Icons.menu),
+                    onPressed: () => context.push(
+                      '/o/${widget.officeCode}/nav-menu',
+                      extra: current,
+                    ),
+                  ),
+            title: Text(onNavMenu ? 'القائمة' : 'لوحة المكتب'),
+            actions: onNavMenu
+                ? null
+                : [
+                    OfficeSearchLaunchButton(officeCode: widget.officeCode),
+                    const ThemeAppearanceMenuButton(),
+                  ],
           ),
           body: ContentCanvas(
             child: Column(

@@ -74,6 +74,17 @@ GoRouter createAppRouter() {
                 builder: (context, state) => const DashboardPage(),
               ),
               GoRoute(
+                path: 'nav-menu',
+                builder: (context, state) {
+                  final code = state.pathParameters['officeCode']!;
+                  final from = state.extra as String? ?? 'dashboard';
+                  return OfficeNavigationMenuPage(
+                    officeCode: code,
+                    currentSegment: from,
+                  );
+                },
+              ),
+              GoRoute(
                 path: 'clients',
                 builder: (context, state) => const ClientsPage(),
               ),
