@@ -115,6 +115,13 @@ class OfficeShell extends StatelessWidget {
             ),
           ),
           appBar: AppBar(
+            leading: Builder(
+              builder: (context) => IconButton(
+                tooltip: 'القائمة',
+                icon: const Icon(Icons.menu),
+                onPressed: () => Scaffold.of(context).openEndDrawer(),
+              ),
+            ),
             title: const Text('لوحة المكتب'),
             actions: [
               OfficeSearchLaunchButton(officeCode: officeCode),
