@@ -19,6 +19,10 @@ ThemeData buildAppTheme() {
   );
   return base.copyWith(
     scaffoldBackgroundColor: AppColors.surfaceMuted,
+    drawerTheme: const DrawerThemeData(
+      backgroundColor: AppColors.sidebar,
+      surfaceTintColor: Colors.transparent,
+    ),
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       elevation: 0,
@@ -78,6 +82,10 @@ ThemeData buildAppDarkTheme() {
   );
   return base.copyWith(
     scaffoldBackgroundColor: const Color(0xFF121820),
+    drawerTheme: const DrawerThemeData(
+      backgroundColor: AppColors.sidebar,
+      surfaceTintColor: Colors.transparent,
+    ),
     appBarTheme: AppBarTheme(
       centerTitle: false,
       elevation: 0,

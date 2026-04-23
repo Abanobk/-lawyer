@@ -101,30 +101,33 @@ class OfficeShell extends StatelessWidget {
         }
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
+        // في RTL (العربية): `drawer` يفتح من جهة البداية = اليمين.
+        // `endDrawer` في RTL يفتح من اليسار — ده كان سبب فتح القائمة من الشمال وفارغة على بعض الأجهزة.
         Drawer buildDrawer() => Drawer(
               backgroundColor: AppColors.sidebar,
               surfaceTintColor: Colors.transparent,
               width: drawerW,
-              child: _Sidebar(
-                officeCode: officeCode,
-                current: current,
-                width: drawerW,
-                inDrawer: true,
+              child: Directionality(
+                textDirection: TextDirection.rtl,
+                child: _Sidebar(
+                  officeCode: officeCode,
+                  current: current,
+                  width: drawerW,
+                  inDrawer: true,
+                ),
               ),
             );
         return Scaffold(
-          // Mobile UX: always use endDrawer (right side) for Arabic.
-          // Disable left-edge drag to avoid opening an empty/incorrect drawer on some Android builds.
-          drawerEnableOpenDragGesture: false,
-          endDrawerEnableOpenDragGesture: true,
-          endDrawer: buildDrawer(),
+          drawer: buildDrawer(),
+          drawerEnableOpenDragGesture: true,
+          endDrawerEnableOpenDragGesture: false,
           appBar: AppBar(
             automaticallyImplyLeading: false,
             leading: Builder(
               builder: (context) => IconButton(
                 tooltip: 'القائمة',
                 icon: const Icon(Icons.menu),
-                onPressed: () => Scaffold.of(context).openEndDrawer(),
+                onPressed: () => Scaffold.of(context).openDrawer(),
               ),
             ),
             title: const Text('لوحة المكتب'),
