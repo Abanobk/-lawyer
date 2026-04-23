@@ -18,6 +18,76 @@ import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/features/office/office_welcome_context.dart';
 import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
+/// قائمة جانبية بدون `Drawer`/`Scaffold.drawer` — على بعض أجهزة Android الـ Drawer
+/// يُرسم بشكل خاطئ (لوحة رمادية فارغة) رغم صحة الشجرة. الحوار مستقل عن الـ Scaffold.
+Future<void> _openOfficeNavigationOverlay(
+  BuildContext context, {
+  required String officeCode,
+  required String currentSegment,
+  required double panelWidth,
+}) {
+  final loc = MaterialLocalizations.of(context);
+  return showGeneralDialog<void>(
+    context: context,
+    useRootNavigator: true,
+    barrierDismissible: true,
+    barrierLabel: loc.modalBarrierDismissLabel,
+    barrierColor: Colors.black54,
+    transitionDuration: const Duration(milliseconds: 280),
+    pageBuilder: (dialogContext, animation, _) {
+      final h = MediaQuery.sizeOf(dialogContext).height;
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.pop(dialogContext),
+              child: const ColoredBox(color: Colors.transparent),
+            ),
+          ),
+          PositionedDirectional(
+            top: 0,
+            bottom: 0,
+            start: 0,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(1, 0),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                ),
+              ),
+              child: SizedBox(
+                width: panelWidth,
+                height: h,
+                child: ColoredBox(
+                  color: AppColors.sidebar,
+                  child: DefaultTextStyle.merge(
+                    style: const TextStyle(color: Colors.white),
+                    child: IconTheme.merge(
+                      data: const IconThemeData(color: Colors.white),
+                      child: _Sidebar(
+                        officeCode: officeCode,
+                        current: currentSegment,
+                        width: panelWidth,
+                        inDrawer: true,
+                        onCloseDrawer: () => Navigator.pop(dialogContext),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 class OfficeShell extends StatefulWidget {
   const OfficeShell({super.key, required this.officeCode, required this.child});
 
@@ -45,21 +115,8 @@ class OfficeShell extends StatefulWidget {
 }
 
 class _OfficeShellState extends State<OfficeShell> {
-  bool _drawerOpen = false;
-  final GlobalKey<ScaffoldState> _mobileScaffoldKey =
-      GlobalKey<ScaffoldState>();
-  /// بدون ScrollController منفصل + primary:false، ListView داخل Drawer قد يربط
-  /// بـ PrimaryScrollController الخاص بالـ Scaffold فيختفي المحتوى على بعض أجهزة Android.
-  late final ScrollController _drawerListScrollController = ScrollController();
-
   late final Future<SubscriptionMeDto> _subscriptionFuture = BillingApi()
       .subscriptionMe();
-
-  @override
-  void dispose() {
-    _drawerListScrollController.dispose();
-    super.dispose();
-  }
 
   String _officeLinkForCurrentHost() {
     final origin = Uri.base.origin;
@@ -124,67 +181,32 @@ class _OfficeShellState extends State<OfficeShell> {
           MediaQuery.sizeOf(context).width * 0.88,
         );
 
-        void closeMobileDrawer() {
-          _mobileScaffoldKey.currentState?.closeDrawer();
-        }
-
-        // RTL: الـ drawer (من جهة البداية) يفتح من اليمين — نفس سلوك الويب.
-        // الـ Stack المخصص كان يسبب طبقات رسم/قيود غريبة على بعض أجهزة Android.
-        return PopScope(
-          canPop: !_drawerOpen,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            if (_drawerOpen) closeMobileDrawer();
-          },
-          child: Scaffold(
-            key: _mobileScaffoldKey,
-            onDrawerChanged: (open) {
-              if (_drawerOpen != open) setState(() => _drawerOpen = open);
-            },
-            drawer: Drawer(
-              width: drawerW,
-              backgroundColor: AppColors.sidebar,
-              surfaceTintColor: Colors.transparent,
-              child: ColoredBox(
-                color: AppColors.sidebar,
-                child: DefaultTextStyle.merge(
-                  style: const TextStyle(color: Colors.white),
-                  child: IconTheme.merge(
-                    data: const IconThemeData(color: Colors.white),
-                    child: _Sidebar(
-                      officeCode: widget.officeCode,
-                      current: current,
-                      width: drawerW,
-                      inDrawer: true,
-                      onCloseDrawer: closeMobileDrawer,
-                      listScrollController: _drawerListScrollController,
-                    ),
-                  ),
-                ),
+        return Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            leading: IconButton(
+              tooltip: 'القائمة',
+              icon: const Icon(Icons.menu),
+              onPressed: () => _openOfficeNavigationOverlay(
+                context,
+                officeCode: widget.officeCode,
+                currentSegment: current,
+                panelWidth: drawerW,
               ),
             ),
-            appBar: AppBar(
-              automaticallyImplyLeading: false,
-              leading: IconButton(
-                tooltip: 'القائمة',
-                icon: const Icon(Icons.menu),
-                onPressed: () =>
-                    _mobileScaffoldKey.currentState?.openDrawer(),
-              ),
-              title: const Text('لوحة المكتب'),
-              actions: [
-                OfficeSearchLaunchButton(officeCode: widget.officeCode),
-                const ThemeAppearanceMenuButton(),
+            title: const Text('لوحة المكتب'),
+            actions: [
+              OfficeSearchLaunchButton(officeCode: widget.officeCode),
+              const ThemeAppearanceMenuButton(),
+            ],
+          ),
+          body: ContentCanvas(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                banner,
+                Expanded(child: widget.child),
               ],
-            ),
-            body: ContentCanvas(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  banner,
-                  Expanded(child: widget.child),
-                ],
-              ),
             ),
           ),
         );
@@ -207,7 +229,6 @@ class _Sidebar extends StatelessWidget {
     required this.width,
     this.inDrawer = false,
     this.onCloseDrawer,
-    this.listScrollController,
   });
 
   final String officeCode;
@@ -215,7 +236,6 @@ class _Sidebar extends StatelessWidget {
   final double? width;
   final bool inDrawer;
   final VoidCallback? onCloseDrawer;
-  final ScrollController? listScrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -506,7 +526,6 @@ class _Sidebar extends StatelessWidget {
 
     if (inDrawer) {
       return ListView(
-        controller: listScrollController,
         primary: false,
         padding: EdgeInsets.only(
           top: MediaQuery.paddingOf(context).top,
