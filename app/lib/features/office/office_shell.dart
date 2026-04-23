@@ -152,22 +152,30 @@ class _OfficeShellState extends State<OfficeShell> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              scaffold,
+              Positioned.fill(child: scaffold),
               if (_drawerOpen) ...[
-                Positioned.fill(
+                // تعتيم الجزء المكشوف فقط (ليس تحت القائمة) — على Android أحيانًا لا تُرسم
+                // طبقة القائمة فوق scrim بملء الشاشة فيبدو كل شيء «شفافًا» بدون عناصر.
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  right: drawerW,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: closeDrawer,
                     child: const ColoredBox(color: Colors.black54),
                   ),
                 ),
-                // تثبيت على يمين الشاشة الفيزيائي (قائمة العربية) — أوضح من PositionedDirectional على بعض الأجهزة.
                 Positioned(
                   top: 0,
                   bottom: 0,
                   right: 0,
                   width: drawerW,
-                  child: ClipRect(
+                  child: Material(
+                    color: AppColors.sidebar,
+                    elevation: 16,
+                    clipBehavior: Clip.antiAlias,
                     child: _Sidebar(
                       officeCode: widget.officeCode,
                       current: current,
@@ -455,19 +463,11 @@ class _Sidebar extends StatelessWidget {
     );
 
     if (inDrawer) {
-      // ColoredBox يحجَم حسب الطفل فقط؛ بدون ارتفاع صريح تبقى «شريحة» ضيقة/شفافة
-      // ويظهر الـ scrim والمحتوى من تحت (كأن القائمة شفافة ومفيش كروت).
-      final mq = MediaQuery.of(context);
-      final top = mq.padding.top;
-      final h = mq.size.height;
-      return Container(
-        width: width,
-        height: h,
-        color: AppColors.sidebar,
-        child: Padding(
-          padding: EdgeInsets.only(top: top),
-          child: sidebarColumn,
-        ),
+      // الارتفاع من الـ parent (Material/Positioned) — يتجنب اختلاف MediaQuery على بعض الأجهزة.
+      final top = MediaQuery.paddingOf(context).top;
+      return Padding(
+        padding: EdgeInsets.only(top: top),
+        child: sidebarColumn,
       );
     }
     return Material(
