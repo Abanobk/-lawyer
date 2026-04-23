@@ -19,11 +19,7 @@ import 'package:lawyer_app/features/office/office_welcome_context.dart';
 import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
 class OfficeShell extends StatefulWidget {
-  const OfficeShell({
-    super.key,
-    required this.officeCode,
-    required this.child,
-  });
+  const OfficeShell({super.key, required this.officeCode, required this.child});
 
   final String officeCode;
   final Widget child;
@@ -34,7 +30,11 @@ class OfficeShell extends StatefulWidget {
     _OfficeNavItem('cases', 'القضايا', Icons.work_outline),
     _OfficeNavItem('sessions', 'الجلسات', Icons.calendar_month_outlined),
     _OfficeNavItem('calendar', 'الأجندة', Icons.calendar_view_month_outlined),
-    _OfficeNavItem('accounts', 'الحسابات', Icons.account_balance_wallet_outlined),
+    _OfficeNavItem(
+      'accounts',
+      'الحسابات',
+      Icons.account_balance_wallet_outlined,
+    ),
     _OfficeNavItem('employees', 'الموظفين', Icons.badge_outlined),
     _OfficeNavItem('subscription', 'الاشتراك', Icons.subscriptions_outlined),
     _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
@@ -46,7 +46,8 @@ class OfficeShell extends StatefulWidget {
 
 class _OfficeShellState extends State<OfficeShell> {
   bool _drawerOpen = false;
-  late final Future<SubscriptionMeDto> _subscriptionFuture = BillingApi().subscriptionMe();
+  late final Future<SubscriptionMeDto> _subscriptionFuture = BillingApi()
+      .subscriptionMe();
 
   String _officeLinkForCurrentHost() {
     final origin = Uri.base.origin;
@@ -70,7 +71,8 @@ class _OfficeShellState extends State<OfficeShell> {
         final banner = snap.hasData
             ? SubscriptionTrialBanner(
                 sub: snap.data!,
-                onSubscribe: () => context.go('/o/${widget.officeCode}/subscription'),
+                onSubscribe: () =>
+                    context.go('/o/${widget.officeCode}/subscription'),
               )
             : const SizedBox.shrink();
 
@@ -95,9 +97,7 @@ class _OfficeShellState extends State<OfficeShell> {
                           officeLink: _officeLinkForCurrentHost(),
                         ),
                         banner,
-                        Expanded(
-                          child: ContentCanvas(child: widget.child),
-                        ),
+                        Expanded(child: ContentCanvas(child: widget.child)),
                       ],
                     ),
                   ),
@@ -107,7 +107,10 @@ class _OfficeShellState extends State<OfficeShell> {
           );
         }
 
-        final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
+        final drawerW = math.min(
+          320.0,
+          MediaQuery.sizeOf(context).width * 0.88,
+        );
 
         // قائمة مخصّصة بدل Scaffold.drawer — على بعض أجهزة Android الـ Drawer الرسمي
         // يظهر بيضا/فاضي رغم صحة الشجرة.
@@ -158,25 +161,18 @@ class _OfficeShellState extends State<OfficeShell> {
                     child: const ColoredBox(color: Color(0x66000000)),
                   ),
                 ),
-                PositionedDirectional(
+                // تثبيت على يمين الشاشة الفيزيائي (قائمة العربية) — أوضح من PositionedDirectional على بعض الأجهزة.
+                Positioned(
                   top: 0,
                   bottom: 0,
-                  start: 0,
+                  right: 0,
                   width: drawerW,
-                  child: Material(
-                    color: AppColors.sidebar,
-                    elevation: 8,
-                    shadowColor: Colors.black26,
-                    child: Directionality(
-                      textDirection: TextDirection.rtl,
-                      child: _Sidebar(
-                        officeCode: widget.officeCode,
-                        current: current,
-                        width: drawerW,
-                        inDrawer: true,
-                        onCloseDrawer: closeDrawer,
-                      ),
-                    ),
+                  child: _Sidebar(
+                    officeCode: widget.officeCode,
+                    current: current,
+                    width: drawerW,
+                    inDrawer: true,
+                    onCloseDrawer: closeDrawer,
                   ),
                 ),
               ],
@@ -216,231 +212,261 @@ class _Sidebar extends StatelessWidget {
     final permsApi = PermissionsApi();
     final meApi = MeApi();
     final origin = Uri.base.origin.trim();
-    final officeLink = origin.isEmpty ? '/o/$officeCode' : '$origin/o/$officeCode';
-    final content = SafeArea(
-        child: SizedBox(
-          width: width,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    final officeLink = origin.isEmpty
+        ? '/o/$officeCode'
+        : '$origin/o/$officeCode';
+    final sidebarColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                child: Row(
+              const Icon(Icons.balance, color: Colors.white, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.balance, color: Colors.white, size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'مكتب المحاماة',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          Text(
-                            'من إيزي تك',
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: FutureBuilder<OfficeDto?>(
-                  future: () async {
-                    try {
-                      return await OfficeApi().myOffice();
-                    } catch (_) {
-                      return null;
-                    }
-                  }(),
-                  builder: (context, snap) {
-                    final name = snap.data?.name;
-                    final line = name != null && name.isNotEmpty ? 'مكتب المستشار $name' : 'مكتب المستشار ($officeCode)';
-                    return Text(
-                      line,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Text(
+                      'مكتب المحاماة',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.92),
-                            fontWeight: FontWeight.w700,
-                          ),
-                    );
-                  },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SelectableText(
-                        officeLink,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
-                        maxLines: 1,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'نسخ رابط المكتب',
-                      onPressed: () async {
-                        await Clipboard.setData(ClipboardData(text: officeLink));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط المكتب')));
-                        }
-                      },
-                      icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+                    Text(
+                      'من إيزي تك',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: FutureBuilder<String?>(
-                  future: tokens.getAccessToken(),
-                  builder: (context, snap) {
-                    final hasAuth = (snap.data ?? '').isNotEmpty;
-                    if (!hasAuth) {
-                      final items = [OfficeShell._items.first];
-                      return _NavList(
-                        officeCode: officeCode,
-                        current: current,
-                        items: items,
-                        onBeforeNavigate: onCloseDrawer,
-                      );
-                    }
-                    return FutureBuilder<UserPermissionsDto>(
-                      future: permsApi.myPermissions(),
-                      builder: (context, ps) {
-                        if (ps.connectionState != ConnectionState.done) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                                child: Row(
-                                  children: [
-                                    const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      'جارٍ تحميل القائمة…',
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Expanded(
-                                child: _NavList(
-                                  officeCode: officeCode,
-                                  current: current,
-                                  items: [OfficeShell._items.first],
-                                  onBeforeNavigate: onCloseDrawer,
-                                ),
-                              ),
-                            ],
-                          );
-                        }
-
-                        if (ps.hasError || !ps.hasData) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                                child: Text(
-                                  'تعذر تحميل الصلاحيات — سيتم عرض قائمة مبسطة.',
-                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white70),
-                                ),
-                              ),
-                              Expanded(
-                                child: _NavList(
-                                  officeCode: officeCode,
-                                  current: current,
-                                  items: [OfficeShell._items.first],
-                                  onBeforeNavigate: onCloseDrawer,
-                                ),
-                              ),
-                            ],
-                          );
-                        }
-
-                        final keys = ps.data!.permissions.toSet();
-                        var base = OfficeShell._items.where((i) => _allowNav(i.segment, keys)).toList();
-                        if (base.isEmpty) {
-                          base = [OfficeShell._items.first];
-                        }
-                        return FutureBuilder<MeDto>(
-                          future: meApi.me(),
-                          builder: (context, ms) {
-                            final role = ms.data?.role;
-                            final items = base.where((i) => i.segment != 'subscription' || role == 'office_owner').toList();
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (role != null)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                                    child: Text(
-                                      'دورك: ${roleLabelAr(role)}',
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                            color: Colors.white70,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                  ),
-                                Expanded(
-                                  child: _NavList(
-                                    officeCode: officeCode,
-                                    current: current,
-                                    items: items,
-                                    onBeforeNavigate: onCloseDrawer,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              const Divider(color: Colors.white24, height: 1),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.redAccent),
-                title: const Text('تسجيل الخروج', style: TextStyle(color: Colors.redAccent)),
-                onTap: () async {
-                  onCloseDrawer?.call();
-                  await AuthTokenStorage().clear();
-                  if (!context.mounted) return;
-                  context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
-                },
-              ),
-              const SizedBox(height: 8),
             ],
           ),
         ),
-      );
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: FutureBuilder<OfficeDto?>(
+            future: () async {
+              try {
+                return await OfficeApi().myOffice();
+              } catch (_) {
+                return null;
+              }
+            }(),
+            builder: (context, snap) {
+              final name = snap.data?.name;
+              final line = name != null && name.isNotEmpty
+                  ? 'مكتب المستشار $name'
+                  : 'مكتب المستشار ($officeCode)';
+              return Text(
+                line,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontWeight: FontWeight.w700,
+                ),
+              );
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  officeLink,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: Colors.white70),
+                  maxLines: 1,
+                ),
+              ),
+              IconButton(
+                tooltip: 'نسخ رابط المكتب',
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: officeLink));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('تم نسخ رابط المكتب')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: FutureBuilder<String?>(
+            future: tokens.getAccessToken(),
+            builder: (context, snap) {
+              final hasAuth = (snap.data ?? '').isNotEmpty;
+              if (!hasAuth) {
+                final items = [OfficeShell._items.first];
+                return _NavList(
+                  officeCode: officeCode,
+                  current: current,
+                  items: items,
+                  onBeforeNavigate: onCloseDrawer,
+                );
+              }
+              return FutureBuilder<UserPermissionsDto>(
+                future: permsApi.myPermissions(),
+                builder: (context, ps) {
+                  if (ps.connectionState != ConnectionState.done) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'جارٍ تحميل القائمة…',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: _NavList(
+                            officeCode: officeCode,
+                            current: current,
+                            items: [OfficeShell._items.first],
+                            onBeforeNavigate: onCloseDrawer,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  if (ps.hasError || !ps.hasData) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                          child: Text(
+                            'تعذر تحميل الصلاحيات — سيتم عرض قائمة مبسطة.',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: Colors.white70),
+                          ),
+                        ),
+                        Expanded(
+                          child: _NavList(
+                            officeCode: officeCode,
+                            current: current,
+                            items: [OfficeShell._items.first],
+                            onBeforeNavigate: onCloseDrawer,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  final keys = ps.data!.permissions.toSet();
+                  var base = OfficeShell._items
+                      .where((i) => _allowNav(i.segment, keys))
+                      .toList();
+                  if (base.isEmpty) {
+                    base = [OfficeShell._items.first];
+                  }
+                  return FutureBuilder<MeDto>(
+                    future: meApi.me(),
+                    builder: (context, ms) {
+                      final role = ms.data?.role;
+                      final items = base
+                          .where(
+                            (i) =>
+                                i.segment != 'subscription' ||
+                                role == 'office_owner',
+                          )
+                          .toList();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (role != null)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                              child: Text(
+                                'دورك: ${roleLabelAr(role)}',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                          Expanded(
+                            child: _NavList(
+                              officeCode: officeCode,
+                              current: current,
+                              items: items,
+                              onBeforeNavigate: onCloseDrawer,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        const Divider(color: Colors.white24, height: 1),
+        ListTile(
+          tileColor: Colors.transparent,
+          leading: const Icon(Icons.logout, color: Colors.redAccent),
+          title: const Text(
+            'تسجيل الخروج',
+            style: TextStyle(color: Colors.redAccent),
+          ),
+          onTap: () async {
+            onCloseDrawer?.call();
+            await AuthTokenStorage().clear();
+            if (!context.mounted) return;
+            context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
+          },
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
 
     if (inDrawer) {
-      return content;
+      final top = MediaQuery.paddingOf(context).top;
+      return ColoredBox(
+        color: AppColors.sidebar,
+        child: Padding(
+          padding: EdgeInsets.only(top: top),
+          child: SizedBox(width: width, child: sidebarColumn),
+        ),
+      );
     }
     return Material(
       color: AppColors.sidebar,
-      child: content,
+      child: SafeArea(
+        child: SizedBox(width: width, child: sidebarColumn),
+      ),
     );
   }
 }
@@ -495,39 +521,48 @@ class _NavList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      itemCount: items.length,
-      itemBuilder: (context, i) {
-        final item = items[i];
-        final selected = item.segment == current;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Material(
-            color: selected ? AppColors.sidebarActive : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
+    return ColoredBox(
+      color: AppColors.sidebar,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        itemCount: items.length,
+        itemBuilder: (context, i) {
+          final item = items[i];
+          final selected = item.segment == current;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Material(
+              color: selected ? AppColors.sidebarActive : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
-              onTap: () {
-                onBeforeNavigate?.call();
-                context.go('/o/$officeCode/${item.segment}');
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: Row(
-                  children: [
-                    Icon(item.icon, color: Colors.white, size: 22),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(item.label, style: const TextStyle(color: Colors.white)),
-                    ),
-                  ],
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () {
+                  onBeforeNavigate?.call();
+                  context.go('/o/$officeCode/${item.segment}');
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(item.icon, color: Colors.white, size: 22),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          item.label,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -549,7 +584,12 @@ class _DesktopOfficeHeader extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsetsDirectional.only(start: 8, end: 20, top: 6, bottom: 6),
+          padding: const EdgeInsetsDirectional.only(
+            start: 8,
+            end: 20,
+            top: 6,
+            bottom: 6,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -557,7 +597,9 @@ class _DesktopOfficeHeader extends StatelessWidget {
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: officeLink));
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ رابط المكتب')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('تم نسخ رابط المكتب')),
+                    );
                   }
                 },
                 icon: const Icon(Icons.link, size: 18),
@@ -576,12 +618,17 @@ class _DesktopOfficeHeader extends StatelessWidget {
                         SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryBlue),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primaryBlue,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         CircleAvatar(
                           radius: 18,
-                          backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
+                          backgroundColor: AppColors.primaryBlue.withValues(
+                            alpha: 0.15,
+                          ),
                           foregroundColor: AppColors.primaryBlue,
                           child: const Text('…'),
                         ),
@@ -600,18 +647,27 @@ class _DesktopOfficeHeader extends StatelessWidget {
                         children: [
                           Text(
                             'مرحبًا بك أستاذ $who',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             'في مكتب المستشار ${off.name}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             'دورك: ${roleLabelAr(me.role)}',
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   fontWeight: FontWeight.w600,
                                 ),
                           ),
@@ -620,7 +676,9 @@ class _DesktopOfficeHeader extends StatelessWidget {
                       const SizedBox(width: 12),
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: AppColors.primaryBlue.withValues(alpha: 0.15),
+                        backgroundColor: AppColors.primaryBlue.withValues(
+                          alpha: 0.15,
+                        ),
                         foregroundColor: AppColors.primaryBlue,
                         child: Text(
                           officeUserInitial(me),
