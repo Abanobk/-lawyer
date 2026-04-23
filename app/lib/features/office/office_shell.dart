@@ -262,6 +262,7 @@ class _Sidebar extends StatelessWidget {
               if (ps.connectionState != ConnectionState.done) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -307,6 +308,7 @@ class _Sidebar extends StatelessWidget {
               if (ps.hasError || !ps.hasData) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -356,6 +358,7 @@ class _Sidebar extends StatelessWidget {
                       .toList();
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
                     children: [
                       if (role != null)
                         Padding(
@@ -398,7 +401,9 @@ class _Sidebar extends StatelessWidget {
       return Expanded(child: futureBlock);
     }
 
+    // داخل SingleChildScrollView لازم mainAxisSize.min وإلا Column يطلب ارتفاع لا نهائي ولا يُرسم المحتوى.
     final sidebarColumn = Column(
+      mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
