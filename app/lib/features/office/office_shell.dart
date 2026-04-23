@@ -46,6 +46,8 @@ class OfficeShell extends StatefulWidget {
 
 class _OfficeShellState extends State<OfficeShell> {
   bool _drawerOpen = false;
+  final GlobalKey<ScaffoldState> _mobileScaffoldKey =
+      GlobalKey<ScaffoldState>();
   late final Future<SubscriptionMeDto> _subscriptionFuture = BillingApi()
       .subscriptionMe();
 
@@ -112,88 +114,58 @@ class _OfficeShellState extends State<OfficeShell> {
           MediaQuery.sizeOf(context).width * 0.88,
         );
 
-        // قائمة مخصّصة بدل Scaffold.drawer — على بعض أجهزة Android الـ Drawer الرسمي
-        // يظهر بيضا/فاضي رغم صحة الشجرة.
-        final scaffold = Scaffold(
-          appBar: AppBar(
-            automaticallyImplyLeading: false,
-            leading: IconButton(
-              tooltip: 'القائمة',
-              icon: const Icon(Icons.menu),
-              onPressed: () => setState(() => _drawerOpen = !_drawerOpen),
-            ),
-            title: const Text('لوحة المكتب'),
-            actions: [
-              OfficeSearchLaunchButton(officeCode: widget.officeCode),
-              const ThemeAppearanceMenuButton(),
-            ],
-          ),
-          body: ContentCanvas(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                banner,
-                Expanded(child: widget.child),
-              ],
-            ),
-          ),
-        );
-
-        void closeDrawer() {
-          if (_drawerOpen) setState(() => _drawerOpen = false);
+        void closeMobileDrawer() {
+          _mobileScaffoldKey.currentState?.closeDrawer();
         }
 
+        // RTL: الـ drawer (من جهة البداية) يفتح من اليمين — نفس سلوك الويب.
+        // الـ Stack المخصص كان يسبب طبقات رسم/قيود غريبة على بعض أجهزة Android.
         return PopScope(
           canPop: !_drawerOpen,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
-            if (_drawerOpen) closeDrawer();
+            if (_drawerOpen) closeMobileDrawer();
           },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(child: scaffold),
-              if (_drawerOpen) ...[
-                // تعتيم الجزء المكشوف فقط (ليس تحت القائمة) — على Android أحيانًا لا تُرسم
-                // طبقة القائمة فوق scrim بملء الشاشة فيبدو كل شيء «شفافًا» بدون عناصر.
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  right: drawerW,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: closeDrawer,
-                    child: const ColoredBox(color: Colors.black54),
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  bottom: 0,
-                  right: 0,
-                  width: drawerW,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppColors.sidebar,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.22),
-                          blurRadius: 14,
-                          offset: const Offset(-4, 0),
-                        ),
-                      ],
-                    ),
-                    child: _Sidebar(
-                      officeCode: widget.officeCode,
-                      current: current,
-                      width: drawerW,
-                      inDrawer: true,
-                      onCloseDrawer: closeDrawer,
-                    ),
-                  ),
-                ),
+          child: Scaffold(
+            key: _mobileScaffoldKey,
+            onDrawerChanged: (open) {
+              if (_drawerOpen != open) setState(() => _drawerOpen = open);
+            },
+            drawer: Drawer(
+              width: drawerW,
+              backgroundColor: AppColors.sidebar,
+              surfaceTintColor: Colors.transparent,
+              child: _Sidebar(
+                officeCode: widget.officeCode,
+                current: current,
+                width: drawerW,
+                inDrawer: true,
+                onCloseDrawer: closeMobileDrawer,
+              ),
+            ),
+            appBar: AppBar(
+              automaticallyImplyLeading: false,
+              leading: IconButton(
+                tooltip: 'القائمة',
+                icon: const Icon(Icons.menu),
+                onPressed: () =>
+                    _mobileScaffoldKey.currentState?.openDrawer(),
+              ),
+              title: const Text('لوحة المكتب'),
+              actions: [
+                OfficeSearchLaunchButton(officeCode: widget.officeCode),
+                const ThemeAppearanceMenuButton(),
               ],
-            ],
+            ),
+            body: ContentCanvas(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  banner,
+                  Expanded(child: widget.child),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -401,128 +373,139 @@ class _Sidebar extends StatelessWidget {
       return Expanded(child: futureBlock);
     }
 
-    // داخل SingleChildScrollView لازم mainAxisSize.min وإلا Column يطلب ارتفاع لا نهائي ولا يُرسم المحتوى.
-    final sidebarColumn = Column(
-      mainAxisSize: inDrawer ? MainAxisSize.min : MainAxisSize.max,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.gavel, color: Colors.white, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'مكتب المحاماة',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
+    final drawerTop = <Widget>[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.gavel, color: Colors.white, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'مكتب المحاماة',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
                     ),
-                    Text(
-                      'من إيزي تك',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  ),
+                  Text(
+                    'من إيزي تك',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: FutureBuilder<OfficeDto?>(
-            future: () async {
-              try {
-                return await OfficeApi().myOffice();
-              } catch (_) {
-                return null;
-              }
-            }(),
-            builder: (context, snap) {
-              final name = snap.data?.name;
-              final line = name != null && name.isNotEmpty
-                  ? 'مكتب المستشار $name'
-                  : 'مكتب المستشار ($officeCode)';
-              return Text(
-                line,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontWeight: FontWeight.w700,
-                ),
-              );
-            },
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: SelectableText(
-                  officeLink,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(color: Colors.white70),
-                  maxLines: 1,
-                ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: FutureBuilder<OfficeDto?>(
+          future: () async {
+            try {
+              return await OfficeApi().myOffice();
+            } catch (_) {
+              return null;
+            }
+          }(),
+          builder: (context, snap) {
+            final name = snap.data?.name;
+            final line = name != null && name.isNotEmpty
+                ? 'مكتب المستشار $name'
+                : 'مكتب المستشار ($officeCode)';
+            return Text(
+              line,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.92),
+                fontWeight: FontWeight.w700,
               ),
-              IconButton(
-                tooltip: 'نسخ رابط المكتب',
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: officeLink));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('تم نسخ رابط المكتب')),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        navSection(),
-        const Divider(color: Colors.white24, height: 1),
-        ListTile(
-          tileColor: Colors.transparent,
-          leading: const Icon(Icons.logout, color: Colors.redAccent),
-          title: const Text(
-            'تسجيل الخروج',
-            style: TextStyle(color: Colors.redAccent),
-          ),
-          onTap: () async {
-            onCloseDrawer?.call();
-            await AuthTokenStorage().clear();
-            if (!context.mounted) return;
-            context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
+            );
           },
         ),
-        const SizedBox(height: 8),
-      ],
-    );
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: SelectableText(
+                officeLink,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(color: Colors.white70),
+                maxLines: 1,
+              ),
+            ),
+            IconButton(
+              tooltip: 'نسخ رابط المكتب',
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: officeLink));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('تم نسخ رابط المكتب')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.copy, size: 18, color: Colors.white70),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 8),
+    ];
+
+    final footer = <Widget>[
+      const Divider(color: Colors.white24, height: 1),
+      ListTile(
+        tileColor: Colors.transparent,
+        leading: const Icon(Icons.logout, color: Colors.redAccent),
+        title: const Text(
+          'تسجيل الخروج',
+          style: TextStyle(color: Colors.redAccent),
+        ),
+        onTap: () async {
+          onCloseDrawer?.call();
+          await AuthTokenStorage().clear();
+          if (!context.mounted) return;
+          context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
+        },
+      ),
+      const SizedBox(height: 8),
+    ];
 
     if (inDrawer) {
-      return SingleChildScrollView(
+      return ListView(
         padding: EdgeInsets.only(
           top: MediaQuery.paddingOf(context).top,
           bottom: 12,
         ),
         physics: const ClampingScrollPhysics(),
-        child: sidebarColumn,
+        children: [
+          ...drawerTop,
+          navSection(),
+          ...footer,
+        ],
       );
     }
+
+    final sidebarColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ...drawerTop,
+        navSection(),
+        ...footer,
+      ],
+    );
+
     return Material(
       color: AppColors.sidebar,
       child: SafeArea(
