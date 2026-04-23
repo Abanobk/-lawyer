@@ -172,12 +172,17 @@ class _OfficeShellState extends State<OfficeShell> {
                   bottom: 0,
                   right: 0,
                   width: drawerW,
-                  // Material3 يرفع السطح بلون (surfaceTint) فيبدو الأزرق الداكن «رمادي فاتح»
-                  // وكأن اللوحة فاضية. PhysicalModel يرسم لون الخلفية كما هو.
-                  child: PhysicalModel(
-                    color: AppColors.sidebar,
-                    elevation: 16,
-                    shadowColor: Colors.black45,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppColors.sidebar,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.22),
+                          blurRadius: 14,
+                          offset: const Offset(-4, 0),
+                        ),
+                      ],
+                    ),
                     child: _Sidebar(
                       officeCode: widget.officeCode,
                       current: current,
@@ -227,6 +232,172 @@ class _Sidebar extends StatelessWidget {
     final officeLink = origin.isEmpty
         ? '/o/$officeCode'
         : '$origin/o/$officeCode';
+
+    /// على الموبايل: بدون Expanded + ListView داخل الـ drawer — على Android غالبًا
+    /// ما يعطي ارتفاعًا صفريًا فيُرسم لون السطح فقط (رمادي) من غير عناصر.
+    Widget navSection() {
+      final futureBlock = FutureBuilder<String?>(
+        future: tokens.getAccessToken(),
+        builder: (context, snap) {
+          final hasAuth = (snap.data ?? '').isNotEmpty;
+          if (!hasAuth) {
+            final items = [OfficeShell._items.first];
+            return inDrawer
+                ? _OfficeNavColumn(
+                    officeCode: officeCode,
+                    current: current,
+                    items: items,
+                    onBeforeNavigate: onCloseDrawer,
+                  )
+                : _NavList(
+                    officeCode: officeCode,
+                    current: current,
+                    items: items,
+                    onBeforeNavigate: onCloseDrawer,
+                  );
+          }
+          return FutureBuilder<UserPermissionsDto>(
+            future: permsApi.myPermissions(),
+            builder: (context, ps) {
+              if (ps.connectionState != ConnectionState.done) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'جارٍ تحميل القائمة…',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (inDrawer)
+                      _OfficeNavColumn(
+                        officeCode: officeCode,
+                        current: current,
+                        items: [OfficeShell._items.first],
+                        onBeforeNavigate: onCloseDrawer,
+                      )
+                    else
+                      Expanded(
+                        child: _NavList(
+                          officeCode: officeCode,
+                          current: current,
+                          items: [OfficeShell._items.first],
+                          onBeforeNavigate: onCloseDrawer,
+                        ),
+                      ),
+                  ],
+                );
+              }
+
+              if (ps.hasError || !ps.hasData) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        'تعذر تحميل الصلاحيات — سيتم عرض قائمة مبسطة.',
+                        style: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(color: Colors.white70),
+                      ),
+                    ),
+                    if (inDrawer)
+                      _OfficeNavColumn(
+                        officeCode: officeCode,
+                        current: current,
+                        items: [OfficeShell._items.first],
+                        onBeforeNavigate: onCloseDrawer,
+                      )
+                    else
+                      Expanded(
+                        child: _NavList(
+                          officeCode: officeCode,
+                          current: current,
+                          items: [OfficeShell._items.first],
+                          onBeforeNavigate: onCloseDrawer,
+                        ),
+                      ),
+                  ],
+                );
+              }
+
+              final keys = ps.data!.permissions.toSet();
+              var base = OfficeShell._items
+                  .where((i) => _allowNav(i.segment, keys))
+                  .toList();
+              if (base.isEmpty) {
+                base = [OfficeShell._items.first];
+              }
+              return FutureBuilder<MeDto>(
+                future: meApi.me(),
+                builder: (context, ms) {
+                  final role = ms.data?.role;
+                  final items = base
+                      .where(
+                        (i) =>
+                            i.segment != 'subscription' ||
+                            role == 'office_owner',
+                      )
+                      .toList();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (role != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                          child: Text(
+                            'دورك: ${roleLabelAr(role)}',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                      if (inDrawer)
+                        _OfficeNavColumn(
+                          officeCode: officeCode,
+                          current: current,
+                          items: items,
+                          onBeforeNavigate: onCloseDrawer,
+                        )
+                      else
+                        Expanded(
+                          child: _NavList(
+                            officeCode: officeCode,
+                            current: current,
+                            items: items,
+                            onBeforeNavigate: onCloseDrawer,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
+          );
+        },
+      );
+
+      if (inDrawer) return futureBlock;
+      return Expanded(child: futureBlock);
+    }
+
     final sidebarColumn = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -235,7 +406,7 @@ class _Sidebar extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.balance, color: Colors.white, size: 28),
+              const Icon(Icons.gavel, color: Colors.white, size: 28),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -317,134 +488,7 @@ class _Sidebar extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Expanded(
-          child: FutureBuilder<String?>(
-            future: tokens.getAccessToken(),
-            builder: (context, snap) {
-              final hasAuth = (snap.data ?? '').isNotEmpty;
-              if (!hasAuth) {
-                final items = [OfficeShell._items.first];
-                return _NavList(
-                  officeCode: officeCode,
-                  current: current,
-                  items: items,
-                  onBeforeNavigate: onCloseDrawer,
-                );
-              }
-              return FutureBuilder<UserPermissionsDto>(
-                future: permsApi.myPermissions(),
-                builder: (context, ps) {
-                  if (ps.connectionState != ConnectionState.done) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                          child: Row(
-                            children: [
-                              const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                'جارٍ تحميل القائمة…',
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(color: Colors.white70),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: _NavList(
-                            officeCode: officeCode,
-                            current: current,
-                            items: [OfficeShell._items.first],
-                            onBeforeNavigate: onCloseDrawer,
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  if (ps.hasError || !ps.hasData) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                          child: Text(
-                            'تعذر تحميل الصلاحيات — سيتم عرض قائمة مبسطة.',
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(color: Colors.white70),
-                          ),
-                        ),
-                        Expanded(
-                          child: _NavList(
-                            officeCode: officeCode,
-                            current: current,
-                            items: [OfficeShell._items.first],
-                            onBeforeNavigate: onCloseDrawer,
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  final keys = ps.data!.permissions.toSet();
-                  var base = OfficeShell._items
-                      .where((i) => _allowNav(i.segment, keys))
-                      .toList();
-                  if (base.isEmpty) {
-                    base = [OfficeShell._items.first];
-                  }
-                  return FutureBuilder<MeDto>(
-                    future: meApi.me(),
-                    builder: (context, ms) {
-                      final role = ms.data?.role;
-                      final items = base
-                          .where(
-                            (i) =>
-                                i.segment != 'subscription' ||
-                                role == 'office_owner',
-                          )
-                          .toList();
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (role != null)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                              child: Text(
-                                'دورك: ${roleLabelAr(role)}',
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ),
-                          Expanded(
-                            child: _NavList(
-                              officeCode: officeCode,
-                              current: current,
-                              items: items,
-                              onBeforeNavigate: onCloseDrawer,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
-        ),
+        navSection(),
         const Divider(color: Colors.white24, height: 1),
         ListTile(
           tileColor: Colors.transparent,
@@ -465,16 +509,13 @@ class _Sidebar extends StatelessWidget {
     );
 
     if (inDrawer) {
-      final mq = MediaQuery.of(context);
-      final top = mq.padding.top;
-      // ارتفاع صريح حتى Column + Expanded + ListView يحصلوا على قيود محدودة على كل الأجهزة.
-      return SizedBox(
-        width: width,
-        height: mq.size.height,
-        child: Padding(
-          padding: EdgeInsets.only(top: top),
-          child: sidebarColumn,
+      return SingleChildScrollView(
+        padding: EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top,
+          bottom: 12,
         ),
+        physics: const ClampingScrollPhysics(),
+        child: sidebarColumn,
       );
     }
     return Material(
@@ -521,6 +562,85 @@ bool _allowNav(String segment, Set<String> keys) {
   return keys.contains(required);
 }
 
+Widget _buildOfficeNavTile(
+  BuildContext context, {
+  required String officeCode,
+  required String current,
+  required _OfficeNavItem item,
+  VoidCallback? onBeforeNavigate,
+}) {
+  final selected = item.segment == current;
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Material(
+      color: selected ? AppColors.sidebarActive : Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          onBeforeNavigate?.call();
+          context.go('/o/$officeCode/${item.segment}');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
+          ),
+          child: Row(
+            children: [
+              Icon(item.icon, color: Colors.white, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item.label,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// قائمة للـ drawer بدون ListView (ارتفاع طبيعي من المحتوى).
+class _OfficeNavColumn extends StatelessWidget {
+  const _OfficeNavColumn({
+    required this.officeCode,
+    required this.current,
+    required this.items,
+    this.onBeforeNavigate,
+  });
+
+  final String officeCode;
+  final String current;
+  final List<_OfficeNavItem> items;
+  final VoidCallback? onBeforeNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final item in items)
+            _buildOfficeNavTile(
+              context,
+              officeCode: officeCode,
+              current: current,
+              item: item,
+              onBeforeNavigate: onBeforeNavigate,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NavList extends StatelessWidget {
   const _NavList({
     required this.officeCode,
@@ -541,43 +661,13 @@ class _NavList extends StatelessWidget {
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         itemCount: items.length,
-        itemBuilder: (context, i) {
-          final item = items[i];
-          final selected = item.segment == current;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Material(
-              color: selected ? AppColors.sidebarActive : Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () {
-                  onBeforeNavigate?.call();
-                  context.go('/o/$officeCode/${item.segment}');
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(item.icon, color: Colors.white, size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          item.label,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
+        itemBuilder: (context, i) => _buildOfficeNavTile(
+          context,
+          officeCode: officeCode,
+          current: current,
+          item: items[i],
+          onBeforeNavigate: onBeforeNavigate,
+        ),
       ),
     );
   }
