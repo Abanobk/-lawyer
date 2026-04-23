@@ -121,7 +121,12 @@ class OfficeShell extends StatelessWidget {
             );
         return Scaffold(
           drawer: buildDrawer(),
-          drawerEnableOpenDragGesture: true,
+          // الـ scrim (الطبقة الرمادي/البيضاء) خارج القائمة كانت هي اللي بتبان "بيضاء".
+          // نخليها شفافة عشان ما تغطيش الشاشة.
+          drawerScrimColor: Colors.transparent,
+          // على Android بعض الأجهزة بتفتح الـ drawer باللمس من الحافة وتدي شكل مزعج/غلط.
+          // نخليه بالزر فقط.
+          drawerEnableOpenDragGesture: false,
           endDrawerEnableOpenDragGesture: false,
           appBar: AppBar(
             automaticallyImplyLeading: false,
