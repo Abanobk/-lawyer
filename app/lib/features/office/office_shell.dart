@@ -172,10 +172,12 @@ class _OfficeShellState extends State<OfficeShell> {
                   bottom: 0,
                   right: 0,
                   width: drawerW,
-                  child: Material(
+                  // Material3 يرفع السطح بلون (surfaceTint) فيبدو الأزرق الداكن «رمادي فاتح»
+                  // وكأن اللوحة فاضية. PhysicalModel يرسم لون الخلفية كما هو.
+                  child: PhysicalModel(
                     color: AppColors.sidebar,
                     elevation: 16,
-                    clipBehavior: Clip.antiAlias,
+                    shadowColor: Colors.black45,
                     child: _Sidebar(
                       officeCode: widget.officeCode,
                       current: current,
@@ -463,11 +465,16 @@ class _Sidebar extends StatelessWidget {
     );
 
     if (inDrawer) {
-      // الارتفاع من الـ parent (Material/Positioned) — يتجنب اختلاف MediaQuery على بعض الأجهزة.
-      final top = MediaQuery.paddingOf(context).top;
-      return Padding(
-        padding: EdgeInsets.only(top: top),
-        child: sidebarColumn,
+      final mq = MediaQuery.of(context);
+      final top = mq.padding.top;
+      // ارتفاع صريح حتى Column + Expanded + ListView يحصلوا على قيود محدودة على كل الأجهزة.
+      return SizedBox(
+        width: width,
+        height: mq.size.height,
+        child: Padding(
+          padding: EdgeInsets.only(top: top),
+          child: sidebarColumn,
+        ),
       );
     }
     return Material(
@@ -541,6 +548,7 @@ class _NavList extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 4),
             child: Material(
               color: selected ? AppColors.sidebarActive : Colors.transparent,
+              surfaceTintColor: Colors.transparent,
               borderRadius: BorderRadius.circular(10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(10),
