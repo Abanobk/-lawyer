@@ -776,7 +776,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/auth/google", response_model=TokenPair)
 def login_google(
-    id_token: str = Form(..., min_length=20),
+    id_token: str | None = Form(default=None),
+    access_token: str | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     """
@@ -785,16 +786,44 @@ def login_google(
     - نتحقق من التوقيع ونستخرج البريد.
     - إن كان المستخدم موجودًا في نظامنا، نُصدر JWT مثل /auth/login.
     """
-    try:
-        req = google_requests.Request()
-        audience = settings.google_web_client_id.strip() or None
-        info = google_id_token.verify_oauth2_token(id_token, req, audience=audience)
-        email = (info.get("email") or "").strip().lower()
-        if not email or info.get("email_verified") is False:
+    if (id_token is None or not id_token.strip()) and (access_token is None or not access_token.strip()):
+        raise HTTPException(status_code=422, detail="Missing id_token/access_token")
+
+    email = ""
+    email_verified = True
+
+    # Prefer id_token when present (offline verification).
+    if id_token is not None and id_token.strip():
+        try:
+            req = google_requests.Request()
+            audience = settings.google_web_client_id.strip() or None
+            info = google_id_token.verify_oauth2_token(id_token.strip(), req, audience=audience)
+            email = (info.get("email") or "").strip().lower()
+            email_verified = info.get("email_verified") is not False
+        except Exception:
+            # Fall back to access_token below (some Android configs don't return idToken).
+            email = ""
+
+    if not email:
+        # Fallback: call Google userinfo endpoint using access_token.
+        try:
+            import urllib.request
+            import urllib.error
+
+            tok = (access_token or "").strip()
+            req = urllib.request.Request(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {tok}"},
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                raw = resp.read().decode("utf-8")
+            info = json.loads(raw)
+            email = (info.get("email") or "").strip().lower()
+            email_verified = info.get("email_verified") is not False
+        except Exception:
             raise HTTPException(status_code=400, detail="Invalid credentials")
-    except HTTPException:
-        raise
-    except Exception:
+
+    if not email or not email_verified:
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     user = db.scalar(select(User).where(User.email == email))

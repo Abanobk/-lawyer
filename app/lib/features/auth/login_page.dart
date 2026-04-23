@@ -128,13 +128,14 @@ class _LoginPageState extends State<LoginPage> {
       if (account == null) return;
       if (!mounted) return;
       final auth = await account.authentication;
-      final token = auth.idToken;
-      if (token == null || token.isEmpty) {
-        throw Exception('missing idToken');
-      }
+      final idToken = auth.idToken;
+      final accessToken = auth.accessToken;
 
       setState(() => _loading = true);
-      final tokens = await _authApi.loginWithGoogle(idToken: token);
+      final tokens = await _authApi.loginWithGoogle(
+        idToken: idToken,
+        accessToken: accessToken,
+      );
 
       // Temporarily save tokens to call /office (needs Authorization header).
       await _storage.saveSession(

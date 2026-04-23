@@ -106,13 +106,22 @@ class AuthApi {
   }
 
   Future<({String accessToken, String refreshToken})> loginWithGoogle({
-    required String idToken,
+    String? idToken,
+    String? accessToken,
   }) async {
     final uri = ApiConfig.uri('auth/google');
+    final idt = idToken?.trim();
+    final at = accessToken?.trim();
+    if ((idt == null || idt.isEmpty) && (at == null || at.isEmpty)) {
+      throw AuthApiException('تعذر تسجيل الدخول بجوجل: رمز التحقق مفقود');
+    }
     final res = await _client.post(
       uri,
       headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
-      body: 'id_token=${Uri.encodeQueryComponent(idToken)}',
+      body: [
+        if (idt != null && idt.isNotEmpty) 'id_token=${Uri.encodeQueryComponent(idt)}',
+        if (at != null && at.isNotEmpty) 'access_token=${Uri.encodeQueryComponent(at)}',
+      ].join('&'),
     );
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
