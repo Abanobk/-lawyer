@@ -18,7 +18,7 @@ import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/features/office/office_welcome_context.dart';
 import 'package:lawyer_app/features/office/widgets/subscription_trial_banner.dart';
 
-class OfficeShell extends StatelessWidget {
+class OfficeShell extends StatefulWidget {
   const OfficeShell({
     super.key,
     required this.officeCode,
@@ -27,11 +27,6 @@ class OfficeShell extends StatelessWidget {
 
   final String officeCode;
   final Widget child;
-
-  String officeLinkForCurrentHost() {
-    final origin = Uri.base.origin;
-    return '$origin/o/$officeCode';
-  }
 
   static const _items = <_OfficeNavItem>[
     _OfficeNavItem('dashboard', 'لوحة التحكم', Icons.dashboard_outlined),
@@ -45,6 +40,19 @@ class OfficeShell extends StatelessWidget {
     _OfficeNavItem('settings', 'الإعدادات', Icons.settings_outlined),
   ];
 
+  @override
+  State<OfficeShell> createState() => _OfficeShellState();
+}
+
+class _OfficeShellState extends State<OfficeShell> {
+  bool _drawerOpen = false;
+  late final Future<SubscriptionMeDto> _subscriptionFuture = BillingApi().subscriptionMe();
+
+  String _officeLinkForCurrentHost() {
+    final origin = Uri.base.origin;
+    return '$origin/o/${widget.officeCode}';
+  }
+
   String _currentSegment(BuildContext context) {
     final segs = GoRouterState.of(context).uri.pathSegments;
     if (segs.length >= 3) return segs[2];
@@ -55,15 +63,14 @@ class OfficeShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final desktop = AppLayout.isWebDesktop(context);
     final current = _currentSegment(context);
-    final billingApi = BillingApi();
 
     return FutureBuilder<SubscriptionMeDto>(
-      future: billingApi.subscriptionMe(),
+      future: _subscriptionFuture,
       builder: (context, snap) {
         final banner = snap.hasData
             ? SubscriptionTrialBanner(
                 sub: snap.data!,
-                onSubscribe: () => context.go('/o/$officeCode/subscription'),
+                onSubscribe: () => context.go('/o/${widget.officeCode}/subscription'),
               )
             : const SizedBox.shrink();
 
@@ -73,7 +80,7 @@ class OfficeShell extends StatelessWidget {
               textDirection: TextDirection.rtl,
               children: [
                 _Sidebar(
-                  officeCode: officeCode,
+                  officeCode: widget.officeCode,
                   current: current,
                   width: 280,
                 ),
@@ -84,12 +91,12 @@ class OfficeShell extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _DesktopOfficeHeader(
-                          officeCode: officeCode,
-                          officeLink: officeLinkForCurrentHost(),
+                          officeCode: widget.officeCode,
+                          officeLink: _officeLinkForCurrentHost(),
                         ),
                         banner,
                         Expanded(
-                          child: ContentCanvas(child: child),
+                          child: ContentCanvas(child: widget.child),
                         ),
                       ],
                     ),
@@ -101,41 +108,20 @@ class OfficeShell extends StatelessWidget {
         }
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
-        // في RTL (العربية): `drawer` يفتح من جهة البداية = اليمين.
-        // لازم `Drawer` الرسمي: لو مرّرنا Widget بعرض فقط، الـ `Column` اللي فيها `Expanded`
-        // بتاخد ارتفاع غير محدود والمحتوى ما يترسمش (قائمة بيضا).
-        Widget buildDrawer() => Drawer(
-              width: drawerW,
-              backgroundColor: AppColors.sidebar,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              child: Directionality(
-                textDirection: TextDirection.rtl,
-                child: _Sidebar(
-                  officeCode: officeCode,
-                  current: current,
-                  width: drawerW,
-                  inDrawer: true,
-                ),
-              ),
-            );
-        return Scaffold(
-          drawer: buildDrawer(),
-          drawerScrimColor: Colors.black38,
-          drawerEnableOpenDragGesture: true,
-          endDrawerEnableOpenDragGesture: false,
+
+        // قائمة مخصّصة بدل Scaffold.drawer — على بعض أجهزة Android الـ Drawer الرسمي
+        // يظهر بيضا/فاضي رغم صحة الشجرة.
+        final scaffold = Scaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            leading: Builder(
-              builder: (context) => IconButton(
-                tooltip: 'القائمة',
-                icon: const Icon(Icons.menu),
-                onPressed: () => Scaffold.of(context).openDrawer(),
-              ),
+            leading: IconButton(
+              tooltip: 'القائمة',
+              icon: const Icon(Icons.menu),
+              onPressed: () => setState(() => _drawerOpen = !_drawerOpen),
             ),
             title: const Text('لوحة المكتب'),
             actions: [
-              OfficeSearchLaunchButton(officeCode: officeCode),
+              OfficeSearchLaunchButton(officeCode: widget.officeCode),
               const ThemeAppearanceMenuButton(),
             ],
           ),
@@ -144,9 +130,57 @@ class OfficeShell extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 banner,
-                Expanded(child: child),
+                Expanded(child: widget.child),
               ],
             ),
+          ),
+        );
+
+        void closeDrawer() {
+          if (_drawerOpen) setState(() => _drawerOpen = false);
+        }
+
+        return PopScope(
+          canPop: !_drawerOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (_drawerOpen) closeDrawer();
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              scaffold,
+              if (_drawerOpen) ...[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: closeDrawer,
+                    child: const ColoredBox(color: Color(0x66000000)),
+                  ),
+                ),
+                PositionedDirectional(
+                  top: 0,
+                  bottom: 0,
+                  start: 0,
+                  width: drawerW,
+                  child: Material(
+                    color: AppColors.sidebar,
+                    elevation: 8,
+                    shadowColor: Colors.black26,
+                    child: Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: _Sidebar(
+                        officeCode: widget.officeCode,
+                        current: current,
+                        width: drawerW,
+                        inDrawer: true,
+                        onCloseDrawer: closeDrawer,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         );
       },
@@ -167,12 +201,14 @@ class _Sidebar extends StatelessWidget {
     required this.current,
     required this.width,
     this.inDrawer = false,
+    this.onCloseDrawer,
   });
 
   final String officeCode;
   final String current;
   final double? width;
   final bool inDrawer;
+  final VoidCallback? onCloseDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +311,12 @@ class _Sidebar extends StatelessWidget {
                     final hasAuth = (snap.data ?? '').isNotEmpty;
                     if (!hasAuth) {
                       final items = [OfficeShell._items.first];
-                      return _NavList(officeCode: officeCode, current: current, items: items);
+                      return _NavList(
+                        officeCode: officeCode,
+                        current: current,
+                        items: items,
+                        onBeforeNavigate: onCloseDrawer,
+                      );
                     }
                     return FutureBuilder<UserPermissionsDto>(
                       future: permsApi.myPermissions(),
@@ -306,6 +347,7 @@ class _Sidebar extends StatelessWidget {
                                   officeCode: officeCode,
                                   current: current,
                                   items: [OfficeShell._items.first],
+                                  onBeforeNavigate: onCloseDrawer,
                                 ),
                               ),
                             ],
@@ -328,6 +370,7 @@ class _Sidebar extends StatelessWidget {
                                   officeCode: officeCode,
                                   current: current,
                                   items: [OfficeShell._items.first],
+                                  onBeforeNavigate: onCloseDrawer,
                                 ),
                               ),
                             ],
@@ -359,7 +402,12 @@ class _Sidebar extends StatelessWidget {
                                     ),
                                   ),
                                 Expanded(
-                                  child: _NavList(officeCode: officeCode, current: current, items: items),
+                                  child: _NavList(
+                                    officeCode: officeCode,
+                                    current: current,
+                                    items: items,
+                                    onBeforeNavigate: onCloseDrawer,
+                                  ),
                                 ),
                               ],
                             );
@@ -375,7 +423,7 @@ class _Sidebar extends StatelessWidget {
                 leading: const Icon(Icons.logout, color: Colors.redAccent),
                 title: const Text('تسجيل الخروج', style: TextStyle(color: Colors.redAccent)),
                 onTap: () async {
-                  Navigator.maybePop(context);
+                  onCloseDrawer?.call();
                   await AuthTokenStorage().clear();
                   if (!context.mounted) return;
                   context.go(TenantBuildConfig.isTenantApk ? '/login' : '/');
@@ -437,11 +485,13 @@ class _NavList extends StatelessWidget {
     required this.officeCode,
     required this.current,
     required this.items,
+    this.onBeforeNavigate,
   });
 
   final String officeCode;
   final String current;
   final List<_OfficeNavItem> items;
+  final VoidCallback? onBeforeNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -458,7 +508,10 @@ class _NavList extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: () => context.go('/o/$officeCode/${item.segment}'),
+              onTap: () {
+                onBeforeNavigate?.call();
+                context.go('/o/$officeCode/${item.segment}');
+              },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 child: Row(
