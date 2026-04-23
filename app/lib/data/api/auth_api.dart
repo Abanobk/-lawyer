@@ -105,6 +105,30 @@ class AuthApi {
     );
   }
 
+  Future<({String accessToken, String refreshToken})> loginWithGoogle({
+    required String idToken,
+  }) async {
+    final uri = ApiConfig.uri('auth/google');
+    final res = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
+      body: 'id_token=${Uri.encodeQueryComponent(idToken)}',
+    );
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final map = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      return (
+        accessToken: map['access_token'] as String,
+        refreshToken: map['refresh_token'] as String,
+      );
+    }
+
+    throw AuthApiException(
+      _parseErrorDetail(res.body, statusCode: res.statusCode, kind: _AuthErrorKind.login),
+      statusCode: res.statusCode,
+    );
+  }
+
   String _parseErrorDetail(String body, {required int? statusCode, required _AuthErrorKind kind}) {
     try {
       final map = jsonDecode(body);

@@ -137,6 +137,9 @@ from app.schemas import (
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.settings import settings
 
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+
 
 app = FastAPI(title=settings.app_name)
 app.add_middleware(
@@ -764,6 +767,39 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or getattr(user, "is_active", True) is False or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    access = create_access_token(subject=str(user.id), extra={"uid": user.id, "role": user.role, "office_id": user.office_id})
+    refresh = create_refresh_token(subject=str(user.id), extra={"uid": user.id, "role": user.role, "office_id": user.office_id})
+    return TokenPair(access_token=access, refresh_token=refresh)
+
+
+@app.post("/auth/google", response_model=TokenPair)
+def login_google(
+    id_token: str = Form(..., min_length=20),
+    db: Session = Depends(get_db),
+):
+    """
+    تسجيل دخول بجوجل بدون كلمة مرور:
+    - العميل يرسل id_token من GoogleSignIn.
+    - نتحقق من التوقيع ونستخرج البريد.
+    - إن كان المستخدم موجودًا في نظامنا، نُصدر JWT مثل /auth/login.
+    """
+    try:
+        req = google_requests.Request()
+        audience = settings.google_web_client_id.strip() or None
+        info = google_id_token.verify_oauth2_token(id_token, req, audience=audience)
+        email = (info.get("email") or "").strip().lower()
+        if not email or info.get("email_verified") is False:
+            raise HTTPException(status_code=400, detail="Invalid credentials")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    user = db.scalar(select(User).where(User.email == email))
+    if not user or getattr(user, "is_active", True) is False:
+        # لا ننشئ حسابًا تلقائيًا هنا لتفادي إنشاء مكاتب/مستخدمين بالخطأ.
         raise HTTPException(status_code=400, detail="Invalid credentials")
 
     access = create_access_token(subject=str(user.id), extra={"uid": user.id, "role": user.role, "office_id": user.office_id})

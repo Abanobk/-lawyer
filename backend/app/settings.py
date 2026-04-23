@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # CI يستدعي POST /internal/office-mobile-builds مع الرأس X-Mobile-Build-Token
     mobile_build_webhook_token: str = ""
 
+    # Google Sign-In (اختياري): لو عايز تتحقق من audience (client id) حط الـ Web Client ID هنا.
+    # لو فاضي، هنكتفي بالتحقق من توقيع الـ id_token واستخراج البريد.
+    google_web_client_id: str = ""
+
 
 settings = Settings()
 

@@ -127,18 +127,48 @@ class _LoginPageState extends State<LoginPage> {
       final account = await _google.signIn();
       if (account == null) return;
       if (!mounted) return;
-      _email.text = account.email;
-      await _storage.saveLastEmail(account.email);
-      if (!mounted) return;
-      FocusScope.of(context).nextFocus();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم اختيار البريد من Google. أكمل كلمة المرور.')),
+      final auth = await account.authentication;
+      final token = auth.idToken;
+      if (token == null || token.isEmpty) {
+        throw Exception('missing idToken');
+      }
+
+      setState(() => _loading = true);
+      final tokens = await _authApi.loginWithGoogle(idToken: token);
+
+      // Temporarily save tokens to call /office (needs Authorization header).
+      await _storage.saveSession(
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        officeCode: 'pending',
       );
+
+      final office = await _officeApi.myOffice();
+      final tenantCode = TenantBuildConfig.officeCode.trim();
+      if (tenantCode.isNotEmpty && office.code != tenantCode) {
+        await _storage.clear();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('هذا الحساب لا يخص مكتب هذا التطبيق.')),
+        );
+        return;
+      }
+
+      await _storage.saveSession(
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        officeCode: office.code,
+      );
+
+      if (!mounted) return;
+      context.go('/o/${office.code}/dashboard');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر تسجيل Google على هذا الجهاز: $e')),
+        SnackBar(content: Text('تعذر تسجيل Google: $e')),
       );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 

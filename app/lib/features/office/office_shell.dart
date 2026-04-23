@@ -101,25 +101,30 @@ class OfficeShell extends StatelessWidget {
         }
 
         final drawerW = math.min(320.0, MediaQuery.sizeOf(context).width * 0.88);
+        final drawerWidget = Drawer(
+          backgroundColor: AppColors.sidebar,
+          surfaceTintColor: Colors.transparent,
+          width: drawerW,
+          child: _Sidebar(
+            officeCode: officeCode,
+            current: current,
+            width: drawerW,
+            inDrawer: true,
+          ),
+        );
         return Scaffold(
           // RTL: open from the right side for Arabic UX.
-          endDrawer: Drawer(
-            backgroundColor: AppColors.sidebar,
-            surfaceTintColor: Colors.transparent,
-            width: drawerW,
-            child: _Sidebar(
-              officeCode: officeCode,
-              current: current,
-              width: drawerW,
-              inDrawer: true,
-            ),
-          ),
+          // اجعلها متاحة من الجهتين لتفادي أي Drawer أبيض نتيجة سحب من الاتجاه الخطأ.
+          drawer: drawerWidget,
+          endDrawer: drawerWidget,
           appBar: AppBar(
             leading: Builder(
               builder: (context) => IconButton(
                 tooltip: 'القائمة',
                 icon: const Icon(Icons.menu),
-                onPressed: () => Scaffold.of(context).openEndDrawer(),
+                onPressed: () => Directionality.of(context) == TextDirection.rtl
+                    ? Scaffold.of(context).openEndDrawer()
+                    : Scaffold.of(context).openDrawer(),
               ),
             ),
             title: const Text('لوحة المكتب'),
