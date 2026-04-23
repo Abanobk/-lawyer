@@ -158,7 +158,7 @@ class _OfficeShellState extends State<OfficeShell> {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: closeDrawer,
-                    child: const ColoredBox(color: Color(0x66000000)),
+                    child: const ColoredBox(color: Colors.black54),
                   ),
                 ),
                 // تثبيت على يمين الشاشة الفيزيائي (قائمة العربية) — أوضح من PositionedDirectional على بعض الأجهزة.
@@ -167,12 +167,14 @@ class _OfficeShellState extends State<OfficeShell> {
                   bottom: 0,
                   right: 0,
                   width: drawerW,
-                  child: _Sidebar(
-                    officeCode: widget.officeCode,
-                    current: current,
-                    width: drawerW,
-                    inDrawer: true,
-                    onCloseDrawer: closeDrawer,
+                  child: ClipRect(
+                    child: _Sidebar(
+                      officeCode: widget.officeCode,
+                      current: current,
+                      width: drawerW,
+                      inDrawer: true,
+                      onCloseDrawer: closeDrawer,
+                    ),
                   ),
                 ),
               ],
@@ -453,12 +455,18 @@ class _Sidebar extends StatelessWidget {
     );
 
     if (inDrawer) {
-      final top = MediaQuery.paddingOf(context).top;
-      return ColoredBox(
+      // ColoredBox يحجَم حسب الطفل فقط؛ بدون ارتفاع صريح تبقى «شريحة» ضيقة/شفافة
+      // ويظهر الـ scrim والمحتوى من تحت (كأن القائمة شفافة ومفيش كروت).
+      final mq = MediaQuery.of(context);
+      final top = mq.padding.top;
+      final h = mq.size.height;
+      return Container(
+        width: width,
+        height: h,
         color: AppColors.sidebar,
         child: Padding(
           padding: EdgeInsets.only(top: top),
-          child: SizedBox(width: width, child: sidebarColumn),
+          child: sidebarColumn,
         ),
       );
     }
