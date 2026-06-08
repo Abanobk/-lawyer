@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone, time as dt_time
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Header, Query, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Header, Query, Request, status
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -15,6 +15,7 @@ from sqlalchemy import func, inspect, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
+from app.billing import activate_office_subscription
 from app.db import Base, engine, get_db
 from app.finance_ledger import FINANCE_KINDS_ALL, finance_movements, finance_summary, movements_to_csv_lines
 from app.finance_reports import build_case_financial_summary, build_cash_flow_daily, build_income_statement
@@ -45,7 +46,10 @@ from app.models import (
     OfficeStatus,
     Plan,
     PaymentProof,
+    PlatformPaymentCredential,
     ProofStatus,
+    SubscriptionPayment,
+    SubscriptionPaymentStatus,
     Subscription,
     SubscriptionStatus,
     User,
@@ -133,9 +137,16 @@ from app.schemas import (
     CaseFinancialReceiptOut,
     FinanceAuditLogOut,
     PaymentProofOut,
+    PaymobCheckoutOut,
+    PaymobCheckoutRequest,
+    PaymobProviderOut,
+    PaymobProviderUpsert,
+    PaymobReturnOut,
+    PaymobReturnRequest,
 )
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.settings import settings
+from app import paymob as paymob_util
 
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -272,6 +283,60 @@ async def _track_office_activity(request, call_next):  # type: ignore[no-untyped
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _abs_app_url(path: str) -> str:
+    base = settings.app_base_url.rstrip("/")
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base}{path}"
+
+
+def _platform_paymob_row(db: Session) -> PlatformPaymentCredential | None:
+    return db.scalar(select(PlatformPaymentCredential).where(PlatformPaymentCredential.provider == "paymob"))
+
+
+def _paymob_provider_out(row: PlatformPaymentCredential | None) -> PaymobProviderOut:
+    if not row:
+        return PaymobProviderOut(provider="paymob", mode="test", is_enabled=False)
+    cfg = row.public_config or {}
+    return PaymobProviderOut(
+        provider=row.provider,
+        mode=row.mode,
+        is_enabled=bool(row.is_enabled),
+        public_key_last8=str(cfg.get("publicKeyLast8") or "") or None,
+        card_integration_id=int(cfg["cardIntegrationId"]) if cfg.get("cardIntegrationId") else None,
+        wallet_integration_id=int(cfg["walletIntegrationId"]) if cfg.get("walletIntegrationId") else None,
+        currency=str(cfg.get("currency") or "EGP"),
+        updated_at=row.updated_at,
+    )
+
+
+def _mark_subscription_payment_paid(db: Session, payment_id: int, provider_reference: str | None = None) -> SubscriptionPayment | None:
+    payment = db.get(SubscriptionPayment, payment_id)
+    if not payment:
+        return None
+    if payment.status == SubscriptionPaymentStatus.paid:
+        return payment
+    plan = db.get(Plan, payment.plan_id)
+    if not plan:
+        return None
+    now = _now()
+    activate_office_subscription(
+        db,
+        office_id=payment.office_id,
+        plan=plan,
+        notes=f"paymob:{payment.id}",
+        now=now,
+        permissions_catalog=PERMISSIONS,
+    )
+    payment.status = SubscriptionPaymentStatus.paid
+    payment.paid_at = now
+    if provider_reference:
+        payment.provider_reference = provider_reference
+    db.commit()
+    db.refresh(payment)
+    return payment
 
 
 def _gen_office_code(length: int = 10) -> str:
@@ -3157,6 +3222,208 @@ def list_payment_proofs(db: Session = Depends(get_db), user: User = Depends(requ
     ]
 
 
+@app.post("/subscription/paymob/checkout", response_model=PaymobCheckoutOut)
+def subscription_paymob_checkout(
+    payload: PaymobCheckoutRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_office_admin),
+):
+    plan = db.get(Plan, payload.plan_id)
+    if not plan or getattr(plan, "is_active", True) is False:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    gateway = _platform_paymob_row(db)
+    if not gateway or not gateway.is_enabled:
+        raise HTTPException(status_code=400, detail="Paymob غير مفعّل. تواصل مع إدارة المنصة.")
+
+    secret = paymob_util.decode_secret(gateway.encrypted_secret or "{}")
+    public_config = gateway.public_config or {}
+    paymob_util.assert_paymob_public_key(public_config.get("publicKey"))
+
+    office = db.get(Office, user.office_id)
+    owner = db.scalar(
+        select(User).where(User.office_id == user.office_id, User.role == UserRole.office_owner).order_by(User.id.asc())
+    )
+    first, last = paymob_util.split_name(getattr(owner, "full_name", None) or office.name if office else "Office Owner")
+
+    paymob_ref = f"subscription_payment:pending:{user.office_id}:{plan.id}:{int(_now().timestamp())}"
+    payment = SubscriptionPayment(
+        office_id=user.office_id,
+        plan_id=plan.id,
+        amount_cents=int(plan.price_cents),
+        status=SubscriptionPaymentStatus.pending,
+        provider="paymob",
+        paymob_reference=paymob_ref,
+    )
+    db.add(payment)
+    db.flush()
+    special_reference = f"subscription_payment:{payment.id}"
+    payment.paymob_reference = special_reference
+
+    intention = paymob_util.create_paymob_intention(
+        secret_key=str(secret.get("secretKey") or ""),
+        public_config=public_config,
+        amount_cents=int(plan.price_cents),
+        item_name=f"Lawyer {plan.name}"[:50],
+        item_description=f"Office subscription {plan.duration_days} days",
+        billing={
+            "first_name": first,
+            "last_name": last,
+            "phone": getattr(office, "phone", None) or "01000000000",
+            "email": getattr(owner, "email", None) or "office@example.com",
+        },
+        special_reference=special_reference,
+        notification_url=_abs_app_url("/webhooks/paymob"),
+        redirection_url=_abs_app_url(f"/subscription-return?subscription_payment={payment.id}"),
+    )
+    payment.provider_reference = str(intention.get("id") or intention.get("intention_order_id") or "")
+    db.commit()
+
+    checkout_url = paymob_util.paymob_checkout_url(str(public_config.get("publicKey")), str(intention["client_secret"]))
+    return PaymobCheckoutOut(payment_id=payment.id, checkout_url=checkout_url)
+
+
+@app.post("/subscription/paymob/return", response_model=PaymobReturnOut)
+def subscription_paymob_return(payload: PaymobReturnRequest, db: Session = Depends(get_db)):
+    payment_id = payload.subscription_payment
+    if not payment_id:
+        return PaymobReturnOut(status="ignored", message="No subscription payment id")
+    payment = db.get(SubscriptionPayment, payment_id)
+    if not payment:
+        return PaymobReturnOut(status="ignored", message="Payment not found")
+    if payment.status == SubscriptionPaymentStatus.paid:
+        return PaymobReturnOut(status="paid", message="Subscription already active")
+
+    gateway = _platform_paymob_row(db)
+    secret = paymob_util.decode_secret(gateway.encrypted_secret or "{}") if gateway else {}
+    hmac_secret = str(secret.get("hmacSecret") or "")
+    if hmac_secret:
+        obj = payload.model_dump(exclude_none=True)
+        received = str(payload.hmac or "")
+        if not paymob_util.paymob_hmac_matches(obj, hmac_secret, received):
+            raise HTTPException(status_code=401, detail="Invalid Paymob return signature")
+    else:
+        return PaymobReturnOut(status="waiting_webhook", message="Return received; waiting for Paymob webhook")
+
+    state = paymob_util.paymob_transaction_state(payload.model_dump())
+    if state["success"]:
+        _mark_subscription_payment_paid(db, payment.id, state.get("transaction_id"))
+        return PaymobReturnOut(status="paid", message="Subscription activated")
+    status_name = "pending" if state["pending"] else "failed"
+    if status_name == "failed":
+        payment.status = SubscriptionPaymentStatus.failed
+        db.commit()
+    return PaymobReturnOut(status=status_name)
+
+
+@app.post("/webhooks/paymob")
+async def paymob_webhook(request: Request, hmac: str | None = Query(default=None), db: Session = Depends(get_db)):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    obj = (payload.get("obj") if isinstance(payload.get("obj"), dict) else payload) or {}
+    if not isinstance(obj, dict):
+        obj = {}
+    received_hmac = hmac or str(obj.get("hmac") or "")
+
+    special = str(obj.get("special_reference") or obj.get("merchant_order_id") or "")
+    payment_id = paymob_util.parse_subscription_payment_reference(special)
+    if not payment_id:
+        return {"ok": True, "ignored": True}
+
+    gateway = _platform_paymob_row(db)
+    secret = paymob_util.decode_secret(gateway.encrypted_secret or "{}") if gateway else {}
+    hmac_secret = str(secret.get("hmacSecret") or "")
+    if hmac_secret and not paymob_util.paymob_hmac_matches(obj, hmac_secret, received_hmac):
+        raise HTTPException(status_code=401, detail="Invalid Paymob webhook signature")
+
+    state = paymob_util.paymob_transaction_state(obj)
+    if state["success"]:
+        _mark_subscription_payment_paid(db, payment_id, state.get("transaction_id"))
+    else:
+        payment = db.get(SubscriptionPayment, payment_id)
+        if payment and payment.status == SubscriptionPaymentStatus.pending:
+            payment.status = SubscriptionPaymentStatus.failed if not state["pending"] else SubscriptionPaymentStatus.pending
+            if state.get("transaction_id"):
+                payment.provider_reference = state["transaction_id"]
+            db.commit()
+    return {"ok": True}
+
+
+@app.get("/admin/payment-providers/paymob", response_model=PaymobProviderOut)
+def admin_get_paymob(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    return _paymob_provider_out(_platform_paymob_row(db))
+
+
+@app.post("/admin/payment-providers/paymob", response_model=PaymobProviderOut)
+def admin_save_paymob(payload: PaymobProviderUpsert, db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    existing = _platform_paymob_row(db)
+    existing_cfg = (existing.public_config if existing else {}) or {}
+    existing_secret = paymob_util.decode_secret(existing.encrypted_secret) if existing and existing.encrypted_secret else {}
+
+    if (not payload.public_key or not payload.secret_key or not payload.card_integration_id) and not existing:
+        raise HTTPException(status_code=400, detail="Public Key و Secret Key و Card Integration ID مطلوبة في أول حفظ")
+
+    public_config = {
+        "publicKey": payload.public_key or existing_cfg.get("publicKey"),
+        "publicKeyLast8": str(payload.public_key or existing_cfg.get("publicKey") or "")[-8:],
+        "cardIntegrationId": payload.card_integration_id or existing_cfg.get("cardIntegrationId"),
+        "walletIntegrationId": payload.wallet_integration_id if payload.wallet_integration_id is not None else existing_cfg.get("walletIntegrationId"),
+        "currency": (payload.currency or existing_cfg.get("currency") or "EGP").upper(),
+    }
+    paymob_util.assert_paymob_public_key(public_config.get("publicKey"))
+    encrypted = paymob_util.encode_secret(
+        {
+            "secretKey": payload.secret_key or existing_secret.get("secretKey"),
+            "hmacSecret": payload.hmac_secret if payload.hmac_secret is not None else existing_secret.get("hmacSecret", ""),
+        }
+    )
+    if existing:
+        existing.mode = payload.mode
+        existing.public_config = public_config
+        existing.encrypted_secret = encrypted
+        existing.is_enabled = payload.enabled
+        existing.updated_at = _now()
+        row = existing
+    else:
+        row = PlatformPaymentCredential(
+            provider="paymob",
+            mode=payload.mode,
+            public_config=public_config,
+            encrypted_secret=encrypted,
+            is_enabled=payload.enabled,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _paymob_provider_out(row)
+
+
+@app.post("/admin/payment-providers/paymob/test")
+def admin_test_paymob(db: Session = Depends(get_db), _: User = Depends(require_super_admin)):
+    gateway = _platform_paymob_row(db)
+    if not gateway:
+        raise HTTPException(status_code=404, detail="Paymob settings not found")
+    secret = paymob_util.decode_secret(gateway.encrypted_secret or "{}")
+    public_config = gateway.public_config or {}
+    paymob_util.create_paymob_intention(
+        secret_key=str(secret.get("secretKey") or ""),
+        public_config=public_config,
+        amount_cents=100,
+        item_name="Connection test",
+        item_description="Lawyer Paymob test",
+        billing={"first_name": "Lawyer", "last_name": "App", "phone": "01000000000", "email": "test@example.com"},
+        special_reference=f"test-{int(_now().timestamp())}",
+        notification_url=_abs_app_url("/webhooks/paymob"),
+        redirection_url=_abs_app_url("/"),
+        expiration=600,
+    )
+    return {"ok": True, "provider": "paymob"}
+
+
 @app.get("/subscription/payment-proofs/{proof_id}")
 def download_payment_proof(proof_id: int, db: Session = Depends(get_db), user: User = Depends(require_office_admin)):
     p = db.get(PaymentProof, proof_id)
@@ -3508,62 +3775,19 @@ def admin_approve_payment_proof(
         raise HTTPException(status_code=400, detail="Plan not found")
 
     now = _now()
-    latest = db.scalar(select(Subscription).where(Subscription.office_id == proof.office_id).order_by(Subscription.id.desc()))
-    if latest and latest.status in (SubscriptionStatus.trial, SubscriptionStatus.active) and latest.end_at > now:
-        start_at = latest.end_at
-    else:
-        start_at = now
-    end_at = start_at + timedelta(days=int(plan.duration_days))
-
-    # Record subscription snapshot.
-    sub = Subscription(
+    activate_office_subscription(
+        db,
         office_id=proof.office_id,
-        status=SubscriptionStatus.active,
-        start_at=start_at,
-        end_at=end_at,
-        price_snapshot_cents=int(plan.price_cents),
-        plan_name_snapshot=plan.name,
-        plan_id=plan.id,
+        plan=plan,
         notes=f"proof:{proof.id}",
+        now=now,
+        permissions_catalog=PERMISSIONS,
     )
-    db.add(sub)
 
     proof.status = ProofStatus.approved
     proof.reviewed_by_user_id = admin.id
     proof.reviewed_at = now
     proof.decision_notes = payload.decision_notes
-
-    # Enforce module/user restrictions immediately after approval.
-    max_users_total = int(getattr(plan, "max_users", None) or 0) or 10_000
-    allowed_perm_keys: set[str]
-    if getattr(plan, "allowed_perm_keys_csv", None):
-        allowed_perm_keys = {k.strip() for k in plan.allowed_perm_keys_csv.split(",") if k.strip() and k.strip() in PERMISSIONS}
-    else:
-        allowed_perm_keys = set(PERMISSIONS.keys())
-
-    allowed_staff_count = max(max_users_total - 1, 0)
-    staff_users = db.scalars(
-        select(User).where(
-            User.office_id == proof.office_id,
-            User.role == UserRole.staff,
-            User.is_active == True,
-        ).order_by(User.id.asc())
-    ).all()
-    if len(staff_users) > allowed_staff_count:
-        to_disable = [u.id for u in staff_users[allowed_staff_count:]]
-        db.query(User).where(User.id.in_(to_disable)).update({"is_active": False}, synchronize_session=False)
-        db.query(UserPermission).where(
-            UserPermission.office_id == proof.office_id,
-            UserPermission.user_id.in_(to_disable),
-        ).delete(synchronize_session=False)
-
-    # Prune permissions for remaining staff so they can't see/edit disallowed modules in the UI.
-    keep_staff_ids = [u.id for u in staff_users[:allowed_staff_count]]
-    if keep_staff_ids and allowed_perm_keys != set(PERMISSIONS.keys()):
-        db.query(UserPermission).where(
-            UserPermission.office_id == proof.office_id,
-            UserPermission.user_id.in_(keep_staff_ids),
-        ).filter(~UserPermission.perm_key.in_(allowed_perm_keys)).delete(synchronize_session=False)
 
     db.commit()
     db.refresh(proof)

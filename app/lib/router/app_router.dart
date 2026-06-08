@@ -19,6 +19,7 @@ import 'package:lawyer_app/features/office/pages/office_calendar_page.dart';
 import 'package:lawyer_app/features/office/pages/sessions_page.dart';
 import 'package:lawyer_app/features/office/pages/settings_page.dart';
 import 'package:lawyer_app/features/office/pages/subscription_page.dart';
+import 'package:lawyer_app/features/office/pages/subscription_paymob_return_page.dart';
 
 final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -52,6 +53,10 @@ GoRouter createAppRouter() {
       GoRoute(
         path: '/admin',
         builder: (context, state) => const AdminGatePage(),
+      ),
+      GoRoute(
+        path: '/subscription-return',
+        builder: (context, state) => SubscriptionPaymobReturnPage(queryParams: state.uri.queryParameters),
       ),
       ShellRoute(
         builder: (context, state, child) {

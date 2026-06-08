@@ -7,6 +7,7 @@ import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/util/plan_display.dart';
 import 'package:lawyer_app/core/widgets/plan_offer_card.dart';
 import 'package:lawyer_app/core/widgets/promo_image_memory.dart';
+import 'package:lawyer_app/data/api/paymob_api.dart';
 import 'package:lawyer_app/data/api/plans_api.dart';
 import 'package:lawyer_app/data/api/subscription_api.dart';
 import 'package:lawyer_app/features/office/widgets/office_mobile_download_card.dart';
@@ -23,6 +24,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   final _plansApi = PlansApi();
   final _filesApi = SubscriptionFilesApi();
   final _promoFilesApi = PlanPromoFilesApi();
+  final _paymobApi = SubscriptionPaymobApi();
 
   late final Future<List<PlanDto>> _plansFuture = _plansApi.list();
 
@@ -31,6 +33,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   final _reference = TextEditingController();
   final _notes = TextEditingController();
   bool _uploading = false;
+  bool _payingPaymob = false;
   final Map<int, Future<Uint8List?>> _promoBytesFutures = {};
 
   @override
@@ -65,6 +68,35 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر فتح الرابط')));
+    }
+  }
+
+  Future<void> _payWithPaymob(int planId) async {
+    setState(() {
+      _selectedPlanId = planId;
+      _payingPaymob = true;
+    });
+    try {
+      final res = await _paymobApi.checkout(planId: planId);
+      final uri = Uri.tryParse(res.checkoutUrl);
+      if (uri == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('رابط Paymob غير صالح')));
+        return;
+      }
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر فتح صفحة Paymob')));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('أكمل الدفع في Paymob — سيتم تفعيل الاشتراك تلقائياً بعد النجاح')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل تجهيز Paymob: $e')));
+    } finally {
+      if (mounted) setState(() => _payingPaymob = false);
     }
   }
 
@@ -157,7 +189,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             children: [
               Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 4),
-              const Text('اختر مدة الاشتراك من الأزرار، ثم افتح إنستاباي. بعد التحويل ارفع الإثبات في الأسفل للمراجعة.'),
+              const Text('اختر مدة الاشتراك. ادفع فوراً عبر Paymob (تفعيل تلقائي)، أو استخدم إنستاباي وارفع الإثبات للمراجعة.'),
               const SizedBox(height: 14),
               const OfficeMobileDownloadCard(),
               const SizedBox(height: 10),
@@ -197,22 +229,39 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                     if (group.first.maxUsers != null) const SizedBox(height: 4),
                                     controlUnitsCountLine(context, group.first.allowedPermKeys),
                                   ],
-                                  footerHint: 'بعد اختيار الاشتراك وإتمام التحويل، ارفع الإثبات أسفل الصفحة.',
+                                  footerHint: 'Paymob يفعّل الاشتراك فوراً. إنستاباي يحتاج رفع إثبات أسفل الصفحة.',
                                   image: _promoArea(planForPromoImage(group)),
                                   selected: group.any((p) => p.id == _selectedPlanId),
                                   actions: [
-                                    for (final p in group)
-                                      FilledButton(
-                                        onPressed: _uploading || p.instapayLink == null
+                                    for (final p in group) ...[
+                                      FilledButton.icon(
+                                        onPressed: _uploading || _payingPaymob
                                             ? null
-                                            : () {
-                                                setState(() => _selectedPlanId = p.id);
-                                                _openLink(p.instapayLink);
-                                              },
-                                        child: Text(
-                                          'اشتراك — ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم',
+                                            : () => _payWithPaymob(p.id),
+                                        icon: _payingPaymob && _selectedPlanId == p.id
+                                            ? const SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                              )
+                                            : const Icon(Icons.credit_card),
+                                        label: Text(
+                                          'Paymob — ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم',
                                         ),
                                       ),
+                                      if (p.instapayLink != null)
+                                        OutlinedButton(
+                                          onPressed: _uploading || _payingPaymob
+                                              ? null
+                                              : () {
+                                                  setState(() => _selectedPlanId = p.id);
+                                                  _openLink(p.instapayLink);
+                                                },
+                                          child: Text(
+                                            'إنستاباي — ${(p.priceCents / 100).toStringAsFixed(0)} ج / ${p.durationDays} يوم',
+                                          ),
+                                        ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -230,7 +279,12 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('رفع إثبات التحويل', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                      Text('رفع إثبات التحويل (إنستاباي)', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 4),
+                      Text(
+                        'إذا دفعت عبر إنستاباي وليس Paymob، ارفع صورة التحويل هنا.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
                         onPressed: _uploading ? null : _pickFile,

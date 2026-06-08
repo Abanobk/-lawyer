@@ -257,6 +257,53 @@ class PaymentProofOut(BaseModel):
     uploaded_at: datetime
 
 
+class PaymobProviderOut(BaseModel):
+    provider: str
+    mode: str
+    is_enabled: bool
+    public_key_last8: str | None = None
+    card_integration_id: int | None = None
+    wallet_integration_id: int | None = None
+    currency: str = "EGP"
+    updated_at: datetime | None = None
+
+
+class PaymobProviderUpsert(BaseModel):
+    mode: str = "test"
+    public_key: str | None = None
+    secret_key: str | None = None
+    hmac_secret: str | None = None
+    card_integration_id: int | None = None
+    wallet_integration_id: int | None = None
+    currency: str = "EGP"
+    enabled: bool = False
+
+
+class PaymobCheckoutRequest(BaseModel):
+    plan_id: int
+
+
+class PaymobCheckoutOut(BaseModel):
+    payment_id: int
+    checkout_url: str
+    provider: str = "paymob"
+    status: str = "redirect_required"
+
+
+class PaymobReturnRequest(BaseModel):
+    subscription_payment: int | None = None
+    hmac: str | None = None
+    success: bool | str | None = None
+    pending: bool | str | None = None
+    id: int | str | None = None
+
+
+class PaymobReturnOut(BaseModel):
+    ok: bool = True
+    status: str
+    message: str | None = None
+
+
 class OfficeUserOut(BaseModel):
     id: int
     email: EmailStr

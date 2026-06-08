@@ -14,6 +14,7 @@ import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
+import 'package:lawyer_app/features/admin/widgets/paymob_admin_settings_card.dart';
 import 'package:intl/intl.dart' as intl;
 
 /// مدخل السوبر أدمن (FAB من الشاشة الرئيسية). الحماية الفعلية من الـ API.
@@ -3128,48 +3129,57 @@ class _SettingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: FutureBuilder<MeDto>(
-          future: meFuture,
-          builder: (context, snap) {
-            final email = snap.data?.email ?? '—';
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('الحساب الحالي: $email'),
-                const SizedBox(height: 16),
-                Text('تغيير البريد/كلمة المرور', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _PasswordField(
-                  controller: currentPass,
-                  labelText: 'كلمة المرور الحالية',
-                  enabled: !saving,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: newEmail,
-                  decoration: const InputDecoration(labelText: 'البريد الجديد (اختياري)'),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 12),
-                _PasswordField(
-                  controller: newPass,
-                  labelText: 'كلمة المرور الجديدة (اختياري)',
-                  enabled: !saving,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: saving ? null : onSave,
-                  child: saving
-                      ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('حفظ التغييرات'),
-                ),
-              ],
-            );
-          },
-        ),
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FutureBuilder<MeDto>(
+                future: meFuture,
+                builder: (context, snap) {
+                  final email = snap.data?.email ?? '—';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('الحساب الحالي: $email'),
+                      const SizedBox(height: 16),
+                      Text('تغيير البريد/كلمة المرور', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      _PasswordField(
+                        controller: currentPass,
+                        labelText: 'كلمة المرور الحالية',
+                        enabled: !saving,
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: newEmail,
+                        decoration: const InputDecoration(labelText: 'البريد الجديد (اختياري)'),
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 12),
+                      _PasswordField(
+                        controller: newPass,
+                        labelText: 'كلمة المرور الجديدة (اختياري)',
+                        enabled: !saving,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: saving ? null : onSave,
+                        child: saving
+                            ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('حفظ التغييرات'),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const PaymobAdminSettingsCard(),
+        ],
       ),
     );
   }

@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -29,6 +29,12 @@ class ProofStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+
+class SubscriptionPaymentStatus(str, enum.Enum):
+    pending = "pending"
+    paid = "paid"
+    failed = "failed"
 
 
 class Office(Base):
@@ -154,6 +160,42 @@ class PaymentProof(Base):
 
 Index("idx_payment_proofs_office_status", PaymentProof.office_id, PaymentProof.status)
 Index("idx_payment_proofs_status_uploaded", PaymentProof.status, PaymentProof.uploaded_at)
+
+
+class PlatformPaymentCredential(Base):
+    """مفاتيح Paymob على مستوى المنصة (سوبر أدمن) — لدفع اشتراكات المكاتب."""
+
+    __tablename__ = "platform_payment_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="test")
+    public_config: Mapped[dict] = mapped_column(JSON, default=dict)
+    encrypted_secret: Mapped[str] = mapped_column(Text, default="")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class SubscriptionPayment(Base):
+    """فاتورة دفع اشتراك عبر Paymob (تفعيل تلقائي بعد webhook)."""
+
+    __tablename__ = "subscription_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    office_id: Mapped[int] = mapped_column(ForeignKey("offices.id"), index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    status: Mapped[SubscriptionPaymentStatus] = mapped_column(
+        Enum(SubscriptionPaymentStatus), default=SubscriptionPaymentStatus.pending, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(40), default="paymob")
+    provider_reference: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    paymob_reference: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+
+
+Index("idx_subscription_payments_office_status", SubscriptionPayment.office_id, SubscriptionPayment.status)
 
 
 class OfficeActivityDaily(Base):
