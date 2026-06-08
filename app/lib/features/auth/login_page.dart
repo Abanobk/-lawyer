@@ -6,6 +6,7 @@ import 'package:lawyer_app/core/config/api_config.dart' show ApiConfig;
 import 'package:lawyer_app/core/config/tenant_build_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/core/widgets/ui_kit.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
@@ -244,11 +245,10 @@ class _LoginPageState extends State<LoginPage> {
                       onSubmitted: (_) => _loading ? null : _submit(),
                     ),
                     const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _loading ? null : _submit,
-                      child: _loading
-                          ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('دخول'),
+                    AppLoadingButton(
+                      onPressed: _submit,
+                      loading: _loading,
+                      label: 'دخول',
                     ),
                     if (!TenantBuildConfig.isTenantApk)
                       TextButton(

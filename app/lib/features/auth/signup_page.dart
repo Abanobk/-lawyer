@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:lawyer_app/core/config/api_config.dart';
 import 'package:lawyer_app/core/responsive/layout_mode.dart';
 import 'package:lawyer_app/core/widgets/content_canvas.dart';
+import 'package:lawyer_app/core/widgets/ui_kit.dart';
 import 'package:lawyer_app/data/api/auth_api.dart';
 import 'package:lawyer_app/data/auth_token_storage.dart';
 
@@ -227,12 +228,10 @@ class _SignupPageState extends State<SignupPage> {
                         },
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
+                      AppPasswordField(
                         controller: _passwordCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'كلمة المرور',
-                        ),
-                        obscureText: true,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _loading ? null : _submit(),
                         validator: (v) {
                           final t = v ?? '';
                           if (t.length < 8) return 'ثمانية أحرف على الأقل (مطابقة للخادم)';
@@ -240,15 +239,10 @@ class _SignupPageState extends State<SignupPage> {
                         },
                       ),
                       const SizedBox(height: 24),
-                      FilledButton(
-                        onPressed: _loading ? null : _submit,
-                        child: _loading
-                            ? const SizedBox(
-                                height: 22,
-                                width: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('إنشاء الحساب والحصول على الرابط'),
+                      AppLoadingButton(
+                        onPressed: _submit,
+                        loading: _loading,
+                        label: 'إنشاء الحساب والحصول على الرابط',
                       ),
                       TextButton(
                         onPressed: _loading ? null : () => context.go('/login'),

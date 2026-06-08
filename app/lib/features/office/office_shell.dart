@@ -66,6 +66,13 @@ class _OfficeShellState extends State<OfficeShell> {
     return 'dashboard';
   }
 
+  String _sectionTitle(String segment) {
+    for (final item in _kOfficeNavItems) {
+      if (item.segment == segment) return item.label;
+    }
+    return 'لوحة المكتب';
+  }
+
   bool _onMobileNavMenuPage(BuildContext context) {
     final segs = GoRouterState.of(context).uri.pathSegments;
     return segs.length >= 3 && segs[2] == 'nav-menu';
@@ -138,7 +145,7 @@ class _OfficeShellState extends State<OfficeShell> {
                       extra: current,
                     ),
                   ),
-            title: Text(onNavMenu ? 'القائمة' : 'لوحة المكتب'),
+            title: Text(onNavMenu ? 'القائمة' : _sectionTitle(current)),
             actions: onNavMenu
                 ? null
                 : [
@@ -529,6 +536,23 @@ class OfficeNavigationMenuPage extends StatelessWidget {
   final String officeCode;
   final String currentSegment;
 
+  /// عناصر التنقّل المسموح بها للمستخدم الحالي (مطابقة لمنطق الشريط الجانبي على سطح المكتب).
+  Future<List<_OfficeNavItem>> _allowedNavItems() async {
+    final perms = await PermissionsApi().myPermissions();
+    final keys = perms.permissions.toSet();
+    var base = _kOfficeNavItems.where((i) => _allowNav(i.segment, keys)).toList();
+    if (base.isEmpty) base = [_kOfficeNavItems.first];
+    String? role;
+    try {
+      role = (await MeApi().me()).role;
+    } catch (_) {
+      role = null;
+    }
+    return base
+        .where((i) => i.segment != 'subscription' || role == 'office_owner')
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     void popMenuIfStacked() {
@@ -615,14 +639,26 @@ class OfficeNavigationMenuPage extends StatelessWidget {
                     ),
               ),
               const SizedBox(height: 8),
-              for (final item in _kOfficeNavItems)
-                _buildOfficeNavTile(
-                  context,
-                  officeCode: officeCode,
-                  current: currentSegment,
-                  item: item,
-                  onBeforeNavigate: popMenuIfStacked,
-                ),
+              FutureBuilder<List<_OfficeNavItem>>(
+                future: _allowedNavItems(),
+                builder: (context, snap) {
+                  // أثناء التحميل أو الخطأ نعرض كل العناصر (الخادم يحمي الوصول) — لا تظهر القائمة فارغة.
+                  final items = snap.data ?? _kOfficeNavItems;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final item in items)
+                        _buildOfficeNavTile(
+                          context,
+                          officeCode: officeCode,
+                          current: currentSegment,
+                          item: item,
+                          onBeforeNavigate: popMenuIfStacked,
+                        ),
+                    ],
+                  );
+                },
+              ),
               const Divider(color: Colors.white24, height: 28),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.redAccent),

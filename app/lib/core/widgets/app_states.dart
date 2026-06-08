@@ -29,6 +29,61 @@ class AppBodyLoading extends StatelessWidget {
   }
 }
 
+/// حالة خطأ موحّدة مع زر إعادة المحاولة.
+class AppErrorState extends StatelessWidget {
+  const AppErrorState({
+    super.key,
+    this.title = 'تعذّر تحميل البيانات',
+    this.message,
+    this.onRetry,
+  });
+
+  final String title;
+  final String? message;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: cs.error),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              if (message != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  message!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ],
+              if (onRetry != null) ...[
+                const SizedBox(height: 16),
+                FilledButton.tonalIcon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('إعادة المحاولة'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// فراغ بصري موحّد مع أيقونة ونص اختياري (نقطة ٤).
 class AppEmptyState extends StatelessWidget {
   const AppEmptyState({
