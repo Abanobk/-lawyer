@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/core/constants/plan_perm_labels.dart';
+import 'package:lawyer_app/core/theme/app_theme.dart';
+import 'package:lawyer_app/core/widgets/app_states.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
@@ -210,15 +212,19 @@ class _EmployeesPageState extends State<EmployeesPage> {
             future: _future,
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const AppBodyLoading(message: 'جارٍ تحميل الموظفين…');
               }
               if (snap.hasError) {
-                return Center(child: Text('تعذر تحميل الموظفين: ${snap.error}'));
+                return AppErrorState(message: '${snap.error}', onRetry: _reload);
               }
               final data = snap.data!;
               final isOwner = data.me.role == 'office_owner';
               if (data.users.isEmpty) {
-                return const Center(child: Text('لا يوجد مستخدمين'));
+                return const AppEmptyState(
+                  icon: Icons.groups_2_outlined,
+                  title: 'لا يوجد مستخدمين',
+                  subtitle: 'أضِف موظفًا وحدّد صلاحياته.',
+                );
               }
               return ListView.separated(
                 itemCount: data.users.length,
@@ -278,12 +284,18 @@ class _EmployeesPageState extends State<EmployeesPage> {
                                       backgroundColor: scheme.secondaryContainer.withValues(alpha: 0.5),
                                     ),
                                     Chip(
-                                      label: Text(u.isActive ? 'نشط' : 'مُعطّل'),
+                                      label: Text(
+                                        u.isActive ? 'نشط' : 'مُعطّل',
+                                        style: TextStyle(
+                                          color: u.isActive ? AppColors.success : scheme.onSurfaceVariant,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                                       visualDensity: VisualDensity.compact,
                                       padding: EdgeInsets.zero,
                                       side: BorderSide.none,
                                       backgroundColor: u.isActive
-                                          ? const Color(0xFFDCFCE7)
+                                          ? AppColors.success.withValues(alpha: 0.12)
                                           : scheme.surfaceContainerHighest,
                                     ),
                                   ],

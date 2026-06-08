@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lawyer_app/data/api/api_client.dart';
+import 'package:lawyer_app/core/theme/app_spacing.dart';
+import 'package:lawyer_app/core/widgets/app_states.dart';
 import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
+import 'package:lawyer_app/core/widgets/ui_kit.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 
 class ClientsPage extends StatefulWidget {
@@ -37,11 +40,11 @@ class _ClientsPageState extends State<ClientsPage> {
       );
       await _reload();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إضافة الموكل')));
+        showAppSnack(context, 'تم إضافة الموكل', tone: AppStatusTone.success);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      showAppSnack(context, e.message, tone: AppStatusTone.danger);
     }
   }
 
@@ -50,21 +53,15 @@ class _ClientsPageState extends State<ClientsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Icon(Icons.people_outline, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              'إدارة الموكلين',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const Spacer(),
+        AppPageHeader(
+          title: 'إدارة الموكلين',
+          icon: Icons.people_outline,
+          actions: [
             FilledButton.icon(
               onPressed: _openCreateDialog,
               icon: const Icon(Icons.add),
               label: const Text('إضافة موكل جديد'),
             ),
-            const SizedBox(width: 8),
             IconButton(
               tooltip: 'تحديث',
               onPressed: _reload,
@@ -72,21 +69,33 @@ class _ClientsPageState extends State<ClientsPage> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
         Expanded(
           child: Card(
             child: FutureBuilder<List<ClientDto>>(
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const AppBodyLoading(message: 'جارٍ تحميل الموكلين…');
                 }
                 if (snap.hasError) {
-                  return Center(child: Text('تعذر تحميل الموكلين: ${snap.error}'));
+                  return AppErrorState(
+                    message: '${snap.error}',
+                    onRetry: _reload,
+                  );
                 }
                 final items = snap.data ?? const <ClientDto>[];
                 if (items.isEmpty) {
-                  return const Center(child: Text('لا يوجد موكلين بعد'));
+                  return AppEmptyState(
+                    icon: Icons.people_outline,
+                    title: 'لا يوجد موكلين بعد',
+                    subtitle: 'ابدأ بإضافة أول موكل لمكتبك.',
+                    action: FilledButton.icon(
+                      onPressed: _openCreateDialog,
+                      icon: const Icon(Icons.add),
+                      label: const Text('إضافة موكل جديد'),
+                    ),
+                  );
                 }
 
                 return ScrollableDataTableShell(

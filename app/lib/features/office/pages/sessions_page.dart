@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:lawyer_app/core/theme/app_spacing.dart';
+import 'package:lawyer_app/core/widgets/app_states.dart';
 import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
+import 'package:lawyer_app/core/widgets/ui_kit.dart';
 import 'package:lawyer_app/data/api/me_api.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 import 'package:lawyer_app/data/api/sessions_api.dart';
@@ -106,19 +109,18 @@ class _SessionsPageState extends State<SessionsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Icon(Icons.calendar_month_outlined, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              'الجلسات',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+        AppPageHeader(
+          title: 'الجلسات',
+          icon: Icons.calendar_month_outlined,
+          actions: [
+            IconButton(
+              tooltip: 'تحديث',
+              onPressed: _reloadAll,
+              icon: const Icon(Icons.refresh),
             ),
-            const Spacer(),
-            IconButton(onPressed: _reloadAll, icon: const Icon(Icons.refresh)),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.lg),
         Expanded(
           child: Card(
             child: FutureBuilder<MeDto>(
@@ -136,14 +138,18 @@ class _SessionsPageState extends State<SessionsPage> {
                       future: _future,
                       builder: (context, snap) {
                         if (snap.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
+                          return const AppBodyLoading(message: 'جارٍ تحميل الجلسات…');
                         }
                         if (snap.hasError) {
-                          return Center(child: Text('تعذر تحميل الجلسات: ${snap.error}'));
+                          return AppErrorState(message: '${snap.error}', onRetry: _reload);
                         }
                         final items = snap.data ?? const <SessionDto>[];
                         if (items.isEmpty) {
-                          return const Center(child: Text('لا يوجد جلسات بعد'));
+                          return const AppEmptyState(
+                            icon: Icons.event_busy_outlined,
+                            title: 'لا يوجد جلسات بعد',
+                            subtitle: 'ستظهر الجلسات هنا بعد إضافتها للقضايا.',
+                          );
                         }
                         final officeCode = GoRouterState.of(context).pathParameters['officeCode'] ?? '';
                         return ScrollableDataTableShell(

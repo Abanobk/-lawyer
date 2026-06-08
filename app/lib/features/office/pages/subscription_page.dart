@@ -155,7 +155,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+              Text('إدارة الاشتراك', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 4),
               const Text('اختر مدة الاشتراك من الأزرار، ثم افتح إنستاباي. بعد التحويل ارفع الإثبات في الأسفل للمراجعة.'),
               const SizedBox(height: 14),

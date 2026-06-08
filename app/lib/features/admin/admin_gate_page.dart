@@ -371,7 +371,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
     switch (_officePanel) {
       case _AdminOfficePanel.dashboard:
         return Container(
-          color: const Color(0xFFF3F5F9),
+          color: Theme.of(context).scaffoldBackgroundColor,
           child: LayoutBuilder(
             builder: (context, c) {
               final isWide = c.maxWidth >= 950;
@@ -380,7 +380,7 @@ class _SuperAdminDashboardState extends State<_SuperAdminDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+                    Text('لوحة التحكم', style: Theme.of(context).textTheme.headlineSmall),
                     const SizedBox(height: 14),
                     if (isWide)
                       Row(
@@ -1724,7 +1724,7 @@ class _ProofsTabState extends State<_ProofsTab> {
         builder: (context) => AlertDialog(
           title: Text('إثبات #${p.id}'),
           content: SizedBox(
-            width: 900,
+            width: (MediaQuery.sizeOf(context).width - 80).clamp(280.0, 900.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,

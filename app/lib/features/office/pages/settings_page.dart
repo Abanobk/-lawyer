@@ -269,7 +269,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       enabled: _officeFieldsEditable,
                       decoration: const InputDecoration(
                         labelText: 'اسم المكتب / المؤسسة',
-                        border: OutlineInputBorder(),
                       ),
                       textInputAction: TextInputAction.next,
                     ),
@@ -279,7 +278,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       enabled: _officeFieldsEditable,
                       decoration: const InputDecoration(
                         labelText: 'رقم الهاتف / الموبايل',
-                        border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
@@ -291,7 +289,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       decoration: const InputDecoration(
                         labelText: 'البريد الإلكتروني للمكتب',
                         hintText: 'للتواصل — ليس بريد تسجيل الدخول',
-                        border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
@@ -302,7 +299,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       enabled: _officeFieldsEditable,
                       decoration: const InputDecoration(
                         labelText: 'العنوان',
-                        border: OutlineInputBorder(),
                         alignLabelWithHint: true,
                       ),
                       minLines: 2,
@@ -317,7 +313,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       enabled: _editing,
                       decoration: const InputDecoration(
                         labelText: 'اسمك الكامل (يظهر في الترحيب)',
-                        border: OutlineInputBorder(),
                       ),
                       textInputAction: TextInputAction.next,
                     ),
@@ -362,7 +357,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                         FilledButton.tonalIcon(
                           onPressed: _exportBusy ? null : _exportCasesCsv,
-                          icon: const Icon(Icons.file_download_outlined),
+                          icon: _exportBusy
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.file_download_outlined),
                           label: const Text('تصدير القضايا CSV'),
                         ),
                       ],

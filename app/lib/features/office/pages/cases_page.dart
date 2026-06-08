@@ -9,7 +9,10 @@ import 'package:lawyer_app/data/api/case_files_api.dart';
 import 'package:lawyer_app/data/api/cases_api.dart';
 import 'package:lawyer_app/data/api/clients_api.dart';
 import 'package:lawyer_app/data/api/office_api.dart';
+import 'package:lawyer_app/core/theme/app_spacing.dart';
+import 'package:lawyer_app/core/widgets/app_states.dart';
 import 'package:lawyer_app/core/widgets/scrollable_data_table_shell.dart';
+import 'package:lawyer_app/core/widgets/ui_kit.dart';
 import 'package:lawyer_app/data/api/permissions_api.dart';
 
 class CasesPage extends StatefulWidget {
@@ -81,11 +84,11 @@ class _CasesPageState extends State<CasesPage> {
       }
       await _reload();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إضافة القضية')));
+        showAppSnack(context, 'تم إضافة القضية', tone: AppStatusTone.success);
       }
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      showAppSnack(context, e.message, tone: AppStatusTone.danger);
     }
   }
 
@@ -103,13 +106,13 @@ class _CasesPageState extends State<CasesPage> {
     try {
       await _filesApi.upload(caseId: caseId, file: file);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم رفع الملف')));
+      showAppSnack(context, 'تم رفع الملف', tone: AppStatusTone.success);
     } on CaseFilesApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      showAppSnack(context, e.message, tone: AppStatusTone.danger);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل رفع الملف: $e')));
+      showAppSnack(context, 'فشل رفع الملف: $e', tone: AppStatusTone.danger);
     }
   }
 
@@ -119,15 +122,10 @@ class _CasesPageState extends State<CasesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Icon(Icons.work_outline, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              'إدارة القضايا',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const Spacer(),
+        AppPageHeader(
+          title: 'إدارة القضايا',
+          icon: Icons.work_outline,
+          actions: [
             FutureBuilder<_CasesData>(
               future: _future,
               builder: (context, snap) {
@@ -138,7 +136,6 @@ class _CasesPageState extends State<CasesPage> {
                 );
               },
             ),
-            const SizedBox(width: 8),
             IconButton(
               tooltip: 'تحديث',
               onPressed: _reload,
@@ -146,7 +143,7 @@ class _CasesPageState extends State<CasesPage> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         Align(
           alignment: AlignmentDirectional.centerStart,
           child: Wrap(
@@ -178,20 +175,21 @@ class _CasesPageState extends State<CasesPage> {
               future: _future,
               builder: (context, snap) {
                 if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const AppBodyLoading(message: 'جارٍ تحميل القضايا…');
                 }
                 if (snap.hasError) {
-                  return Center(child: Text('تعذر تحميل القضايا: ${snap.error}'));
+                  return AppErrorState(message: '${snap.error}', onRetry: _reload);
                 }
                 var cases = snap.data?.cases ?? const <CaseDto>[];
                 if (_activeFilter != null) {
                   cases = cases.where((c) => c.isActive == _activeFilter).toList();
                 }
                 if (cases.isEmpty) {
-                  return Center(
-                    child: Text(
-                      snap.data?.cases.isEmpty == true ? 'لا يوجد قضايا بعد' : 'لا قضايا ضمن الفلتر الحالي',
-                    ),
+                  final noneAtAll = snap.data?.cases.isEmpty == true;
+                  return AppEmptyState(
+                    icon: Icons.work_outline,
+                    title: noneAtAll ? 'لا يوجد قضايا بعد' : 'لا قضايا ضمن الفلتر الحالي',
+                    subtitle: noneAtAll ? 'أضِف أول قضية لمكتبك.' : 'جرّب تغيير الفلتر.',
                   );
                 }
 
