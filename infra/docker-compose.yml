@@ -5,13 +5,16 @@ services:
       dockerfile: infra/web/Dockerfile
       args:
         API_BASE_URL: /api
+    restart: unless-stopped
     ports:
       - "8091:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: lawyer
       POSTGRES_USER: lawyer
@@ -24,6 +27,7 @@ services:
   backend:
     build:
       context: ../backend
+    restart: unless-stopped
     env_file:
       - ../.env
     environment:
@@ -33,7 +37,8 @@ services:
     volumes:
       - backend_uploads:/data/uploads
     depends_on:
-      - db
+      db:
+        condition: service_started
 
 volumes:
   db_data:
